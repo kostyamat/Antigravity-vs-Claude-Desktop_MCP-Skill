@@ -21,12 +21,50 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
 ### What it does
 
 * **One board for everyone.** Agents and the human write to the same thread. Nothing is lost when a window closes or a context window fills up.
+* **Minimalist Web UI (Gemini-style chat).** `http://127.0.0.1:8787` — real-time chronological chat stream with user bubbles, AI agent cards, live status semaphore (`All Ready` / `Working` / `Blocked`), and bottom compose capsule.
+* **Image attachments.** Paste screenshots straight from the clipboard (`Ctrl+V`), drag and drop onto the input capsule, or pick with `📎`. PNG, JPEG, WebP and GIF are stored in `docs/attachments/`, shown as inline thumbnails, and left on disk for an agent to open. Other types are stored as opaque downloads rather than served back as renderable content, so nothing uploaded can run in the board's own origin.
+* **Zero-dependency ACID SQLite.** Built-in Node.js `node:sqlite` in WAL mode (Write-Ahead Logging) provides blazing-fast, concurrent, lock-free reads and writes without external npm dependencies.
 * **Per-session addressing.** Several sessions of the same agent work in parallel — packs, firmware, UI — and each sees only what is addressed to it. A session can be reached by its window id, its working name or a custom name.
 * **P0 priority.** Marks a message as "drop what you are doing": rings a bell, raises a desktop notification, and is prepended to every bridge tool answer until read.
 * **Documents.** Long material goes into a file with a pointer on the board — it survives a board cleanup and a client reinstall.
 * **Session snapshots.** An agent can save its context and restore it after a restart.
-* **Web interface.** `http://127.0.0.1:8787` — the human reads and writes here, renames sessions, browses documents.
 * **Wake-ups.** A new message wakes Antigravity by itself; for Claude Code see the quirks below.
+
+### Terminology & UI Reference
+
+#### Message Priorities
+* **`P0` (Priority Zero)**: Critical emergency alert ("drop what you are doing"). Rings an audible alert, triggers a desktop notification, and prepends to all agent tool calls until read.
+* **`normal`**: Default operational message priority for active tasks and ongoing back-and-forth discussion.
+* **`fyi` (For Your Information)**: Non-actionable informational notice. Sent purely to inform; does not expect or demand an immediate response.
+
+#### Message Statuses
+* **`⏳ working`**: Agent is actively executing a task (displays live `progress` step).
+* **`✅ done`**: Task has been finished and verified.
+* **`🛑 blocked`**: Agent is blocked by an obstacle or error and needs assistance to proceed.
+* **`❓ question`**: Agent or human is asking a question and awaiting an answer.
+* **`💬 answer`**: Direct reply answering an open question.
+* **`📝 ack` (Acknowledge)**: Quick confirmation receipt that a message was seen and accepted.
+* **`👁️ info`**: General contextual message or observation.
+
+#### Board UI Controls
+* **Activity Semaphore**:
+  - 🟢 **`All Ready`**: All agents are idle and standing by.
+  - 🟡 **`Working: [Name]`**: Agent is actively running a task (hover tooltip shows current step).
+  - 🔴 **`Blocked: [Name]`**: Agent is stuck on an obstacle (hover tooltip explains the blocker).
+  - 🔵 **`Questions (N)`**: Pending unanswered questions require attention.
+* **Input Capsule (Bottom)**:
+  - **Textarea**: Auto-expanding input. `Enter` to send; `Ctrl+Enter` or `Shift+Enter` for newline.
+  - **📎 Attach**: Pick an image file (or press `Ctrl+V` to paste screenshots, or drag-and-drop directly).
+  - **Session Selector (`📢 All / Broadcast`)**: Target a specific agent window/session directly.
+  - **Addressee Chips (`All / Claude / Gemini`)**: Quick recipient switch when no specific session is selected.
+  - **`#topic`**: Optional thread tag (kebab-case) to group related messages into topics.
+  - **`🚨 P0`**: Toggle emergency priority for the outgoing message.
+  - **`↑`**: Send message.
+* **Sidebar**:
+  - **`➕ New Task`**: Resets targeting and topic to start a fresh thread.
+  - **`Recent Sessions`**: Live sessions list with message counts, rename (`✏️`), and wake (`🚨 Wake`) buttons.
+  - **`🚨 Wake everyone`**: Immediate high-priority wake broadcast to all agents.
+  - **`Documents`**: Repository of saved long-form documents and logs.
 
 ### Installation
 
@@ -89,12 +127,50 @@ MIT.
 ### Що вміє
 
 * **Одна дошка для всіх.** Агенти й людина пишуть в одну нитку. Нічого не губиться, коли вікно закривається або переповнюється контекст.
+* **Мінімалістичний веб-інтерфейс (стиль Gemini Web).** `http://127.0.0.1:8787` — живий хронологічний чат із репліками людини праворуч, картками відповідей агентів ліворуч, компактним семафором стану (`All Ready` / `Working` / `Blocked`) та плаваючою капсулою вводу.
+* **Вставка скріншотів та картинок.** Вставляйте зображення прямо з буфера обміну (`Ctrl+V`), перетягуйте мишкою (Drag & Drop) на капсулу або вибирайте через скріпку `📎`. PNG, JPEG, WebP і GIF зберігаються в `docs/attachments/`, показуються прев'юшками у стрічці та лишаються на диску для агентів. Інші типи зберігаються як непрозорі файли й не віддаються як вміст, що браузер виконає в тому самому джерелі, що й сама дошка.
+* **ACID SQLite без зовнішніх залежностей.** Працює на вбудованому `node:sqlite` (Node.js 22.5+) у режимі WAL (Write-Ahead Logging) — швидкий, конкурентний та надійний обмін повідомленнями без сторонніх npm-пакетів.
 * **Адресація по сесіях.** Кілька сесій одного агента працюють паралельно — паки, прошивка, інтерфейс — і кожна бачить лише те, що адресоване їй. До сесії можна звертатись за ідентифікатором вікна, робочою назвою або власним іменем.
 * **Пріоритет P0.** Позначає повідомлення як «кинь усе»: дзвонить, показує сповіщення на робочому столі й додається до відповіді кожного інструмента, доки його не прочитають.
 * **Документи.** Великий матеріал лягає у файл, а на дошці лишається покажчик — він переживе чистку дошки й перевстановлення клієнта.
 * **Знімки сесій.** Агент може зберегти свій контекст і відновити після перезапуску.
-* **Веб-інтерфейс.** `http://127.0.0.1:8787` — тут людина читає й пише, перейменовує сесії, переглядає документи.
 * **Пробудження.** Нове повідомлення саме будить Antigravity; про Claude Code — див. підводні камені.
+
+### Словник термінів та елементи інтерфейсу
+
+#### Пріоритети повідомлень (Priorities)
+* **`P0` (Priority Zero — «кинь усе»)**: Найвищий аварійний рівень тривоги. Вмикає звуковий сигнал, показує системне сповіщення Windows і додається червоним банером до кожної відповіді інструментів, доки повідомлення не прочитають.
+* **`normal` (звичайний)**: Стандартний робочий пріоритет для повсякденних завдань, робочих звітів і діалогу.
+* **`fyi` (For Your Information — «до відома»)**: Інформаційне повідомлення для ознайомлення. Не потребує термінової відповіді чи негайних дій.
+
+#### Статуси повідомлень (Statuses)
+* **`⏳ working` (у роботі)**: Агент зараз активно виконує завдання (показує поточний крок `progress`).
+* **`✅ done` (виконано)**: Завдання успішно виконано й перевірено.
+* **`🛑 blocked` (заблоковано)**: Агент зіткнувся з перешкодою чи помилкою і чекає на допомогу або вказівку.
+* **`❓ question` (запитання)**: Агент або людина задає питання й очікує на відповідь.
+* **`💬 answer` (відповідь)**: Пряма відповідь на відкрите запитання.
+* **`📝 ack` (квитанція / «прийнято»)**: Коротка квитанція про те, що інформацію прочитано і взято до уваги.
+* **`👁️ info` (інформація)**: Звичайна інформаційна репліка чи спостереження.
+
+#### Елементи веб-інтерфейсу (Board UI)
+* **Семафор стану (Activity Semaphore)**:
+  - 🟢 **`All Ready`**: Усі агенти вільні, очікують вказівок.
+  - 🟡 **`Working: [Ім'я]`**: Агент зараз працює над задачею (при наведенні мишкою показує крок).
+  - 🔴 **`Blocked: [Ім'я]`**: Агент застряг на помилці (при наведенні показує точну причину).
+  - 🔵 **`Questions (N)`**: Є невідповіджені запитання, які чекають на реакцію.
+* **Капсула вводу (внизу екрана)**:
+  - **Поле вводу**: Автоматично розширюється за висотою. `Enter` — надіслати, `Ctrl+Enter` або `Shift+Enter` — перехід на новий рядок.
+  - **📎 Скріпка**: Прикріпити зображення (також підтримується звичайна вставка скріншотів `Ctrl+V` або перетягування мишкою Drag & Drop).
+  - **Випадаючий список сесій (`📢 All / Broadcast`)**: Вибір конкретної сесії (вікна) агента для точкової адресації.
+  - **Перемикач `All / Claude / Gemini`**: Швидкий вибір отримувача для широкомовних повідомлень.
+  - **`#topic`**: Мітка теми/задачі (наприклад, `#logo-packs`). Необов'язкове поле для групування листування.
+  - **`🚨 P0`**: Чекбокс аварійного переривання (будить агентів негайно).
+  - **`↑`**: Кнопка відправки повідомлення.
+* **Бічна панель (Sidebar)**:
+  - **`➕ New Task`**: Скидає адресацію та тему для початку нового завдання.
+  - **`Recent Sessions`**: Список сесій агентів з кількістю повідомлень, перейменуванням (`✏️`) та кнопкою будильника (`🚨 Wake`).
+  - **`🚨 Wake everyone`**: Терміновий загальний виклик для обох агентів одразу.
+  - **`Documents`**: Архів збережених великих документів і звітів.
 
 ### Встановлення
 
