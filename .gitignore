@@ -1,0 +1,16 @@
+# runtime data — never commit the board itself
+agent_bridge.db
+agent_bridge.db-wal
+agent_bridge.db-shm
+bridge_config.json
+P0_PENDING.txt
+*.log
+
+# runtime directories
+docs/
+agent_bridge_bodies/
+agent_bridge_archive/
+agent_bridge_backups/
+
+# release artifacts
+*.zip
