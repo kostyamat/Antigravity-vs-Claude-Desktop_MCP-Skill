@@ -39,6 +39,30 @@ Requires **Node.js 22.5+** (built-in SQLite) and **Python 3** in PATH.
 
 The installer registers the MCP server in Claude Desktop and Antigravity, installs the skill, adds the `SessionStart` hook for Claude Code, creates a desktop shortcut and a startup entry. It refuses to continue on an unsupported Node, never overwrites a config it cannot parse, and backs up every config it touches.
 
+### Where the Skill ends up
+
+The bridge is an MCP server **plus** a Skill, and the Skill is what teaches an agent
+the board discipline. Each client takes it differently, so `install-bridge.cmd` handles
+what it can and leaves you exactly one manual step.
+
+| Client | How the Skill is installed | Done by |
+|---|---|---|
+| Claude Code | folder written to `%USERPROFILE%\.claude\skills\agent-bridge\` | installer |
+| Antigravity | folder written to `%USERPROFILE%\.gemini\config\skills\agent-bridge\` | installer |
+| Claude Desktop | archive uploaded through the app's own skill-upload screen | **you** |
+
+Claude Desktop keeps no skills folder on disk, so nothing can install into it from the
+outside. The installer therefore builds `sharing\agent-bridge-skill.zip` and prints its
+path; open Claude Desktop's settings, find the skill upload screen, and drop that file in.
+That is the whole manual step.
+
+Antigravity also reads workspace-local skills from `<workspace>\.agents\skills\`, if you
+would rather scope the bridge to one project than install it globally.
+
+Documentation in this repository refers to the bridge directory as `{{BRIDGE_HOME}}` so that
+no machine's absolute path is ever published. The installer substitutes the real path into
+the copies it writes, so an agent reading its installed Skill sees paths it can actually run.
+
 ### Known quirks
 
 These cost hours to discover. They are not bugs in the bridge — they are how the clients behave.
@@ -82,6 +106,29 @@ MIT.
 4. Один раз назвіть агентові своє ім'я: `bridge_setup({ adminName: "<ваше ім'я>" })`.
 
 Інсталятор реєструє MCP-сервер у Claude Desktop і Antigravity, ставить скіл, додає хук `SessionStart` для Claude Code, створює ярлик на робочому столі й запис в автозавантаженні. На непідтримуваному Node він зупиняється, ніколи не перезаписує конфіг, який не зміг прочитати, і робить резервну копію кожного конфігу, якого торкається.
+
+### Куди потрапляє скіл
+
+Міст — це MCP-сервер **плюс** скіл, і саме скіл навчає агента дисципліни дошки. Кожен клієнт
+приймає його по-своєму, тож `install-bridge.cmd` робить усе, що може, і лишає вам рівно один
+ручний крок.
+
+| Клієнт | Як ставиться скіл | Хто робить |
+|---|---|---|
+| Claude Code | тека в `%USERPROFILE%\.claude\skills\agent-bridge\` | інсталятор |
+| Antigravity | тека в `%USERPROFILE%\.gemini\config\skills\agent-bridge\` | інсталятор |
+| Claude Desktop | архів через власний екран завантаження скілів | **ви** |
+
+У Claude Desktop немає теки скілів на диску, тож ззовні туди нічого не покладеш. Тому інсталятор
+збирає `sharing\agent-bridge-skill.zip` і друкує шлях до нього: відкрийте налаштування Claude
+Desktop, знайдіть екран завантаження скіла й перетягніть туди цей файл. Це і є весь ручний крок.
+
+Antigravity додатково читає скіли рівня воркспейсу з `<workspace>\.agents\skills\` — якщо
+хочете обмежити міст одним проєктом, а не ставити глобально.
+
+Документація в цьому репозиторії називає теку моста `{{BRIDGE_HOME}}`, щоб абсолютний шлях чиєїсь
+машини ніколи не потрапив у публікацію. Інсталятор підставляє справжній шлях у копії, які записує,
+тож агент у своєму встановленому скілі бачить шляхи, які справді можна виконати.
 
 ### Підводні камені
 

@@ -11,7 +11,20 @@ import sqlite3
 import sys
 import time
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent_bridge.db")
+def _bridge_home():
+    """Directory holding the board database.
+
+    Defaults to the directory of this script, which is correct for the copy
+    that lives in the bridge home. The copies distributed into agent skill
+    folders sit elsewhere, so AGENT_BRIDGE_HOME overrides the guess.
+    """
+    env = os.environ.get("AGENT_BRIDGE_HOME")
+    if env and os.path.isdir(env):
+        return env
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+DB_PATH = os.path.join(_bridge_home(), "agent_bridge.db")
 POLL_SEC = 10
 
 

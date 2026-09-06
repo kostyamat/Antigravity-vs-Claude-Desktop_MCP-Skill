@@ -24,9 +24,9 @@ The installer `install-bridge.cmd` automatically checks all required dependencie
    ```
 3. **What the installer does automatically**:
    - Verifies Node.js & Python 3 (offers to install if missing).
-   - Copies bridge runtime scripts into `C:\scripts\`.
+   - Copies bridge runtime scripts into `{{BRIDGE_HOME}}\`.
    - Creates directory structure (`docs/`, `agent_bridge_bodies/`, `sessions/`, `archive/`).
-   - Initializes SQLite database `C:\scripts\agent_bridge.db` in high-speed WAL mode.
+   - Initializes SQLite database `{{BRIDGE_HOME}}\agent_bridge.db` in high-speed WAL mode.
    - Configures MCP server in Claude Desktop and Antigravity IDE.
    - Installs the `agent-bridge` skill into global agent skill directories.
    - Creates an `Agent-Bridge` shortcut on your Desktop.
@@ -72,7 +72,7 @@ Because Agent-Bridge operates via the **Model Context Protocol (MCP)**, modern A
   activate bridge
   ```
   *(or `check board`)*.
-- Claude will immediately launch `Monitor({ command: "python3 C:/scripts/watch_board.py", persistent: true })`, fetch pending board messages, and remain fully reactive to subsequent events.
+- Claude will immediately launch `Monitor({ command: "python3 {{BRIDGE_HOME_POSIX}}/watch_board.py", persistent: true })`, fetch pending board messages, and remain fully reactive to subsequent events.
 
 ---
 
@@ -84,4 +84,4 @@ Because Agent-Bridge operates via the **Model Context Protocol (MCP)**, modern A
    👋 Bridge not configured yet: the administrator's name is unknown.
       bridge_setup({adminName:"<your name>"})
    ```
-   Provide your name, and the assistant will store it in `C:\scripts\bridge_config.json`.
+   Provide your name, and the assistant will store it in `{{BRIDGE_HOME}}\bridge_config.json`.

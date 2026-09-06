@@ -258,34 +258,89 @@ try {
   console.error(`  ⚠️ Failed to configure SessionStart hook: ${e.message}`);
 }
 
-// 4c. Distribute SKILL.md across agent skill directories
-console.log('\n[4c/8] Distributing SKILL.md to agent skill directories...');
+// 4c. Install the Skill into every agent's skill directory
+console.log('');
+console.log('[4c/8] Installing the Skill for Claude Code and Antigravity...');
+
+// Documentation in this repository refers to the bridge home through the
+// {{BRIDGE_HOME}} placeholders, so no machine's absolute path is ever
+// published. The installed copies get the real path written in, because an
+// agent reading its skill folder needs a path it can actually run.
+const BRIDGE_HOME_POSIX = SCRIPTS_DIR.split(path.sep).join('/');
+function materialise(text) {
+  return text
+    .split('{{BRIDGE_HOME_POSIX}}').join(BRIDGE_HOME_POSIX)
+    .split('{{BRIDGE_HOME}}').join(SCRIPTS_DIR);
+}
+
+const TEXT_EXT = ['.md', '.py', '.json', '.txt', '.cmd', '.ps1'];
+function isText(name) {
+  const lower = name.toLowerCase();
+  return TEXT_EXT.some(function (e) { return lower.endsWith(e); });
+}
+
+function copySkillTree(srcDir, dstDir) {
+  fs.mkdirSync(dstDir, { recursive: true });
+  let n = 0;
+  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+    const src = path.join(srcDir, entry.name);
+    const dst = path.join(dstDir, entry.name);
+    if (path.resolve(src) === path.resolve(dst)) continue;
+    if (entry.isDirectory()) { n += copySkillTree(src, dst); continue; }
+    if (isText(entry.name)) {
+      fs.writeFileSync(dst, materialise(fs.readFileSync(src, 'utf8')), 'utf8');
+    } else {
+      fs.copyFileSync(src, dst);
+    }
+    n++;
+  }
+  return n;
+}
+
+const skillSourceDir = path.join(SCRIPTS_DIR, 'skill', 'agent-bridge');
+const skillTargets = [
+  { name: 'Claude Code', dir: path.join(USER_PROFILE, '.claude', 'skills', 'agent-bridge') },
+  { name: 'Antigravity', dir: path.join(USER_PROFILE, '.gemini', 'config', 'skills', 'agent-bridge') }
+];
+
 try {
-  const skillSource = path.join(SCRIPTS_DIR, 'skill', 'agent-bridge', 'SKILL.md');
-  if (!fs.existsSync(skillSource)) {
+  if (!fs.existsSync(path.join(skillSourceDir, 'SKILL.md'))) {
     warnCount++;
-    console.warn(`  ⚠️ Not found: ${skillSource} — skill not distributed.`);
+    console.warn('  Not found: ' + skillSourceDir + ' — skill not installed.');
   } else {
-    const skillTargets = [
-      path.join(USER_PROFILE, '.claude', 'skills', 'agent-bridge'),          // Claude Code (Global)
-      path.join(USER_PROFILE, '.gemini', 'config', 'skills', 'agent-bridge') // Antigravity (Global)
-    ];
-    for (const dir of skillTargets) {
+    for (const target of skillTargets) {
       try {
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        const target = path.join(dir, 'SKILL.md');
-        if (path.resolve(skillSource) === path.resolve(target)) continue;
-        fs.copyFileSync(skillSource, target);
-        console.log(`  + ${target}`);
+        const n = copySkillTree(skillSourceDir, target.dir);
+        console.log('  + ' + target.name + ': ' + n + ' files -> ' + target.dir);
       } catch (e) {
         warnCount++;
-        console.warn(`  ⚠️ ${dir}: ${e.message}`);
+        console.warn('  ' + target.dir + ': ' + e.message);
       }
+    }
+
+    // Claude Desktop (the chat app) has no skills folder on disk: skills are
+    // uploaded through Settings -> Capabilities -> Skills. Build the archive
+    // here so the human only has to drag one file.
+    try {
+      const shareDir = path.join(SCRIPTS_DIR, 'sharing');
+      const stageDir = path.join(shareDir, 'agent-bridge');
+      const zipPath = path.join(shareDir, 'agent-bridge-skill.zip');
+      fs.mkdirSync(shareDir, { recursive: true });
+      fs.rmSync(stageDir, { recursive: true, force: true });
+      copySkillTree(skillSourceDir, stageDir);
+      fs.rmSync(zipPath, { force: true });
+      const ps = 'Compress-Archive -Path "' + stageDir + '" -DestinationPath "' + zipPath + '" -Force';
+      execSync('powershell -NoProfile -ExecutionPolicy Bypass -Command ' + JSON.stringify(ps), { stdio: 'ignore' });
+      fs.rmSync(stageDir, { recursive: true, force: true });
+      console.log('  + Claude Desktop: upload ' + zipPath + ' via Settings > Capabilities > Skills');
+    } catch (e) {
+      warnCount++;
+      console.warn('  Could not build the Claude Desktop skill archive: ' + e.message);
     }
   }
 } catch (e) {
   warnCount++;
-  console.error(`  ⚠️ Failed to distribute skill: ${e.message}`);
+  console.error('  Failed to install the skill: ' + e.message);
 }
 
 // 5. Configure Antigravity IDE

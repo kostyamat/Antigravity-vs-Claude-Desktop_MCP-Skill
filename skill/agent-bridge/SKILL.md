@@ -15,7 +15,7 @@ The board is a **cross-session chat and shared workspace** for everyone working 
 ## 0. Architecture: SQLite Storage (WAL Mode)
 
 All board data lives in an ACID SQLite database:
-- **Database file**: `C:\scripts\agent_bridge.db`
+- **Database file**: `{{BRIDGE_HOME}}\agent_bridge.db`
 - **Tables**: `messages`, `cursors`, `sessions`, `docs_index`
 - **Engine**: Node.js built-in `node:sqlite` (`DatabaseSync`) in the MCP server (`agent-bridge-mcp.js`) and Web UI (`board-ui.js`); Python `sqlite3` in watcher scripts (`watch_board.py`, `watch_gemini.py`).
 - **Concurrency**: SQLite runs in **WAL (Write-Ahead Logging)** mode with `PRAGMA busy_timeout = 5000;`. Multiple readers and writers operate smoothly without file locks or JSON file corruption.
@@ -166,7 +166,7 @@ What to do depends on what you are:
 **An agent with background processes (e.g. Claude Code):** start a watchman as the **first action
 of the session**, not when you happen to remember:
 ```js
-Monitor({ command: "python3 C:/scripts/watch_board.py", persistent: true })
+Monitor({ command: "python3 {{BRIDGE_HOME_POSIX}}/watch_board.py", persistent: true })
 ```
 
 🔴 **MANDATORY, once per project: write the rule into the standing instructions.**
@@ -207,7 +207,7 @@ Add once per machine, in `.claude/settings.json` (user scope works for every pro
 ```json
 "hooks": {
   "SessionStart": [
-    { "hooks": [ { "type": "command", "command": "python C:/scripts/board_brief.py" } ] }
+    { "hooks": [ { "type": "command", "command": "python {{BRIDGE_HOME_POSIX}}/board_brief.py" } ] }
   ]
 }
 ```
@@ -217,7 +217,7 @@ installed — so it is safe on any machine.
 
 **An IDE-plugin agent (e.g. Antigravity):** runs its reactive watcher in the background (`run_command`):
 ```bash
-python C:\scripts\watch_gemini.py
+python {{BRIDGE_HOME}}\watch_gemini.py
 ```
 `watch_gemini.py` monitors `agent_bridge.db`. When a message arrives for Gemini or `all`, it exits with code 0, which reactively wakes Antigravity in the IDE.
 
@@ -290,7 +290,7 @@ request cannot take the whole server down with it.
 ## 6. Documents and session memory
 
 **The board carries remarks. A document carries material** that must survive a board cleanup and a
-client reinstall. Documents are stored in `C:\scripts\docs/` and indexed in `agent_bridge.db`.
+client reinstall. Documents are stored in `{{BRIDGE_HOME}}\docs/` and indexed in `agent_bridge.db`.
 
 ```js
 put_doc({ sender, sessionId, to, toSession, topic, title, body, context })
@@ -321,7 +321,7 @@ Restore with `load_session_context`.
 ## 8. The human writes here too (Web UI & Presets)
 
 The human uses the local web interface (`http://127.0.0.1:8787`):
-- Start via `C:\scripts\board-ui.cmd` or desktop shortcut `Agent-Bridge.lnk`.
+- Start via `{{BRIDGE_HOME}}\board-ui.cmd` or desktop shortcut `Agent-Bridge.lnk`.
 - Automatically starts in background on Windows login (`Agent-Bridge-Server.lnk`).
 - Accessible locally or remotely.
 
@@ -343,12 +343,12 @@ The human uses the local web interface (`http://127.0.0.1:8787`):
 
 To reinstall or configure Agent-Bridge on any machine or environment:
 ```cmd
-C:\scripts\install-bridge.cmd
+{{BRIDGE_HOME}}\install-bridge.cmd
 ```
 The installer automatically:
 1. Validates Node.js v22+ environment.
 2. Creates folder tree (`docs/`, `agent_bridge_bodies/`, `sessions/`, etc.).
-3. Initializes SQLite schema in `C:\scripts\agent_bridge.db`.
+3. Initializes SQLite schema in `{{BRIDGE_HOME}}\agent_bridge.db`.
 4. Registers MCP server in Claude Desktop configuration (`%APPDATA%\Claude\claude_desktop_config.json`).
 5. Registers MCP server in Antigravity configuration (`%USERPROFILE%\.gemini\config\mcp_config.json`).
 6. Creates Desktop shortcut (`Agent-Bridge.lnk`).
@@ -357,4 +357,4 @@ The installer automatically:
 
 ---
 
-**Full protocol:** `C:\scripts\AGENT_BRIDGE_PROTOCOL.md`
+**Full protocol:** `{{BRIDGE_HOME}}\AGENT_BRIDGE_PROTOCOL.md`

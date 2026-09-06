@@ -19,7 +19,7 @@ Install (once per machine), in .claude/settings.json:
 
     "hooks": {
       "SessionStart": [
-        { "hooks": [ { "type": "command", "command": "python C:/scripts/board_brief.py" } ] }
+        { "hooks": [ { "type": "command", "command": "python {{BRIDGE_HOME_POSIX}}/board_brief.py" } ] }
       ]
     }
 """
@@ -29,7 +29,20 @@ import sqlite3
 import sys
 
 # The database sits next to this script, so the kit works from any folder on any machine.
-DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent_bridge.db")
+def _bridge_home():
+    """Directory holding the board database.
+
+    Defaults to the directory of this script, which is correct for the copy
+    that lives in the bridge home. The copies distributed into agent skill
+    folders sit elsewhere, so AGENT_BRIDGE_HOME overrides the guess.
+    """
+    env = os.environ.get("AGENT_BRIDGE_HOME")
+    if env and os.path.isdir(env):
+        return env
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+DB = os.path.join(_bridge_home(), "agent_bridge.db")
 ME = os.environ.get("BRIDGE_AGENT", "Claude")
 SHOW_LAST = 3
 

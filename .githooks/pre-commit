@@ -46,6 +46,20 @@ for f in $files; do
     fi
 done
 
+# The skill folder ships a copy of the package documentation and helper
+# scripts. Those copies drifted apart once already, leaving agents reading a
+# stale protocol. Refuse a commit that lets them diverge again.
+for f in AGENT_BRIDGE_PROTOCOL.md:PROTOCOL.md install-bridge.js:install-bridge.js          install-bridge.cmd:install-bridge.cmd install-bridge.ps1:install-bridge.ps1          board_brief.py:board_brief.py watch_board.py:watch_board.py          watch_gemini.py:watch_gemini.py; do
+    root=${f%%:*}
+    copy="skill/agent-bridge/${f##*:}"
+    [ -f "$root" ] && [ -f "$copy" ] || continue
+    if ! cmp -s "$root" "$copy"; then
+        echo "BLOCKED  $copy  — out of sync with $root"
+        echo "         copy it across:  cp $root $copy"
+        fail=1
+    fi
+done
+
 if [ "$fail" -ne 0 ]; then
     echo ""
     echo "Commit refused. Remove the findings above, or use --no-verify if they are false positives."
