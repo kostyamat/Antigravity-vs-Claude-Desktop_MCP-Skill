@@ -297,6 +297,62 @@ function copySkillTree(srcDir, dstDir) {
   return n;
 }
 
+// copySkillTree overwrites and adds, but it never removes. A file dropped
+// from the package would otherwise survive forever in an agent's skill
+// folder, which is how an installed PROTOCOL.md once ended up hundreds of
+// lines behind the working one. pruneSkillTree deletes what the source no
+// longer has.
+//
+// It is deliberately paranoid. A bug in here must not be able to wipe a
+// user's skills directory, so it refuses to run unless the source really
+// looks like the package, and every single deletion is checked to fall
+// inside the agent-bridge folder that was just written.
+function isInside(root, candidate) {
+  const rel = path.relative(root, path.resolve(candidate));
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+function pruneOrphans(srcDir, dstDir, root) {
+  let removed = 0;
+  let entries;
+  try {
+    entries = fs.readdirSync(dstDir, { withFileTypes: true });
+  } catch (e) {
+    return removed; // nothing installed here, or unreadable: leave it alone
+  }
+  for (const entry of entries) {
+    const dst = path.join(dstDir, entry.name);
+    const src = path.join(srcDir, entry.name);
+    if (!isInside(root, dst)) continue; // never step outside the skill folder
+    let srcStat = null;
+    try { srcStat = fs.statSync(src); } catch (e) { srcStat = null; }
+    // A name that changed kind (file <-> directory) counts as orphaned too:
+    // copySkillTree cannot write a file over a directory.
+    if (srcStat && srcStat.isDirectory() === entry.isDirectory()) {
+      if (entry.isDirectory()) removed += pruneOrphans(src, dst, root);
+      continue;
+    }
+    fs.rmSync(dst, { recursive: true, force: true });
+    removed++;
+  }
+  return removed;
+}
+
+function pruneSkillTree(srcDir, dstDir) {
+  const root = path.resolve(dstDir);
+  // Only ever the agent-bridge skill folder itself, never a parent of it and
+  // never a drive root.
+  if (path.basename(root).toLowerCase() !== 'agent-bridge') return 0;
+  if (path.dirname(root) === root) return 0;
+  // An empty or unreadable source is a broken checkout, not an instruction to
+  // delete the installed skill.
+  let sourceEntries;
+  try { sourceEntries = fs.readdirSync(srcDir); } catch (e) { return 0; }
+  if (sourceEntries.length === 0) return 0;
+  if (!fs.existsSync(path.join(srcDir, 'SKILL.md'))) return 0;
+  return pruneOrphans(srcDir, root, root);
+}
+
 const skillSourceDir = path.join(SCRIPTS_DIR, 'skill', 'agent-bridge');
 const skillTargets = [
   { name: 'Claude Code', dir: path.join(USER_PROFILE, '.claude', 'skills', 'agent-bridge') },
@@ -311,7 +367,9 @@ try {
     for (const target of skillTargets) {
       try {
         const n = copySkillTree(skillSourceDir, target.dir);
-        console.log('  + ' + target.name + ': ' + n + ' files -> ' + target.dir);
+        const stale = pruneSkillTree(skillSourceDir, target.dir);
+        console.log('  + ' + target.name + ': ' + n + ' files -> ' + target.dir +
+          (stale ? ' (' + stale + ' stale removed)' : ''));
       } catch (e) {
         warnCount++;
         console.warn('  ' + target.dir + ': ' + e.message);
@@ -411,54 +469,87 @@ try {
   console.error(`  ❌ Failed to configure Antigravity MCP: ${e.message}`);
 }
 
+// Shortcut helpers.
+//
+// Windows shell folders are not where a profile path suggests. OneDrive moves
+// the Desktop into its own tree, and a localized Windows names it in the user's
+// language — Escritorio, Bureau, Schreibtisch. Deriving it as USER_PROFILE
+// plus "Desktop" writes a shortcut nobody ever sees, while the one the user
+// really clicks keeps launching the previous install. WScript.Shell resolves
+// the real folder, so the lookup is left to VBScript.
+//
+// Note also that VBScript has no backslash escape: doubling separators the way
+// a C-like language needs produces a literally doubled path in the shortcut.
+// The only character that needs escaping inside a VBS string is the quote.
+const BS = String.fromCharCode(92);
+function vbsStr(s) {
+  return '"' + String(s).split('"').join('""') + '"';
+}
+
+function createShortcut(specialFolder, linkName, targetVbs, description) {
+  const lines = [
+    'Set WshShell = CreateObject("WScript.Shell")',
+    'folder = WshShell.SpecialFolders(' + vbsStr(specialFolder) + ')',
+    'If folder = "" Then',
+    '  WScript.Echo "UNRESOLVED"',
+    '  WScript.Quit 1',
+    'End If',
+    'lnkPath = folder & ' + vbsStr(BS + linkName),
+    'Set lnk = WshShell.CreateShortcut(lnkPath)',
+    'lnk.TargetPath = ' + vbsStr('wscript.exe'),
+    'lnk.Arguments = ' + vbsStr('"' + targetVbs + '"'),
+    'lnk.WorkingDirectory = ' + vbsStr(SCRIPTS_DIR),
+    'lnk.Description = ' + vbsStr(description),
+    'lnk.Save',
+    'WScript.Echo lnkPath'
+  ];
+  const tmpVbs = path.join(SCRIPTS_DIR, '_tmp_shortcut_' + specialFolder + '.vbs');
+  fs.writeFileSync(tmpVbs, lines.join('\r\n'), 'utf8');
+  try {
+    const out = execSync('cscript //nologo "' + tmpVbs + '"', { encoding: 'utf8' }).trim();
+    if (!out || out === 'UNRESOLVED') throw new Error('Windows did not resolve the ' + specialFolder + ' folder');
+    return out;
+  } finally {
+    try { fs.unlinkSync(tmpVbs); } catch (_) {}
+  }
+}
+
 // 6. Create Desktop shortcut
-console.log('\n[6/8] Creating Desktop shortcut...');
+console.log('');
+console.log('[6/8] Creating Desktop shortcut...');
 try {
-  const desktopDir = path.join(USER_PROFILE, 'Desktop');
-  const lnkPath = path.join(desktopDir, 'Agent-Bridge.lnk');
-  const openVbs = path.join(SCRIPTS_DIR, 'open-board.vbs');
-  const vbs = `
-Set WshShell = CreateObject("WScript.Shell")
-Set lnk = WshShell.CreateShortcut("${lnkPath.replace(/\\/g, '\\\\')}")
-lnk.TargetPath = "wscript.exe"
-lnk.Arguments = "${openVbs.replace(/\\/g, '\\\\')}"
-lnk.WorkingDirectory = "${SCRIPTS_DIR.replace(/\\/g, '\\\\')}"
-lnk.Description = "Agent-Bridge: Cross-Agent & Human Collaborative Board"
-lnk.Save
-`;
-  const tmpVbs = path.join(SCRIPTS_DIR, '_tmp_shortcut.vbs');
-  fs.writeFileSync(tmpVbs, vbs, 'utf8');
-  execSync(`cscript //nologo "${tmpVbs}"`);
-  try { fs.unlinkSync(tmpVbs); } catch (_) {}
-  console.log(`  ✅ Shortcut created: ${lnkPath}`);
+  const created = createShortcut(
+    'Desktop', 'Agent-Bridge.lnk',
+    path.join(SCRIPTS_DIR, 'open-board.vbs'),
+    'Agent-Bridge: Cross-Agent & Human Collaborative Board');
+  console.log('  + ' + created);
+
+  // An install that guessed the folder may have left a shortcut in the profile
+  // directory. It is invisible when the Desktop is redirected, so say so rather
+  // than leave a second icon pointing wherever the previous install lived.
+  const guessed = path.join(USER_PROFILE, 'Desktop', 'Agent-Bridge.lnk');
+  if (path.resolve(guessed) !== path.resolve(created) && fs.existsSync(guessed)) {
+    warnCount++;
+    console.warn('  Note: an older shortcut remains at ' + guessed);
+    console.warn('        Your Desktop is redirected, so that one is not the icon you see. Delete it.');
+  }
 } catch (e) {
   warnCount++;
-  console.error(`  ⚠️ Failed to create Desktop shortcut: ${e.message}`);
+  console.error('  Failed to create Desktop shortcut: ' + e.message);
 }
 
 // 7. Add background daemon to Windows Startup
-console.log('\n[7/8] Adding background daemon to Windows Startup...');
+console.log('');
+console.log('[7/8] Adding background daemon to Windows Startup...');
 try {
-  const startupDir = path.join(APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
-  const startupLnk = path.join(startupDir, 'Agent-Bridge-Server.lnk');
-  const hiddenVbs = path.join(SCRIPTS_DIR, 'board-ui-hidden.vbs');
-  const vbs = `
-Set WshShell = CreateObject("WScript.Shell")
-Set lnk = WshShell.CreateShortcut("${startupLnk.replace(/\\/g, '\\\\')}")
-lnk.TargetPath = "wscript.exe"
-lnk.Arguments = "${hiddenVbs.replace(/\\/g, '\\\\')}"
-lnk.WorkingDirectory = "${SCRIPTS_DIR.replace(/\\/g, '\\\\')}"
-lnk.Description = "Agent-Bridge Server Background Daemon"
-lnk.Save
-`;
-  const tmpVbs = path.join(SCRIPTS_DIR, '_tmp_startup.vbs');
-  fs.writeFileSync(tmpVbs, vbs, 'utf8');
-  execSync(`cscript //nologo "${tmpVbs}"`);
-  try { fs.unlinkSync(tmpVbs); } catch (_) {}
-  console.log(`  ✅ Startup configured: ${startupLnk}`);
+  const created = createShortcut(
+    'Startup', 'Agent-Bridge-Server.lnk',
+    path.join(SCRIPTS_DIR, 'board-ui-hidden.vbs'),
+    'Agent-Bridge Server Background Daemon');
+  console.log('  + ' + created);
 } catch (e) {
   warnCount++;
-  console.error(`  ⚠️ Failed to configure Startup: ${e.message}`);
+  console.error('  Failed to configure Startup: ' + e.message);
 }
 
 // 8. Bridge configuration
