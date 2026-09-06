@@ -274,6 +274,10 @@ function materialise(text) {
 }
 
 const TEXT_EXT = ['.md', '.py', '.json', '.txt', '.cmd', '.ps1'];
+// A skill folder holds instructions and scripts, never archives. One left
+// beside them is copied into every agent's skill directory and then packed
+// into the Claude Desktop bundle — a zip inside a zip inside a skill.
+const SKIP_EXT = ['.zip', '.7z', '.rar', '.tar', '.gz'];
 function isText(name) {
   const lower = name.toLowerCase();
   return TEXT_EXT.some(function (e) { return lower.endsWith(e); });
@@ -287,6 +291,7 @@ function copySkillTree(srcDir, dstDir) {
     const dst = path.join(dstDir, entry.name);
     if (path.resolve(src) === path.resolve(dst)) continue;
     if (entry.isDirectory()) { n += copySkillTree(src, dst); continue; }
+    if (SKIP_EXT.some(function (e) { return entry.name.toLowerCase().endsWith(e); })) continue;
     if (isText(entry.name)) {
       fs.writeFileSync(dst, materialise(fs.readFileSync(src, 'utf8')), 'utf8');
     } else {
