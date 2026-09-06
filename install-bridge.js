@@ -392,8 +392,44 @@ try {
       fs.rmSync(stageDir, { recursive: true, force: true });
       copySkillTree(skillSourceDir, stageDir);
       fs.rmSync(zipPath, { force: true });
-      const ps = 'Compress-Archive -Path "' + stageDir + '" -DestinationPath "' + zipPath + '" -Force';
-      execSync('powershell -NoProfile -ExecutionPolicy Bypass -Command ' + JSON.stringify(ps), { stdio: 'ignore' });
+      // Compress-Archive writes entry names with backslashes on Windows
+      // PowerShell. The ZIP format specifies forward slashes; most unpackers
+      // forgive it, but Claude Desktop refuses the archive outright with
+      // "Zip file contains path with invalid characters". Build the entries
+      // by hand so the separator is right.
+      const BS = String.fromCharCode(92);
+      const q = function (v) { return String.fromCharCode(39) + v + String.fromCharCode(39); };
+      const psLines = [
+        'param([string]$Source, [string]$Zip, [string]$Prefix)',
+        '$ErrorActionPreference = ' + q('Stop'),
+        'Add-Type -AssemblyName System.IO.Compression',
+        'Add-Type -AssemblyName System.IO.Compression.FileSystem',
+        'if (Test-Path $Zip) { Remove-Item $Zip -Force }',
+        '$root = (Resolve-Path $Source).Path.TrimEnd(' + q(BS) + ')',
+        '$fs = [System.IO.File]::Open($Zip, ' + q('Create') + ')',
+        // $Zip is declared [string]; PowerShell variables are case
+        // insensitive, so naming the archive $zip would coerce it back
+        // into a string and every method call on it would fail.
+        '$archive = New-Object System.IO.Compression.ZipArchive($fs, ' + q('Create') + ')',
+        'foreach ($f in Get-ChildItem -LiteralPath $root -Recurse -File) {',
+        '  $rel = $f.FullName.Substring($root.Length + 1).Replace(' + q(BS) + ', ' + q('/') + ')',
+        '  $name = $Prefix + ' + q('/') + ' + $rel',
+        '  $e = $archive.CreateEntry($name, [System.IO.Compression.CompressionLevel]::Optimal)',
+        '  $s = $e.Open()',
+        '  $b = [System.IO.File]::ReadAllBytes($f.FullName)',
+        '  $s.Write($b, 0, $b.Length)',
+        '  $s.Dispose()',
+        '}',
+        '$archive.Dispose()',
+        '$fs.Dispose()'
+      ];
+      const zipPs = path.join(SCRIPTS_DIR, '_tmp_skillzip.ps1');
+      fs.writeFileSync(zipPs, psLines.join(String.fromCharCode(13, 10)), 'utf8');
+      try {
+        execSync('powershell -NoProfile -ExecutionPolicy Bypass -File "' + zipPs + '" -Source "' + stageDir + '" -Zip "' + zipPath + '" -Prefix agent-bridge', { stdio: 'ignore' });
+      } finally {
+        try { fs.unlinkSync(zipPs); } catch (_) {}
+      }
       fs.rmSync(stageDir, { recursive: true, force: true });
       console.log('  + Claude Desktop: upload ' + zipPath + ' via Settings > Capabilities > Skills');
     } catch (e) {
