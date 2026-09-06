@@ -66,9 +66,9 @@ const PRIORITIES = ['P0', 'normal', 'fyi'];
 const STATUSES = ['info', 'question', 'answer', 'working', 'done', 'blocked', 'ack'];
 
 // ── Board (SQLite via bridge-db) ────────────────────────────────────────────────────────
-function readBoard() {
+function readBoard(options = {}) {
   try {
-    return bridgeDb.readAllMessages();
+    return bridgeDb.readAllMessages(options);
   } catch (e) {
     console.error('Board cannot be read:', e.message);
     return [];
@@ -132,8 +132,8 @@ function bodyOf(m) {
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────────────────
-function apiBoard() {
-  const board = readBoard();
+function apiBoard(options = {}) {
+  const board = readBoard(options);
   if (board === null) return { error: 'Failed to read board' };
   let cursors = {};
   try { cursors = bridgeDb.readCursors(); } catch (_) {}
@@ -169,11 +169,21 @@ function apiPost(data) {
     const parent = bridgeDb.getMessageById(replyTo);
     if (parent) {
       if (!to || to === 'all') to = parent.from;
-      if (!toSession) toSession = parent.fromSession || '';
+      if (!toSession && to === parent.from) toSession = parent.fromSession || '';
       if (!topic && parent.topic) topic = parent.topic;
     }
   }
   if (!to) to = 'all';
+
+  // If toSession belongs to a different agent, clear it to prevent cross-agent routing defects
+  if (to && to !== 'all' && toSession) {
+    try {
+      const sRow = bridgeDb.getDb().prepare('SELECT agent FROM sessions WHERE session_id = ?').get(toSession);
+      if (sRow && sRow.agent && sRow.agent.toLowerCase() !== to.toLowerCase()) {
+        toSession = '';
+      }
+    } catch (_) {}
+  }
 
   const attachedFile = (data.file && typeof data.file === 'string') ? data.file.trim() : null;
 
@@ -1318,12 +1328,27 @@ function priorityHelp(p){
 async function load(full){
   if(PAUSED&&!full)return;
   try{
-    const r=await fetch('/api/board');
-    const j=await r.json();
+    const topId = (!full && DATA.length > 0) ? (DATA[DATA.length - 1].id || 0) : 0;
+    const url = topId > 0 ? ('/api/board?since=' + topId) : '/api/board';
+    const r = await fetch(url);
+    const j = await r.json();
     if(j.error){$('#stat').textContent=j.error;return;}
-    DATA=j.messages;
-    render(full);
-    updateSemaphore();
+    if(topId > 0){
+      const incoming = j.messages || [];
+      if(incoming.length > 0){
+        for(const m of incoming){
+          const idx = DATA.findIndex(x => x.id === m.id);
+          if(idx >= 0) DATA[idx] = m;
+          else DATA.push(m);
+        }
+        render(false);
+        updateSemaphore();
+      }
+    }else{
+      DATA = j.messages || [];
+      render(full);
+      updateSemaphore();
+    }
   }catch(e){$('#stat').textContent='server not responding';}
 }
 
@@ -1333,35 +1358,71 @@ function updateSemaphore(){
   const title=$('#semTitle');
   if(!dot||!title)return;
 
+  const slice = DATA.slice(-80);
+  const replied = new Set();
+  for(let i = 0; i < slice.length; i++){
+    if(slice[i].replyTo) replied.add(slice[i].replyTo);
+  }
+
   // 1. Check for active blocked messages
-  const blockedMsgs=DATA.filter(m=>m.status==='blocked'&&!DATA.some(x=>(x.replyTo===m.id)||(x.topic&&x.topic===m.topic&&x.id>m.id&&(x.status==='done'||x.status==='info'))));
-  if(blockedMsgs.length>0){
-    const bm=blockedMsgs[blockedMsgs.length-1];
-    dot.className='sem-dot red pulse';
-    title.textContent='Blocked: '+(bm.from||'Agent');
-    sem.title='Agent Blocked: '+(bm.from||'Agent')+' on #'+(bm.topic||bm.id)+': '+(bm.text||'');
-    return;
+  for(let i = slice.length - 1; i >= 0; i--){
+    const m = slice[i];
+    if(m.status === 'blocked' && !replied.has(m.id)){
+      let resolved = false;
+      if(m.topic){
+        for(let j = i + 1; j < slice.length; j++){
+          if(slice[j].topic === m.topic && (slice[j].status === 'done' || slice[j].status === 'info')){
+            resolved = true; break;
+          }
+        }
+      }
+      if(!resolved){
+        dot.className='sem-dot red pulse';
+        title.textContent='Blocked: '+(m.from||'Agent');
+        sem.title='Agent Blocked: '+(m.from||'Agent')+' on #'+(m.topic||m.id)+': '+(m.text||'');
+        return;
+      }
+    }
   }
 
   // 2. Check for active working messages
-  const workingMsgs=DATA.filter(m=>m.status==='working'&&!DATA.some(x=>(x.fromSession&&x.fromSession===m.fromSession&&x.id>m.id&&(x.status==='done'||x.status==='question'||x.status==='info'))||(x.topic&&x.topic===m.topic&&x.id>m.id&&x.status==='done')));
-  if(workingMsgs.length>0){
-    const wm=workingMsgs[workingMsgs.length-1];
-    const sObj=wm.fromSession?SESSIONS.find(s=>s.sessionId===wm.fromSession):null;
-    const sName=sObj?(sObj.customName||sObj.sessionId):wm.from||'Agent';
-    dot.className='sem-dot yellow pulse';
-    title.textContent='Working: '+sName;
-    sem.title='Agent Working: '+sName+' — '+(wm.progress||wm.topic||wm.text||'');
-    return;
+  for(let i = slice.length - 1; i >= 0; i--){
+    const m = slice[i];
+    if(m.status === 'working'){
+      let finished = false;
+      for(let j = i + 1; j < slice.length; j++){
+        const x = slice[j];
+        if(m.fromSession && x.fromSession === m.fromSession && (x.status === 'done' || x.status === 'question' || x.status === 'info')){
+          finished = true; break;
+        }
+        if(m.topic && x.topic === m.topic && x.status === 'done'){
+          finished = true; break;
+        }
+      }
+      if(!finished){
+        const sObj = m.fromSession ? SESSIONS.find(s => s.sessionId === m.fromSession) : null;
+        const sName = sObj ? (sObj.customName || sObj.sessionId) : (m.from || 'Agent');
+        dot.className = 'sem-dot yellow pulse';
+        title.textContent = 'Working: ' + sName;
+        sem.title = 'Agent Working: ' + sName + ' — ' + (m.progress || m.topic || m.text || '');
+        return;
+      }
+    }
   }
 
   // 3. Check for unanswered questions
-  const questions=DATA.filter(m=>m.status==='question'&&!DATA.some(x=>x.replyTo===m.id));
-  if(questions.length>0){
+  const openQuestions = [];
+  for(let i = 0; i < slice.length; i++){
+    const m = slice[i];
+    if(m.status === 'question' && !replied.has(m.id)){
+      openQuestions.push(m);
+    }
+  }
+  if(openQuestions.length > 0){
     dot.className='sem-dot blue';
-    const latestQ=questions[questions.length-1];
-    title.textContent='Questions ('+questions.length+')';
-    sem.title=questions.length+' question(s) awaiting response — latest from '+latestQ.from+' on #'+(latestQ.topic||latestQ.id);
+    const latestQ = openQuestions[openQuestions.length - 1];
+    title.textContent = 'Questions (' + openQuestions.length + ')';
+    sem.title = openQuestions.length + ' question(s) awaiting response — latest from ' + latestQ.from + ' on #' + (latestQ.topic || latestQ.id);
     return;
   }
 
@@ -1373,7 +1434,23 @@ function updateSemaphore(){
 
 function visible(){
   let items=DATA;
-  if(SFILTER)items=items.filter(m=>(m.fromSession||'')===SFILTER||(m.toSession||'')===SFILTER);
+  if(SFILTER){
+    const sessionMsgIds = new Set();
+    for(const m of DATA){
+      if((m.fromSession||'') === SFILTER || (m.toSession||'') === SFILTER){
+        sessionMsgIds.add(m.id);
+      }
+    }
+    // Include replies in threads of visible messages (transitive 2 passes)
+    for(let pass = 0; pass < 2; pass++){
+      for(const m of DATA){
+        if(m.replyTo && sessionMsgIds.has(m.replyTo)){
+          sessionMsgIds.add(m.id);
+        }
+      }
+    }
+    items = items.filter(m => sessionMsgIds.has(m.id));
+  }
   if(FILTER==='P0')items=items.filter(m=>m.priority==='P0');
   else if(FILTER==='human')items=items.filter(m=>kind(m.from)==='human');
   else if(FILTER!=='all')items=items.filter(m=>m.from===FILTER);
@@ -1942,12 +2019,23 @@ window.setQuick=function(tgt){
       updateTargetBanner();
       return;
     }
+    const topicVal = ($('#topic') ? $('#topic').value : '').trim().toLowerCase();
     const matches=SESSIONS.filter(s=>s.agent===tgt);
-    if(matches.length>0){
-      window.setTargetSession(matches[0].sessionId);
-    }else{
-      if(sel)sel.value='';
+    let bestMatch = null;
+    if (topicVal) {
+      bestMatch = matches.find(s => (s.topics || []).some(t => t.toLowerCase() === topicVal));
+    }
+    if (!bestMatch && matches.length > 0) {
+      bestMatch = matches[0];
+    }
+    if (bestMatch) {
+      window.setTargetSession(bestMatch.sessionId);
+    } else {
+      if (sel) sel.value = '';
+      SFILTER = null;
       updateTargetBanner();
+      renderSessions();
+      render(true);
     }
   }
 };
@@ -2020,8 +2108,14 @@ const server = http.createServer((req, res) => {
     const page = HTML.replace('__ADMIN_NAME__', admin.replace(/"/g, '&quot;'));
     return send(res, 200, 'text/html; charset=utf-8', page);
   }
-  if (req.method === 'GET' && req.url === '/api/board') {
-    return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(apiBoard()));
+  if (req.method === 'GET' && (req.url === '/api/board' || req.url.startsWith('/api/board?'))) {
+    const q = new URL(req.url, 'http://127.0.0.1').searchParams;
+    const sinceParam = q.get('since');
+    const opts = {};
+    if (sinceParam !== null) {
+      opts.since = Number(sinceParam) || 0;
+    }
+    return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(apiBoard(opts)));
   }
   if (req.method === 'GET' && req.url === '/api/sessions') {
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(apiSessions()));

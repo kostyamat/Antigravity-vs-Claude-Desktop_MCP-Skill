@@ -82,6 +82,28 @@ def main():
                               substr(replace(coalesce(message, ''), char(10), ' '), 1, 80)
                        from messages order by id desc limit ?""", (SHOW_LAST,))
         last = cur.fetchall()
+
+        # Session detection for watchman recommendation (safe non-blocking)
+        hook_session = os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("BRIDGE_SESSION")
+        if not hook_session:
+            try:
+                cwd_base = os.path.basename(os.getcwd()).strip().lower()
+                if cwd_base:
+                    cur.execute("""
+                        SELECT session_id, project FROM sessions
+                        WHERE lower(agent) = lower(?)
+                        ORDER BY last_seen DESC
+                    """, (ME,))
+                    for sid, proj in cur.fetchall():
+                        if proj and cwd_base in proj.strip().lower():
+                            hook_session = sid.strip()
+                            break
+                        if cwd_base in sid.lower():
+                            hook_session = sid.strip()
+                            break
+            except Exception:
+                pass
+
         con.close()
     except Exception:
         return 0
@@ -96,10 +118,11 @@ def main():
         lines.append("  #%-4s %-9s %-20s %s" % (i, who, topic[:20], head[:66]))
 
     watch = "%s/watch_board.py" % os.path.dirname(DB).replace("\\", "/")
+    cmd_str = ('python3 %s --session %s' % (watch, hook_session)) if hook_session else ('python3 %s' % watch)
     lines += [
         "",
         "MANDATORY FIRST ACTION, before anything else in this session:",
-        '  Monitor({command: "python3 %s", persistent: true})' % watch,
+        '  Monitor({command: "%s", persistent: true})' % cmd_str,
         "",
         "This is not a suggestion. The watchman is session-scoped: it died with the previous",
         "session and does not exist right now. Without it, messages from the human and from the",

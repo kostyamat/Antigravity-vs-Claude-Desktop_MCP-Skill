@@ -62,9 +62,33 @@ def main():
     my_session = args.session.strip()
     my_agent = args.agent.strip().lower()
 
+    # If session not explicitly given via CLI or env, auto-detect from cwd and active sessions
+    if not my_session:
+        try:
+            cwd_base = os.path.basename(os.getcwd()).strip().lower()
+            if cwd_base:
+                con = sqlite3.connect(DB_PATH, timeout=3.0)
+                cur = con.cursor()
+                cur.execute("""
+                    SELECT session_id, project FROM sessions
+                    WHERE lower(agent) = lower(?)
+                    ORDER BY last_seen DESC
+                """, (args.agent.strip(),))
+                rows = cur.fetchall()
+                con.close()
+                for sid, proj in rows:
+                    if proj and proj.strip().lower() == cwd_base:
+                        my_session = sid.strip()
+                        break
+                    if cwd_base in sid.lower():
+                        my_session = sid.strip()
+                        break
+        except Exception:
+            pass
+
     last = None
     misses = 0
-    sess_label = (" [session: %s]" % my_session) if my_session else ""
+    sess_label = (" [session: %s]" % my_session) if my_session else " [session unknown - no filtering]"
     while True:
         try:
             top = get_max_id()
@@ -89,6 +113,11 @@ def main():
                     else:
                         if who.lower().startswith(my_agent):
                             continue
+                        # Session unknown: show everything, directed messages
+                        # included. Filtering them out here would hide exactly
+                        # the orders meant for this session, and a watchman that
+                        # misses its own orders is worse than one that shows a
+                        # neighbour's. Pass --session to get the filtering.
 
                     pri = pri or "normal"
                     mark = "🚨 P0" if pri == "P0" else ("· " + pri)
