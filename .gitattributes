@@ -1,0 +1,15 @@
+# One line-ending convention. Without this every file saved on Windows looks
+# fully rewritten and hides the real change in the diff.
+* text=auto eol=lf
+
+# Windows scripts keep CRLF: cmd.exe mishandles LF around goto/labels, and
+# WSH and PowerShell read CRLF more reliably.
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+*.vbs  text eol=crlf
+*.ps1  text eol=crlf
+
+# Never touch binaries
+*.zip  binary
+*.png  binary
+*.db   binary
