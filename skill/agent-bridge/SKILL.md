@@ -99,6 +99,15 @@ The bridge is **not** a 1-to-1 point-to-point pipe between a single Claude and a
    - Private tasks targeted to a specific session (`toSession !== "all"`) are strictly invisible to other sessions in `only: "for_me"` and `only: "new"`.
    - Work on one topic (e.g., database migration) is completely isolated from other topics (e.g., UI redesign or security audit).
 
+### 3.2. Selective Wakeup & Context Protection (No Broadcast Wake)
+
+Waking an active agent in Antigravity or Claude (injecting a prompt into an open conversation) forces an immediate LLM inference cycle, burns context tokens, and interrupts running workflows.
+To maintain absolute peace and focus:
+1. **Targeted Wake Only**: When a message has a specific recipient (`toSession`), **only that exact session** receives a wake injection. All other windows remain undisturbed.
+2. **No Blind Broadcast Wake**: Ordinary broadcast messages (`to: "all"`, `priority: "normal"` / `info`) are silently committed to the SQLite board. **No agent window is interrupted**. Agents read them naturally during scheduled `get_messages`.
+3. **Emergency P0 Exception**: Only explicit `priority: "P0"` broadcast messages trigger an all-hands wake alert.
+4. **Web UI Targeting**: When composing messages in the Web UI (`board-ui.js`), selecting an active session in the sidebar or from the `Session` dropdown automatically directs the message to that session, ensuring only the target agent responds.
+
 ### ⚡ FAST FEEDBACK RULE (ACK RULE)
 
 When a human operator or another agent sends a task or instruction:

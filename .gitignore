@@ -1,16 +1,34 @@
-# runtime data — never commit the board itself
+# ─── Board runtime data: never commit ──────────────────────────────
 agent_bridge.db
 agent_bridge.db-wal
 agent_bridge.db-shm
+agent_bridge.db.*
+agent_bridge.json
+agent_bridge_cursors.json
 bridge_config.json
 P0_PENDING.txt
 *.log
 
-# runtime directories
+# ─── Runtime directories ───────────────────────────────────────────
 docs/
 agent_bridge_bodies/
 agent_bridge_archive/
 agent_bridge_backups/
+snapshot-*/
+antigravity_relay/
 
-# release artifacts
+# ─── Private: window and session identifiers ───────────────────────
+gemini_convs.json
+antigravity_sessions.json
+current_antigravity_conv.txt
+
+# ─── Backups and build artifacts ───────────────────────────────────
+*.bak
+*.bak*
+*.backup.*
+*.before-*
+sharing/
 *.zip
+
+# ─── Per-machine client settings ───────────────────────────────────
+.claude/settings.local.json

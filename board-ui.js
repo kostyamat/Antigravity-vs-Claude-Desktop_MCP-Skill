@@ -1041,14 +1041,18 @@ textarea:focus {
         <button type="button" data-v="Claude"><code class="nt">Claude</code></button>
         <button type="button" data-v="Gemini"><code class="nt">Gemini</code></button>
       </div>
+      <span class="lbl" style="min-width:55px">Session</span>
+      <select id="toSession" style="flex:1 1 220px;background:var(--surface-variant);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--ink);padding:4px 8px;font-size:12px;font-family:inherit" title="Target specific session. When selected, only this session wakes up.">
+        <option value="">📢 All / Broadcast (no direct wake)</option>
+      </select>
+    </div>
+    <div class="row pick">
       <span class="lbl">Priority</span>
       <div class="seg" id="priority" data-v="normal">
         <button type="button" data-v="normal" class="on" title="Ordinary message"><code class="nt">normal</code></button>
         <button type="button" data-v="P0" title="High priority interrupt — rings alarm on the agent side">🚨 <code class="nt">P0</code></button>
         <button type="button" data-v="fyi" title="For your information — read when convenient"><code class="nt">fyi</code></button>
       </div>
-    </div>
-    <div class="row pick">
       <span class="lbl">Status</span>
       <div class="seg" id="status" data-v="info">
         <button type="button" data-v="info" class="on" title="Informational update"><code class="nt">info</code></button>
@@ -1271,8 +1275,12 @@ function reply(id){
   $('#topic').value=m.topic||'';
   const dst=(m.from==='Claude'||m.from==='Gemini')?m.from:'all';
   segSet('to',dst);
+  const sel=$('#toSession');
+  if(sel){
+    sel.value=m.fromSession||'';
+  }
   segSet('status','answer');
-  $('#hint').innerHTML='↳ Replying to <code class="nt">#'+id+'</code> → <code class="nt">'+esc(dst)+'</code>';
+  $('#hint').innerHTML='↳ Replying to <code class="nt">#'+id+'</code> → <code class="nt">'+esc(dst)+'</code>'+(m.fromSession?' [<code class="nt">'+esc(m.fromSession)+'</code>]':'');
   flashForm();
   $('#compose').scrollIntoView({behavior:'smooth',block:'center'});
   $('#text').focus();
@@ -1291,13 +1299,14 @@ $('#compose').addEventListener('submit',async e=>{
   e.preventDefault();
   const text=$('#text').value.trim();if(!text)return;
   let r;
+  const toSessionVal=($('#toSession')?$('#toSession').value:'').trim();
   if(EDIT){
     r=await fetch('/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({id:EDIT,text,editedBy:$('#from').value})});
     EDIT=null;$('#hint').textContent='Ctrl+Enter to send';
   }else{
     r=await fetch('/api/post',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({from:$('#from').value,to:segGet('to'),topic:$('#topic').value,
+      body:JSON.stringify({from:$('#from').value,to:segGet('to'),toSession:toSessionVal,topic:$('#topic').value,
         priority:segGet('priority'),status:segGet('status'),replyTo:$('#replyTo').value,text})});
   }
   const j=await r.json();
@@ -1349,6 +1358,19 @@ window.renameSession = async function(key, currentName){
   } catch (e) { alert('Failed to rename: ' + e.message); }
 };
 
+function populateSessionSelect(){
+  const sel=$('#toSession');if(!sel)return;
+  const curr=sel.value;
+  let html='<option value="">📢 All / Broadcast (no direct wake)</option>';
+  for(const s of SESSIONS){
+    const icon=s.agent==='Claude'?'🤖':(s.agent==='Gemini'?'✨':'👤');
+    const name=s.customName||s.sessionId;
+    html+='<option value="'+esc(s.sessionId)+'">'+icon+' '+esc(name)+' ('+esc(s.agent)+')</option>';
+  }
+  sel.innerHTML=html;
+  if(curr)sel.value=curr;
+}
+
 function renderSessions(){
   const el=$('#slist');
   if(!SESSIONS.length){el.innerHTML='<div class="hint">No sessions found</div>';return;}
@@ -1374,8 +1396,9 @@ function renderSessions(){
           '<button class="sbtn sbtn-poke" data-act="poke" title="Send a high priority wake notification">🚨 Wake</button>'+
         '</div>'+
       '</div>'+
-    '</div>';
+      '</div>';
   }).join('');
+  populateSessionSelect();
 }
 
 $('#slist').addEventListener('click',async e=>{
@@ -1399,7 +1422,35 @@ $('#slist').addEventListener('click',async e=>{
   }
   SFILTER=(SFILTER===sid)?null:sid;
   renderSessions();render(true);
+  const sel=$('#toSession');
+  if(SFILTER){
+    if(sel)sel.value=SFILTER;
+    segSet('to',s.agent);
+    $('#hint').innerHTML='🎯 Targeting: <code class="nt">'+esc(s.customName||s.sessionId)+'</code> ('+esc(s.agent)+')';
+    flashForm();
+  }else{
+    if(sel)sel.value='';
+    segSet('to','all');
+    $('#hint').textContent='Ctrl+Enter to send';
+  }
 });
+
+const toSessEl=$('#toSession');
+if(toSessEl){
+  toSessEl.addEventListener('change',e=>{
+    const val=e.target.value;
+    if(!val){
+      segSet('to','all');
+      $('#hint').textContent='Ctrl+Enter to send';
+      return;
+    }
+    const s=SESSIONS.find(x=>x.sessionId===val);
+    if(s){
+      segSet('to',s.agent);
+      $('#hint').innerHTML='🎯 Targeting: <code class="nt">'+esc(s.customName||s.sessionId)+'</code> ('+esc(s.agent)+')';
+    }
+  });
+}
 
 $('#pokeAll').onclick=async()=>{
   const what=prompt('Wake everyone.\n\nWhat should they stop or execute?');
@@ -1434,14 +1485,28 @@ window.setQuick=function(tgt){
   $('#prGemini').classList.toggle('on', tgt==='Gemini');
   $('#prClaude').classList.toggle('on', tgt==='Claude');
   $('#prNewTask').classList.remove('on');
+  const sel=$('#toSession');
+  if(tgt==='all'){
+    if(sel)sel.value='';
+    $('#hint').textContent='Ctrl+Enter to send';
+  }else{
+    const matches=SESSIONS.filter(s=>s.agent===tgt);
+    if(matches.length===1&&sel){
+      sel.value=matches[0].sessionId;
+      $('#hint').innerHTML='🎯 Targeting: <code class="nt">'+esc(matches[0].customName||matches[0].sessionId)+'</code> ('+esc(tgt)+')';
+    }
+  }
 };
 
 window.newTask=function(){
   $('#replyTo').value = '';
   $('#topic').value = '';
   $('#text').value = '';
+  const sel=$('#toSession');if(sel)sel.value='';
+  segSet('to','all');
   segSet('status', 'question');
   segSet('priority', 'normal');
+  $('#hint').textContent='Ctrl+Enter to send';
   $('#prNewTask').classList.add('on');
   $('#topic').focus();
 };

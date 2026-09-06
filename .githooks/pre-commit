@@ -1,0 +1,54 @@
+#!/bin/sh
+# Guard against leaking private data into this public repository.
+#
+# This repo is developed on a machine where several agents write notes in
+# Cyrillic and reference local absolute paths. Those must never be published.
+# Enable with:  git config core.hooksPath .githooks
+#
+# Bypass for a single commit (only if you are certain):  git commit --no-verify
+
+fail=0
+
+# Cyrillic in UTF-8 always begins with lead byte 0xD0 or 0xD1 (U+0400-U+047F).
+# The class is built with printf because GNU grep understands hex escapes only
+# under -P, and -P needs a UTF-8 locale Git for Windows does not always provide.
+CYR=$(printf '[\xd0\xd1][\x80-\xbf]')
+files=$(git diff --cached --name-only --diff-filter=ACM)
+
+for f in $files; do
+    case "$f" in
+        .githooks/*) continue ;;
+        *.zip|*.png|*.jpg|*.ico|LICENSE) continue ;;
+    esac
+
+    # README is intentionally bilingual (English + Ukrainian); it is exempt from
+    # the Cyrillic check but still checked for private data below.
+    skip_cyr=0
+    case "$f" in README.md|*.uk.md) skip_cyr=1 ;; esac
+    [ -f "$f" ] || continue
+
+    # Cyrillic in UTF-8 always starts with lead byte 0xD0 or 0xD1. Matching raw
+    # bytes under LC_ALL=C works everywhere; grep -P needs a UTF-8 locale that
+    # Git for Windows does not reliably provide.
+    hits=""
+    [ "$skip_cyr" -eq 0 ] && hits=$(git show ":$f" | LC_ALL=C grep -n "$CYR" | head -5)
+    if [ -n "$hits" ]; then
+        echo "BLOCKED  $f  — Cyrillic text (working notes must not be published):"
+        echo "$hits" | sed 's/^/         /'
+        fail=1
+    fi
+
+    hits=$(git show ":$f" | grep -nEi '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|[A-Za-z]:\\(scripts|repos|gemini)|[A-Za-z]:/(scripts|repos|gemini)|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -5)
+    if [ -n "$hits" ]; then
+        echo "BLOCKED  $f  — e-mail, local absolute path or session UUID:"
+        echo "$hits" | sed 's/^/         /'
+        fail=1
+    fi
+done
+
+if [ "$fail" -ne 0 ]; then
+    echo ""
+    echo "Commit refused. Remove the findings above, or use --no-verify if they are false positives."
+    exit 1
+fi
+exit 0
