@@ -23,6 +23,9 @@ const APPDATA = process.env.APPDATA || path.join(USER_PROFILE, 'AppData', 'Roami
 
 let errorCount = 0;
 let warnCount = 0;
+// Claude Desktop takes its Skill only by hand. Remember where the bundle was
+// written so the closing summary can name the one step left to the human.
+let desktopBundlePath = null;
 
 console.log('════════════════════════════════════════════════════════════════');
 console.log('🚀 Agent-Bridge v2: Complete Ecosystem Deployment & Setup');
@@ -273,6 +276,50 @@ function materialise(text) {
     .split('{{BRIDGE_HOME}}').join(SCRIPTS_DIR);
 }
 
+const BS = String.fromCharCode(92);
+function vbsStr(s) {
+  return '"' + String(s).split('"').join('""') + '"';
+}
+
+// Windows shell folders are not where a profile path suggests. OneDrive moves
+// the Desktop into its own tree, and a localized Windows names it in the user's
+// language — Escritorio, Bureau, Schreibtisch. WScript.Shell and User Shell Folders
+// registry resolve the real folder so shortcuts and skill bundles land where the
+// user actually sees them.
+function resolveSpecialFolder(specialFolder) {
+  try {
+    const regKey = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders';
+    const regOut = execSync('reg query "' + regKey + '" /v ' + specialFolder, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const match = regOut.match(new RegExp(specialFolder + '\\s+REG_[^\\s]+\\s+(.+)', 'i'));
+    if (match && match[1]) {
+      let resolved = match[1].trim().replace(/%([^%]+)%/g, function (_, v) { return process.env[v] || ''; });
+      if (fs.existsSync(resolved)) return resolved;
+    }
+  } catch (_) {}
+
+  const lines = [
+    'Set WshShell = CreateObject("WScript.Shell")',
+    'folder = WshShell.SpecialFolders(' + vbsStr(specialFolder) + ')',
+    'If folder = "" Then',
+    '  WScript.Echo "UNRESOLVED"',
+    '  WScript.Quit 1',
+    'End If',
+    'WScript.Echo folder'
+  ];
+  const tmpVbs = path.join(SCRIPTS_DIR, '_tmp_folder_' + specialFolder + '.vbs');
+  try {
+    fs.writeFileSync(tmpVbs, lines.join('\r\n'), 'utf8');
+    const out = execSync('cscript //nologo "' + tmpVbs + '"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (out && out !== 'UNRESOLVED' && fs.existsSync(out)) return out;
+  } catch (_) {}
+  finally {
+    try { fs.unlinkSync(tmpVbs); } catch (_) {}
+  }
+
+  const fallback = path.join(USER_PROFILE, specialFolder);
+  return fs.existsSync(fallback) ? fallback : null;
+}
+
 const TEXT_EXT = ['.md', '.py', '.json', '.txt', '.cmd', '.ps1'];
 // A skill folder holds instructions and scripts, never archives. One left
 // beside them is copied into every agent's skill directory and then packed
@@ -383,11 +430,13 @@ try {
 
     // Claude Desktop (the chat app) has no skills folder on disk: skills are
     // uploaded through Settings -> Capabilities -> Skills. Build the archive
-    // here so the human only has to drag one file.
+    // here (Claude_skill_bridge.zip with SKILL.md at the root) and copy it
+    // directly to the user's real Desktop.
     try {
       const shareDir = path.join(SCRIPTS_DIR, 'sharing');
       const stageDir = path.join(shareDir, 'agent-bridge');
-      const zipPath = path.join(shareDir, 'agent-bridge-skill.zip');
+      const zipName = 'Claude_skill_bridge.zip';
+      const zipPath = path.join(shareDir, zipName);
       fs.mkdirSync(shareDir, { recursive: true });
       fs.rmSync(stageDir, { recursive: true, force: true });
       copySkillTree(skillSourceDir, stageDir);
@@ -397,10 +446,9 @@ try {
       // forgive it, but Claude Desktop refuses the archive outright with
       // "Zip file contains path with invalid characters". Build the entries
       // by hand so the separator is right.
-      const BS = String.fromCharCode(92);
       const q = function (v) { return String.fromCharCode(39) + v + String.fromCharCode(39); };
       const psLines = [
-        'param([string]$Source, [string]$Zip, [string]$Prefix)',
+        'param([string]$Source, [string]$Zip)',
         '$ErrorActionPreference = ' + q('Stop'),
         'Add-Type -AssemblyName System.IO.Compression',
         'Add-Type -AssemblyName System.IO.Compression.FileSystem',
@@ -413,8 +461,7 @@ try {
         '$archive = New-Object System.IO.Compression.ZipArchive($fs, ' + q('Create') + ')',
         'foreach ($f in Get-ChildItem -LiteralPath $root -Recurse -File) {',
         '  $rel = $f.FullName.Substring($root.Length + 1).Replace(' + q(BS) + ', ' + q('/') + ')',
-        '  $name = $Prefix + ' + q('/') + ' + $rel',
-        '  $e = $archive.CreateEntry($name, [System.IO.Compression.CompressionLevel]::Optimal)',
+        '  $e = $archive.CreateEntry($rel, [System.IO.Compression.CompressionLevel]::Optimal)',
         '  $s = $e.Open()',
         '  $b = [System.IO.File]::ReadAllBytes($f.FullName)',
         '  $s.Write($b, 0, $b.Length)',
@@ -426,12 +473,31 @@ try {
       const zipPs = path.join(SCRIPTS_DIR, '_tmp_skillzip.ps1');
       fs.writeFileSync(zipPs, psLines.join(String.fromCharCode(13, 10)), 'utf8');
       try {
-        execSync('powershell -NoProfile -ExecutionPolicy Bypass -File "' + zipPs + '" -Source "' + stageDir + '" -Zip "' + zipPath + '" -Prefix agent-bridge', { stdio: 'ignore' });
+        execSync('powershell -NoProfile -ExecutionPolicy Bypass -File "' + zipPs + '" -Source "' + stageDir + '" -Zip "' + zipPath + '"', { stdio: 'ignore' });
       } finally {
         try { fs.unlinkSync(zipPs); } catch (_) {}
       }
       fs.rmSync(stageDir, { recursive: true, force: true });
-      console.log('  + Claude Desktop: upload ' + zipPath + ' via Settings > Capabilities > Skills');
+
+      const realDesktop = resolveSpecialFolder('Desktop');
+      if (realDesktop && fs.existsSync(realDesktop)) {
+        const desktopZip = path.join(realDesktop, zipName);
+        fs.copyFileSync(zipPath, desktopZip);
+        desktopBundlePath = desktopZip;
+        console.log('  + Claude Desktop: bundle ready on Desktop -> ' + desktopZip);
+        console.log('    (Upload via Settings > Capabilities > Skills)');
+
+        // Clean up stale bundles from unredirected USER_PROFILE/Desktop if different
+        const guessedDesktop = path.join(USER_PROFILE, 'Desktop');
+        if (path.resolve(guessedDesktop) !== path.resolve(realDesktop) && fs.existsSync(guessedDesktop)) {
+          try { fs.unlinkSync(path.join(guessedDesktop, zipName)); } catch (_) {}
+          try { fs.unlinkSync(path.join(guessedDesktop, 'agent-bridge-skill.zip')); } catch (_) {}
+          try { fs.unlinkSync(path.join(guessedDesktop, 'skill_bridge.zip')); } catch (_) {}
+        }
+      } else {
+        desktopBundlePath = zipPath;
+        console.log('  + Claude Desktop: upload ' + zipPath + ' via Settings > Capabilities > Skills');
+      }
     } catch (e) {
       warnCount++;
       console.warn('  Could not build the Claude Desktop skill archive: ' + e.message);
@@ -514,41 +580,31 @@ try {
 //
 // Windows shell folders are not where a profile path suggests. OneDrive moves
 // the Desktop into its own tree, and a localized Windows names it in the user's
-// language — Escritorio, Bureau, Schreibtisch. Deriving it as USER_PROFILE
-// plus "Desktop" writes a shortcut nobody ever sees, while the one the user
-// really clicks keeps launching the previous install. WScript.Shell resolves
-// the real folder, so the lookup is left to VBScript.
+// language — Escritorio, Bureau, Schreibtisch. WScript.Shell and User Shell Folders
+// registry resolve the real folder so shortcuts land where the user actually sees them.
 //
 // Note also that VBScript has no backslash escape: doubling separators the way
 // a C-like language needs produces a literally doubled path in the shortcut.
 // The only character that needs escaping inside a VBS string is the quote.
-const BS = String.fromCharCode(92);
-function vbsStr(s) {
-  return '"' + String(s).split('"').join('""') + '"';
-}
-
 function createShortcut(specialFolder, linkName, targetVbs, description) {
+  const folder = resolveSpecialFolder(specialFolder);
+  if (!folder) throw new Error('Windows did not resolve the ' + specialFolder + ' folder');
+  const lnkPath = path.join(folder, linkName);
   const lines = [
     'Set WshShell = CreateObject("WScript.Shell")',
-    'folder = WshShell.SpecialFolders(' + vbsStr(specialFolder) + ')',
-    'If folder = "" Then',
-    '  WScript.Echo "UNRESOLVED"',
-    '  WScript.Quit 1',
-    'End If',
-    'lnkPath = folder & ' + vbsStr(BS + linkName),
-    'Set lnk = WshShell.CreateShortcut(lnkPath)',
+    'Set lnk = WshShell.CreateShortcut(' + vbsStr(lnkPath) + ')',
     'lnk.TargetPath = ' + vbsStr('wscript.exe'),
     'lnk.Arguments = ' + vbsStr('"' + targetVbs + '"'),
     'lnk.WorkingDirectory = ' + vbsStr(SCRIPTS_DIR),
     'lnk.Description = ' + vbsStr(description),
     'lnk.Save',
-    'WScript.Echo lnkPath'
+    'WScript.Echo ' + vbsStr(lnkPath)
   ];
   const tmpVbs = path.join(SCRIPTS_DIR, '_tmp_shortcut_' + specialFolder + '.vbs');
   fs.writeFileSync(tmpVbs, lines.join('\r\n'), 'utf8');
   try {
     const out = execSync('cscript //nologo "' + tmpVbs + '"', { encoding: 'utf8' }).trim();
-    if (!out || out === 'UNRESOLVED') throw new Error('Windows did not resolve the ' + specialFolder + ' folder');
+    if (!out) throw new Error('Failed to create shortcut at ' + lnkPath);
     return out;
   } finally {
     try { fs.unlinkSync(tmpVbs); } catch (_) {}
@@ -566,13 +622,18 @@ try {
   console.log('  + ' + created);
 
   // An install that guessed the folder may have left a shortcut in the profile
-  // directory. It is invisible when the Desktop is redirected, so say so rather
-  // than leave a second icon pointing wherever the previous install lived.
+  // directory. It is invisible when the Desktop is redirected, so clean it up
+  // or warn if unlinking fails.
   const guessed = path.join(USER_PROFILE, 'Desktop', 'Agent-Bridge.lnk');
   if (path.resolve(guessed) !== path.resolve(created) && fs.existsSync(guessed)) {
-    warnCount++;
-    console.warn('  Note: an older shortcut remains at ' + guessed);
-    console.warn('        Your Desktop is redirected, so that one is not the icon you see. Delete it.');
+    try {
+      fs.unlinkSync(guessed);
+      console.log('  - Removed stale shortcut from unredirected profile Desktop: ' + guessed);
+    } catch (_) {
+      warnCount++;
+      console.warn('  Note: an older shortcut remains at ' + guessed);
+      console.warn('        Your Desktop is redirected, so that one is not the icon you see. Delete it.');
+    }
   }
 } catch (e) {
   warnCount++;
@@ -608,6 +669,15 @@ try {
   console.error(`  ❌ Configuration error: ${e.message}`);
 }
 
+// Claude Desktop keeps no skills folder on disk, so the installer can build the
+// bundle but cannot upload it. Say so in the closing summary, where it is read.
+function printManualStep() {
+  if (!desktopBundlePath) return;
+  console.log('  One manual step left - Claude Desktop Skill:');
+  console.log('    upload ' + desktopBundlePath);
+  console.log('    via Settings > Capabilities > Skills');
+}
+
 if (errorCount > 0) {
   console.log('\n════════════════════════════════════════════════════════════════');
   console.log(`❌ DEPLOYMENT COMPLETED WITH ERRORS (errors: ${errorCount}, warnings: ${warnCount})`);
@@ -620,12 +690,16 @@ if (errorCount > 0) {
   console.log(`🎉 DEPLOYMENT COMPLETED WITH WARNINGS (${warnCount})`);
   console.log('════════════════════════════════════════════════════════════════');
   console.log(`• Web UI: click the Agent-Bridge shortcut on your Desktop or run: node "${path.join(SCRIPTS_DIR, 'board-ui.js')}"`);
-  console.log('• Please review the warnings above (e.g. Python 3 requirement).\n');
+  console.log('• Please review the warnings above (e.g. Python 3 requirement).');
+  printManualStep();
+  console.log('');
 } else {
   console.log('\n════════════════════════════════════════════════════════════════');
   console.log('🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!');
   console.log('════════════════════════════════════════════════════════════════');
   console.log(`• Web UI: click the Agent-Bridge shortcut on your Desktop or run: node "${path.join(SCRIPTS_DIR, 'board-ui.js')}"`);
   console.log('• Claude Code: SessionStart hook will display board digest on session start');
-  console.log('• Antigravity & Claude Desktop: MCP server registered and ready to use\n');
+  console.log('• Antigravity & Claude Desktop: MCP server registered and ready to use');
+  printManualStep();
+  console.log('');
 }
