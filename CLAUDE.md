@@ -34,8 +34,11 @@ and it is not a substitute for reading them.
   or `{{BRIDGE_HOME_POSIX}}` (forward slashes); the installer substitutes the real
   path into the copies it writes into each agent's skill folder.
 * This repository is public and English. Working notes in other languages belong on
-  the board, not in the files — the only exception is `README.md`, which is
-  deliberately bilingual. The guard enforces this.
+  the board, not in the files. User-facing documentation is the deliberate exception:
+  `README.md` carries both languages in one file, and every other README ships a
+  `*.uk.md` companion beside it (`README_INSTALL.uk.md`, `skill/README.uk.md`). Touch
+  one side and touch the other in the same commit. The guard enforces the rule from
+  the other end: Cyrillic is refused everywhere except `README.md` and `*.uk.md`.
 * Enable the guard once per clone: `git config core.hooksPath .githooks`
 
 ## Restarting after a code change

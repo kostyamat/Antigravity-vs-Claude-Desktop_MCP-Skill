@@ -6,6 +6,10 @@
   </a>
 </p>
 
+<p align="center">
+  <img src="IMG/screen.jpg" alt="Agent Bridge Web UI"/>
+</p>
+
 # Agent Bridge
 
 [Українська](#українська) | [English](#english)
@@ -70,12 +74,19 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
 
 Requires **Node.js 22.5+** (built-in SQLite) and **Python 3** in PATH.
 
-1. Download and unpack the release.
+1. Download and unpack the release **into the folder the bridge should live in**. It
+   installs in place: the board database, the message bodies and the documents are all
+   created next to these files, and nothing is copied anywhere else.
 2. Run `install-bridge.cmd`.
-3. Restart Claude Desktop / Antigravity so they pick up the new MCP server.
-4. Tell any agent your name once: `bridge_setup({ adminName: "<your name>" })`.
+3. Claude Desktop only: upload `Claude_skill_bridge.zip`, which the installer leaves on
+   your Desktop, through **Settings > Capabilities > Skills**. This is the one step the
+   installer cannot do for you; skip it if you do not use Claude Desktop.
+4. Restart Claude Desktop / Antigravity so they pick up the new MCP server.
+5. Tell any agent your name once: `bridge_setup({ adminName: "<your name>" })`.
 
-The installer registers the MCP server in Claude Desktop and Antigravity, installs the skill, adds the `SessionStart` hook for Claude Code, creates a desktop shortcut and a startup entry. It refuses to continue on an unsupported Node, never overwrites a config it cannot parse, and backs up every config it touches.
+The installer registers the MCP server in Claude Desktop and Antigravity, installs the skill, adds the `SessionStart` hook for Claude Code, builds the Claude Desktop skill bundle, creates a desktop shortcut and a startup entry. Missing Node.js or Python 3 it offers to install for you. It refuses to continue on an unsupported Node, never overwrites a config it cannot parse, and backs up every config it touches.
+
+Step by step, with the client permissions each agent needs: [README_INSTALL.md](README_INSTALL.md).
 
 ### Where the Skill ends up
 
@@ -90,9 +101,10 @@ what it can and leaves you exactly one manual step.
 | Claude Desktop | archive uploaded through the app's own skill-upload screen | **you** |
 
 Claude Desktop keeps no skills folder on disk, so nothing can install into it from the
-outside. The installer therefore builds `sharing\agent-bridge-skill.zip` and prints its
-path; open Claude Desktop's settings, find the skill upload screen, and drop that file in.
-That is the whole manual step.
+outside. The installer therefore builds `Claude_skill_bridge.zip` (with `SKILL.md` directly
+at the root) and copies it directly to your real Desktop (taking into account OneDrive and
+localized paths) as well as `sharing\Claude_skill_bridge.zip`; open Claude Desktop's settings,
+find the skill upload screen, and drop that file in. That is the whole manual step.
 
 Antigravity also reads workspace-local skills from `<workspace>\.agents\skills\`, if you
 would rather scope the bridge to one project than install it globally.
@@ -176,12 +188,19 @@ MIT.
 
 Потрібні **Node.js 22.5+** (вбудована SQLite) і **Python 3** у PATH.
 
-1. Завантажте й розпакуйте реліз.
+1. Завантажте й розпакуйте реліз **у ту теку, де міст має жити**. Він ставиться на місці:
+   база дошки, тіла повідомлень і документи створюються поряд із цими файлами, і нікуди
+   більше нічого не копіюється.
 2. Запустіть `install-bridge.cmd`.
-3. Перезапустіть Claude Desktop / Antigravity, щоб вони підхопили новий MCP-сервер.
-4. Один раз назвіть агентові своє ім'я: `bridge_setup({ adminName: "<ваше ім'я>" })`.
+3. Тільки для Claude Desktop: завантажте `Claude_skill_bridge.zip`, який інсталятор кладе
+   вам на робочий стіл, через **Settings > Capabilities > Skills**. Це єдиний крок, який
+   інсталятор не може зробити за вас; пропустіть його, якщо не користуєтесь Claude Desktop.
+4. Перезапустіть Claude Desktop / Antigravity, щоб вони підхопили новий MCP-сервер.
+5. Один раз назвіть агентові своє ім'я: `bridge_setup({ adminName: "<ваше ім'я>" })`.
 
-Інсталятор реєструє MCP-сервер у Claude Desktop і Antigravity, ставить скіл, додає хук `SessionStart` для Claude Code, створює ярлик на робочому столі й запис в автозавантаженні. На непідтримуваному Node він зупиняється, ніколи не перезаписує конфіг, який не зміг прочитати, і робить резервну копію кожного конфігу, якого торкається.
+Інсталятор реєструє MCP-сервер у Claude Desktop і Antigravity, ставить скіл, додає хук `SessionStart` для Claude Code, збирає пакунок скіла для Claude Desktop, створює ярлик на робочому столі й запис в автозавантаженні. Якщо бракує Node.js чи Python 3 — запропонує встановити їх сам. На непідтримуваному Node він зупиняється, ніколи не перезаписує конфіг, який не зміг прочитати, і робить резервну копію кожного конфігу, якого торкається.
+
+Покроково, з дозволами, які треба видати кожному клієнту: [README_INSTALL.uk.md](README_INSTALL.uk.md).
 
 ### Куди потрапляє скіл
 
@@ -196,8 +215,10 @@ MIT.
 | Claude Desktop | архів через власний екран завантаження скілів | **ви** |
 
 У Claude Desktop немає теки скілів на диску, тож ззовні туди нічого не покладеш. Тому інсталятор
-збирає `sharing\agent-bridge-skill.zip` і друкує шлях до нього: відкрийте налаштування Claude
-Desktop, знайдіть екран завантаження скіла й перетягніть туди цей файл. Це і є весь ручний крок.
+збирає `Claude_skill_bridge.zip` (зі `SKILL.md` безпосередньо в корені) і копіює його прямо на
+ваш справжній Робочий стіл (враховуючи OneDrive та локалізовані шляхи) і в `sharing\Claude_skill_bridge.zip`:
+відкрийте налаштування Claude Desktop, знайдіть екран завантаження скіла й перетягніть туди цей файл.
+Це і є весь ручний крок.
 
 Antigravity додатково читає скіли рівня воркспейсу з `<workspace>\.agents\skills\` — якщо
 хочете обмежити міст одним проєктом, а не ставити глобально.

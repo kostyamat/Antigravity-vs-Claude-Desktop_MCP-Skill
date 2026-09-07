@@ -22,7 +22,8 @@ for f in $files; do
     esac
 
     # README is intentionally bilingual (English + Ukrainian); it is exempt from
-    # the Cyrillic check but still checked for private data below.
+    # the Cyrillic check but still checked for private data below. Every other
+    # README ships a *.uk.md companion, which is exempt for the same reason.
     skip_cyr=0
     case "$f" in README.md|*.uk.md) skip_cyr=1 ;; esac
     [ -f "$f" ] || continue
@@ -30,8 +31,14 @@ for f in $files; do
     # Cyrillic in UTF-8 always starts with lead byte 0xD0 or 0xD1. Matching raw
     # bytes under LC_ALL=C works everywhere; grep -P needs a UTF-8 locale that
     # Git for Windows does not reliably provide.
+    #
+    # An English page still has to name the other language in its own alphabet,
+    # or the reader who needs it cannot find the link. The one line allowed to
+    # do that is the language switcher itself, matched whole — anything else
+    # with Cyrillic in it is a working note and is refused.
     hits=""
-    [ "$skip_cyr" -eq 0 ] && hits=$(git show ":$f" | LC_ALL=C grep -n "$CYR" | head -5)
+    [ "$skip_cyr" -eq 0 ] && hits=$(git show ":$f" | LC_ALL=C grep -n "$CYR" \
+        | grep -vE '^[0-9]+:\[English\]\([^)]*\) \| \[[^]]*\]\([^)]*\.uk\.md\)$' | head -5)
     if [ -n "$hits" ]; then
         echo "BLOCKED  $f  — Cyrillic text (working notes must not be published):"
         echo "$hits" | sed 's/^/         /'

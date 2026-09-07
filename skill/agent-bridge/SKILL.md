@@ -345,15 +345,27 @@ To reinstall or configure Agent-Bridge on any machine or environment:
 ```cmd
 {{BRIDGE_HOME}}\install-bridge.cmd
 ```
-The installer automatically:
-1. Validates Node.js v22+ environment.
-2. Creates folder tree (`docs/`, `agent_bridge_bodies/`, `sessions/`, etc.).
+It installs in place: the folder holding these files becomes the bridge home, and nothing is
+copied anywhere else. The installer automatically:
+1. Validates Node.js v22.5+ and finds Python 3 (`python`, `python3` or `py -3`).
+2. Creates the folder tree (`docs/`, `docs/sessions/`, `docs/archive/`, `agent_bridge_bodies/`,
+   `agent_bridge_archive/`, `agent_bridge_backups/`).
 3. Initializes SQLite schema in `{{BRIDGE_HOME}}\agent_bridge.db`.
 4. Registers MCP server in Claude Desktop configuration (`%APPDATA%\Claude\claude_desktop_config.json`).
-5. Registers MCP server in Antigravity configuration (`%USERPROFILE%\.gemini\config\mcp_config.json`).
-6. Creates Desktop shortcut (`Agent-Bridge.lnk`).
-7. Configures Windows Startup autorun (`Agent-Bridge-Server.lnk`).
-8. Initializes default `bridge_config.json`.
+5. Installs the `SessionStart` hook for Claude Code into `%USERPROFILE%\.claude\settings.json`.
+6. Installs this Skill into `%USERPROFILE%\.claude\skills\agent-bridge\` and
+   `%USERPROFILE%\.gemini\config\skills\agent-bridge\`, substituting the real path for
+   `{{BRIDGE_HOME}}` and pruning files the package no longer has.
+7. Builds `Claude_skill_bridge.zip` (SKILL.md at the archive root) and leaves it on the real
+   Desktop and in `sharing\`. Claude Desktop has no skills folder on disk, so the human uploads
+   it through Settings > Capabilities > Skills. **This is the one step no installer can do.**
+8. Registers MCP server in Antigravity configuration (`%USERPROFILE%\.gemini\config\mcp_config.json`).
+9. Creates Desktop shortcut (`Agent-Bridge.lnk`).
+10. Configures Windows Startup autorun (`Agent-Bridge-Server.lnk`).
+11. Initializes default `bridge_config.json`.
+
+Every config it touches is backed up as `*.bak-<timestamp>` first, and one it cannot parse is
+left alone rather than overwritten.
 
 ---
 
