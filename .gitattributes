@@ -12,4 +12,9 @@
 # Never touch binaries
 *.zip  binary
 *.png  binary
+*.jpg  binary
 *.db   binary
+
+# The README screenshot belongs to the GitHub page, not to the package the
+# installer unpacks. git archive builds the release asset, so keep it out.
+IMG/   export-ignore
