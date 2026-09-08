@@ -292,6 +292,59 @@ process.on('unhandledRejection', (reason) => {
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
 
+// The client owns this process: it spawned it and speaks to it over stdio, so
+// when the client goes the server must go with it. An orphaned server keeps the
+// board database open, blocks a WAL checkpoint, and — the expensive part in
+// practice — makes the process list ambiguous, so nobody can tell which copy is
+// the live one. Three independent signals, because a client is not always
+// closed politely: sometimes it is killed, and then stdio never reports a thing.
+let shuttingDown = false;
+function shutdown(reason) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try { logError(`shutting down: ${reason}`); } catch (_) {}
+  process.exit(0);
+}
+
+rl.on('close', () => shutdown('the client closed the stdio channel'));
+process.stdin.on('end', () => shutdown('stdin ended'));
+process.stdin.on('error', () => shutdown('stdin error'));
+
+// Only when the client spawned this server directly, which is how the installer
+// writes the config: command = node, args = [server]. A hand-written config may
+// go through cmd.exe or a shell, and that wrapper exits the moment it has
+// launched node — its death says nothing about the client. Guessing wrong there
+// would take down a working connector, and one client going quiet must never be
+// allowed to take the bridge with it.
+const PARENT_PID = process.ppid;
+const PARENT_IS_SHELL = (() => {
+  if (!PARENT_PID) return true;
+  try {
+    const { spawnSync } = require('child_process');
+    const r = spawnSync('tasklist', ['/FI', `PID eq ${PARENT_PID}`, '/NH', '/FO', 'CSV'],
+      { encoding: 'utf8', windowsHide: true });
+    const name = ((r.stdout || '').split(',')[0] || '').replace(/"/g, '').toLowerCase();
+    return ['cmd.exe', 'powershell.exe', 'pwsh.exe', 'bash.exe', 'sh.exe', 'conhost.exe'].includes(name);
+  } catch (_) {
+    return true;                          // cannot tell: leave the server alone
+  }
+})();
+
+let parentMisses = 0;
+setInterval(() => {
+  if (!PARENT_PID || PARENT_IS_SHELL) return;
+  let alive = true;
+  try {
+    process.kill(PARENT_PID, 0);          // signal 0 asks, it does not kill
+  } catch (e) {
+    alive = e.code === 'EPERM';           // exists but not ours to signal
+  }
+  // Two strikes: a client that re-parents its helper for a moment should not be
+  // mistaken for one that has exited.
+  parentMisses = alive ? 0 : parentMisses + 1;
+  if (parentMisses >= 2) shutdown('the client process is gone');
+}, 15000).unref();
+
 // ═════════════════════════════════════════════════════════════════════════════════════════
 // ═════════════════════════════════════════════════════════════════════════════════════════
 
@@ -315,27 +368,60 @@ function isClaudeDesktopRunning() {
   }
 }
 
-function ensureAgentsRunning() {
+function launchAntigravity() {
+  if (isProcessRunning('Antigravity.exe')) return;
+  const antPath = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'antigravity', 'Antigravity.exe');
+  if (!fs.existsSync(antPath)) return;
+  spawn('cmd.exe', ['/c', 'start', '""', antPath], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  logError('launched Antigravity.exe for a message addressed to it');
+}
+
+function launchClaudeDesktop() {
+  if (isClaudeDesktopRunning()) return;
+  spawn('cmd.exe', ['/c', 'start', '""', 'explorer.exe', 'shell:AppsFolder\\Claude_pzs8sxrjxfjjc!Claude'], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true
+  }).unref();
+  logError('launched Claude Desktop for a message addressed to it');
+}
+
+// A closed environment is usually closed on purpose, so nothing starts it at
+// startup any more: opening one client used to drag the other one up with it,
+// undoing that decision several times a day. The bridge waits until something
+// is actually addressed to the environment that is down.
+//
+// Broadcast does not count. "To everyone" is how routine notices are written,
+// and the protocol already says an ordinary broadcast must not interrupt a
+// window; it must not resurrect a closed one either. P0 does, because P0 means
+// drop everything, and nothing can be dropped by an application that is shut.
+//
+// One environment being down leaves the rest of the bridge working: the board
+// keeps its history, the other client keeps its tools, and the human keeps the
+// dashboard. The bridge runs short-handed, it does not stop.
+function raiseTargetEnvironment(rec) {
   try {
-    // 1. Antigravity IDE
-    if (!isProcessRunning('Antigravity.exe')) {
-      const antPath = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'antigravity', 'Antigravity.exe');
-      if (fs.existsSync(antPath)) {
-        spawn('cmd.exe', ['/c', 'start', '""', antPath], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
-        logError('auto-start: launched Antigravity.exe');
-      }
+    const to = String(rec.to || '').trim().toLowerCase();
+    const toSession = String(rec.toSession || '').trim();
+    const isP0 = String(rec.priority || '').toUpperCase() === 'P0';
+    const directed = to === 'claude' || to === 'gemini';
+    if (!directed && !toSession && !isP0) return;
+
+    let agent = directed ? to : '';
+    if (!agent && toSession) {
+      try {
+        const row = bridgeDb.getDb().prepare(
+          'SELECT agent FROM sessions WHERE session_id = ? OR canonical_id = ? OR key = ?'
+        ).get(toSession, toSession, toSession);
+        if (row && row.agent) agent = String(row.agent).trim().toLowerCase();
+      } catch (_) {}
     }
-    // 2. Claude Desktop (GUI Windows App)
-    if (!isClaudeDesktopRunning()) {
-      spawn('cmd.exe', ['/c', 'start', '""', 'explorer.exe', 'shell:AppsFolder\\Claude_pzs8sxrjxfjjc!Claude'], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true
-      }).unref();
-      logError('auto-start: launched Claude Desktop');
-    }
+
+    if (agent === 'gemini') return launchAntigravity();
+    if (agent === 'claude') return launchClaudeDesktop();
+    if (isP0) { launchAntigravity(); launchClaudeDesktop(); }
   } catch (e) {
-    logError(`ensureAgentsRunning: ${e.message}`);
+    logError(`raiseTargetEnvironment: ${e.message}`);
   }
 }
 
@@ -365,7 +451,9 @@ function ensureVisualizerRunning() {
 }
 
 startWatch();
-ensureAgentsRunning();
+// Nothing is started here on purpose: see raiseTargetEnvironment. The board UI
+// is the exception — it is the always-on part, and the on-demand raising above
+// runs through it.
 ensureVisualizerRunning();
 
 rl.on('line', (line) => {
@@ -845,6 +933,7 @@ function doPost(id, a) {
   }
 
   noteSession(from, rec.fromSession, rec.topic, rec.to, rec.toSession, sessionIdentity(a));
+  raiseTargetEnvironment(rec);
 
   rememberAgent(from);
   if (priority === 'P0') {

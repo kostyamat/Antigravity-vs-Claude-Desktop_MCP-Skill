@@ -2155,7 +2155,6 @@ function send(res, code, type, body) {
 
 const server = http.createServer((req, res) => {
   if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) {
-    ensureAgentsRunning();
     const admin = (readConfig().adminName || '').trim();
     const page = HTML.replace('__ADMIN_NAME__', admin.replace(/"/g, '&quot;'));
     return send(res, 200, 'text/html; charset=utf-8', page);
@@ -2335,8 +2334,38 @@ function launchApp(app) {
   }
 }
 
-function ensureAgentsRunning() {
-  launchApp('all');
+// A closed environment is usually closed on purpose. Starting both of them
+// whenever the board is opened undoes that decision several times a day, so the
+// bridge waits until something is actually addressed to the one that is down —
+// then, and only then, it brings it up.
+//
+// Broadcast does not count. "To everyone" is how routine notices are written,
+// and the protocol already says an ordinary broadcast must not interrupt a
+// window; it must not resurrect a closed one either. A P0 does, because P0
+// means drop everything, and nobody can drop anything while shut down.
+function raiseTargetEnvironment(m) {
+  try {
+    const to = String(m.to || m.to_agent || '').trim().toLowerCase();
+    const toSession = String(m.toSession || m.to_session || '').trim();
+    const directed = to === 'claude' || to === 'gemini';
+    if (!directed && !toSession) {
+      if (String(m.priority || '').toUpperCase() !== 'P0') return;
+    }
+
+    let agent = directed ? to : '';
+    if (!agent && toSession) {
+      try {
+        const row = bridgeDb.getDb().prepare(
+          'SELECT agent FROM sessions WHERE session_id = ? OR canonical_id = ? OR key = ?'
+        ).get(toSession, toSession, toSession);
+        if (row && row.agent) agent = String(row.agent).trim().toLowerCase();
+      } catch (_) {}
+    }
+
+    if (agent === 'gemini') return launchApp('antigravity');
+    if (agent === 'claude') return launchApp('claude');
+    if (String(m.priority || '').toUpperCase() === 'P0') launchApp('all');
+  } catch (_) {}
 }
 
 function openAppWindow(url) {
@@ -2396,7 +2425,6 @@ function listen(port, retries = 30) {
     if (!process.argv.includes('--no-open')) {
       openAppWindow(url);
     }
-    ensureAgentsRunning();
   });
 }
 
@@ -2417,6 +2445,7 @@ setInterval(() => {
       for (const m of board) {
         if ((m.id || 0) <= lastSeenId) continue;
         wakeAntigravity(m);
+        raiseTargetEnvironment(m);
       }
       lastSeenId = top;
     }
