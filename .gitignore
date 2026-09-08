@@ -22,6 +22,10 @@ gemini_convs.json
 antigravity_sessions.json
 current_antigravity_conv.txt
 
+# ─── Python bytecode: carries the absolute path it was compiled from ───
+__pycache__/
+*.pyc
+
 # ─── Backups and build artifacts ───────────────────────────────────
 *.bak
 *.bak*

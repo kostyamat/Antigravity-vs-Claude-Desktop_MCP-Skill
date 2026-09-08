@@ -94,6 +94,57 @@ def detect_session(agent):
     return ""
 
 
+def session_aliases(session_id, agent):
+    """Every label that means this same window.
+
+    The label a session signs with is not stable: the client issues a fresh one
+    each time the session starts, while the window it belongs to stays the same.
+    One window here already carried three labels across three days. So a literal
+    comparison drops mail addressed to yesterday's name for today's window —
+    which is the failure this watchman exists to prevent.
+
+    The canonical id the client issued is the fixed point: everything that
+    resolves to it is us.
+    """
+    names = {session_id}
+    # Scoped to this agent: one label is currently shared by a Claude session and
+    # a Gemini one, and pulling in the neighbour's names would make this watchman
+    # answer to an address that is not its own.
+    try:
+        con = sqlite3.connect(DB_PATH, timeout=3.0)
+        try:
+            cur = con.cursor()
+            for _ in range(3):            # label -> canonical -> sibling labels
+                before = len(names)
+                marks = list(names)
+                q = ",".join("?" * len(marks))
+                cur.execute(
+                    "SELECT session_id, canonical_id, custom_name FROM sessions "
+                    "WHERE lower(agent) = lower(?) AND (session_id IN (%s) OR canonical_id IN (%s))" % (q, q),
+                    [agent.strip()] + marks + marks)
+                for sid, canon, cname in cur.fetchall():
+                    for value in (sid, canon, cname):
+                        if value and value.strip():
+                            names.add(value.strip())
+                marks = list(names)
+                q = ",".join("?" * len(marks))
+                cur.execute(
+                    "SELECT alias, canonical_id FROM session_aliases "
+                    "WHERE alias IN (%s) OR canonical_id IN (%s)" % (q, q),
+                    marks + marks)
+                for alias, canon in cur.fetchall():
+                    for value in (alias, canon):
+                        if value and value.strip():
+                            names.add(value.strip())
+                if len(names) == before:
+                    break
+        finally:
+            con.close()
+    except Exception:
+        pass
+    return names
+
+
 def parent_alive(pid):
     """True while the process that started this watchman is still running.
 
@@ -139,10 +190,12 @@ def main():
         my_session = detect_session(args.agent)
 
     parent_pid = os.getppid()
+    my_names = session_aliases(my_session, args.agent) if my_session else set()
     last = None
     misses = 0
     now = time.time()
     last_identity_try = now
+    last_alias_refresh = now
     last_heartbeat = now
     sess_label = (" [session: %s]" % my_session) if my_session else " [session unknown]"
     while True:
@@ -161,6 +214,15 @@ def main():
                 my_session = found
                 print("watchman: session recognised as %s — filtering by session is now on"
                       % my_session, flush=True)
+                my_names = session_aliases(my_session, args.agent)
+
+        # Labels accumulate: a window keeps the one it was given today and every
+        # one it was given before. Re-reading them costs one query a minute and
+        # is what keeps yesterday's address working.
+        if my_session and now - last_alias_refresh >= IDENTITY_RETRY_SEC:
+            last_alias_refresh = now
+            my_names = session_aliases(my_session, args.agent)
+
 
         try:
             top = get_max_id()
@@ -182,10 +244,10 @@ def main():
                     # session along with this one's own replicas, and a reply
                     # addressed to this very session lay unseen for hours.
                     if my_session:
-                        if who.lower().startswith(my_agent) and from_sess == my_session:
+                        if who.lower().startswith(my_agent) and from_sess in my_names:
                             continue
                         # Addressed to one specific other session: not ours.
-                        if to_sess and to_sess != "all" and to_sess != my_session:
+                        if to_sess and to_sess != "all" and to_sess not in my_names:
                             continue
                     # Session unknown: show everything, directed messages
                     # included. Filtering here would hide exactly the orders
