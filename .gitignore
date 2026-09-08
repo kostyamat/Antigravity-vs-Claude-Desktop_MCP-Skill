@@ -30,5 +30,8 @@ current_antigravity_conv.txt
 sharing/
 *.zip
 
+# ─── Working notes and handover: this machine's state, never published ───
+.agents/
+
 # ─── Per-machine client settings ───────────────────────────────────
 .claude/settings.local.json

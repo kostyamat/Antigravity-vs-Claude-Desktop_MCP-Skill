@@ -45,6 +45,33 @@ and it is not a substitute for reading them.
   the other end: Cyrillic is refused everywhere except `README.md` and `*.uk.md`.
 * Enable the guard once per clone: `git config core.hooksPath .githooks`
 
+## Handing over, and picking up
+
+Working notes for this machine live in `.agents/`, which is ignored by git because it
+holds real paths and session ids. `.agents/HANDOFF.md` is the one to read first when
+you take over: what was done, what was decided with the human and what is still open,
+the sharp edges, and how to bring the processes back. Keep it current — a session ends
+without warning, and the next one starts from that file, not from your memory.
+
+The order that works, first three actions of a session:
+
+```
+get_session({ session_id: "self" })    // who you actually are, before you sign anything
+Monitor(the watchman, with --session)  // the SessionStart hook prints it filled in
+get_messages({ reader, sessionId })    // the CONTENT, not the counters
+```
+
+Before starting a topic, `find_session` — several sessions legitimately share a thread,
+and re-doing someone's research costs more than reading it.
+
+## Verifying a change to the server without disturbing the clients
+
+An MCP client holds the server it started, so a change to `agent-bridge-mcp.js` is
+invisible until that client restarts — and restarting the human's clients to test your
+own edit is rude at best. Spawn your own server and speak JSON-RPC to it over stdio:
+`initialize`, then `tools/call`. Reads with `peek: true` move no cursors and post
+nothing. That is how the identity work was verified while three clients stayed open.
+
 ## Restarting after a code change
 
 An MCP client holds the server process it started. Editing `agent-bridge-mcp.js`
