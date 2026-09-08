@@ -289,6 +289,10 @@ function apiSessions() {
       agent: s.agent,
       sessionId: s.sessionId,
       customName: s.customName || '',
+      canonicalId: s.canonicalId || '',
+      client: s.client || '',
+      cwd: s.cwd || '',
+      title: s.title || '',
       topics: (s.topics || []).slice(0, 14),
       summary: s.summary || '',
       project: s.project || '',
@@ -631,6 +635,25 @@ aside h2 {
   color: var(--ink-dim);
   word-break: break-all;
   opacity: 0.7;
+  cursor: copy;
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+.sitem .sid:hover { opacity: 1; }
+.sitem .sid .cpy { flex: none; opacity: 0.55; }
+.sitem .sid:hover .cpy { opacity: 1; }
+/* The id the client issued, as opposed to the label the agent chose. Marked so
+   the two are never confused at a glance: one can be invented, one cannot. */
+.sitem .scanon { opacity: 0.95; }
+.sitem .scanon code { color: var(--accent, inherit); }
+.sitem .scwd {
+  font: 10px var(--mono);
+  color: var(--ink-dim);
+  opacity: 0.55;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sfoot {
   display: flex;
@@ -1836,6 +1859,26 @@ async function loadSessions(){
   }catch(e){$('#slist').innerHTML='<div class="hint">Registry unavailable</div>';}
 }
 
+window.copyId = async function(el, value){
+  // Addressing a specific window is the whole point of having ids, and until
+  // now the only way to get one was to read it off the screen by hand.
+  try{
+    await navigator.clipboard.writeText(value);
+  }catch(e){
+    const ta=document.createElement('textarea');
+    ta.value=value; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); }catch(_){}
+    document.body.removeChild(ta);
+  }
+  const mark=el.querySelector('.cpy');
+  if(mark){
+    const was=mark.textContent;
+    mark.textContent='✓';
+    setTimeout(()=>{mark.textContent=was;},900);
+  }
+};
+
 window.renameSession = async function(key, currentName){
   const newName = prompt('Enter a friendly name for this session:', currentName || '');
   if (newName === null) return;
@@ -1932,7 +1975,16 @@ function renderSessions(){
       '</div>'+
       (s.summary ? '<div class="ssummary">'+esc(s.summary)+'</div>' :
         (s.topics&&s.topics.length ? '<div class="stopics"><code class="nt">'+esc(s.topics.slice(0, 5).join(' · '))+'</code></div>' : ''))+
-      '<div class="sid"><code class="nt">'+esc(s.sessionId)+'</code></div>'+
+      // Both identifiers, each copyable. The label is what the agents sign
+      // with and what reads well; the canonical id is what the client issued
+      // and the only one that cannot be invented twice. Addressing accepts
+      // either — a message sent to one reaches the same window.
+      '<div class="sid" title="Board label — click to copy" onclick="event.stopPropagation(); window.copyId(this, \''+esc(s.sessionId)+'\')">'+
+        '<code class="nt">'+esc(s.sessionId)+'</code><span class="cpy">⧉</span></div>'+
+      (s.canonicalId ? '<div class="sid scanon" title="'+esc(s.client||'client')+' session id — click to copy" '+
+        'onclick="event.stopPropagation(); window.copyId(this, \''+esc(s.canonicalId)+'\')">'+
+        '<code class="nt">'+esc(s.canonicalId)+'</code><span class="cpy">⧉</span></div>' : '')+
+      (s.cwd ? '<div class="scwd" title="'+esc(s.cwd)+'"><code class="nt">'+esc(s.cwd)+'</code></div>' : '')+
       '<div class="sfoot">'+
         '<span class="cnt"><code class="nt">'+s.messages+' msg'+(s.messages===1?'':'s')+'</code></span>'+
         '<div class="sbtns">'+

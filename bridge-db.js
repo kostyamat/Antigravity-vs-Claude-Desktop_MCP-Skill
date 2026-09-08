@@ -125,6 +125,24 @@ function initSchema(db) {
   try {
     db.exec("ALTER TABLE sessions ADD COLUMN custom_name TEXT DEFAULT ''");
   } catch (_) {}
+
+  // A session is known to the board by the label the agent picked for itself.
+  // That label is not an identity: nothing issues it, nothing checks it, and a
+  // second window that picks a near-miss spelling becomes a phantom session on
+  // the board. These columns hold what the client actually knows about the
+  // window — the id it issued, which application it is, where it is working —
+  // so the label can go back to being what it is good at, a name a human reads.
+  //
+  // Local only. The database is never committed and never shipped; a fresh
+  // install starts from an empty one on the machine that runs it.
+  for (const column of ['canonical_id', 'client', 'cwd', 'title']) {
+    try {
+      db.exec("ALTER TABLE sessions ADD COLUMN " + column + " TEXT DEFAULT ''");
+    } catch (_) {}
+  }
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_canonical ON sessions(canonical_id)');
+  } catch (_) {}
 }
 
 function rowToMessage(r) {
@@ -690,6 +708,10 @@ function readSessions() {
       topics,
       contacts,
       hasSnapshot: !!r.has_snapshot,
+      canonicalId: r.canonical_id || '',
+      client: r.client || '',
+      cwd: r.cwd || '',
+      title: r.title || '',
       firstSeen: r.first_seen,
       lastSeen: r.last_seen
     };
@@ -715,8 +737,9 @@ function saveSession(s) {
   const key = `${s.agent || 'unknown'}/${String(s.sessionId || '').trim()}`;
   db.prepare(`
     INSERT INTO sessions (
-      key, agent, session_id, custom_name, project, summary, knows, topics, contacts, has_snapshot, first_seen, last_seen
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      key, agent, session_id, custom_name, project, summary, knows, topics, contacts, has_snapshot,
+      canonical_id, client, cwd, title, first_seen, last_seen
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET
       custom_name = CASE WHEN excluded.custom_name != '' THEN excluded.custom_name ELSE sessions.custom_name END,
       project = excluded.project,
@@ -725,6 +748,12 @@ function saveSession(s) {
       topics = excluded.topics,
       contacts = excluded.contacts,
       has_snapshot = excluded.has_snapshot,
+      -- Identity is only ever filled in, never blanked: a later call that does
+      -- not carry it must not erase what an earlier one established.
+      canonical_id = CASE WHEN excluded.canonical_id != '' THEN excluded.canonical_id ELSE sessions.canonical_id END,
+      client = CASE WHEN excluded.client != '' THEN excluded.client ELSE sessions.client END,
+      cwd = CASE WHEN excluded.cwd != '' THEN excluded.cwd ELSE sessions.cwd END,
+      title = CASE WHEN excluded.title != '' THEN excluded.title ELSE sessions.title END,
       last_seen = excluded.last_seen
   `).run(
     key,
@@ -737,12 +766,22 @@ function saveSession(s) {
     JSON.stringify(s.topics || []),
     JSON.stringify(s.contacts || {}),
     s.hasSnapshot ? 1 : 0,
+    s.canonicalId || '',
+    s.client || '',
+    s.cwd || '',
+    s.title || '',
     s.firstSeen || new Date().toISOString(),
     s.lastSeen || new Date().toISOString()
   );
 
   if (s.customName && s.sessionId) {
     registerSessionAlias(s.customName, s.sessionId);
+  }
+  // The label the agent signs with resolves to the id the client issued, so a
+  // message addressed to either reaches the same window.
+  if (s.canonicalId && s.sessionId) {
+    registerSessionAlias(s.sessionId, s.canonicalId);
+    if (s.customName) registerSessionAlias(s.customName, s.canonicalId);
   }
 }
 

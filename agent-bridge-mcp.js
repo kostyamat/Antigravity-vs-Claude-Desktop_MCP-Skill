@@ -462,6 +462,10 @@ const TOOLS = [
         sender: { type: 'string', description: 'Sender identifier: "Claude", "Gemini", or human name.' },
         message: { type: 'string', description: 'Message content. Unlimited length.' },
         sessionId: { type: 'string', description: 'Your session/branch identifier (e.g. "main", "feature/refactor", or UUID). Required so recipients know where to route replies.' },
+        canonicalId: { type: 'string', description: 'The id your client issued for this window (Claude Code: get_session({session_id:"self"}).sessionId). Send it once and the human can address this window by it from the board.' },
+        client: { type: 'string', description: 'Which application this session runs in: claude-code | claude-desktop | antigravity.' },
+        cwd: { type: 'string', description: 'Working directory of this session. Stays on this machine; the database is never published.' },
+        title: { type: 'string', description: 'Window title, so the human recognises the session in the board.' },
         to: { type: 'string', description: 'Recipient: "Claude", "Gemini", or "all" (default is "all" unless replying).' },
         toSession: { type: 'string', description: 'Target session of recipient (if replyTo is not specified).' },
         replyTo: { type: 'number', description: 'Message ID (#N) being replied to. Automatically links thread and routes to parent author.' },
@@ -489,6 +493,10 @@ const TOOLS = [
       properties: {
         reader: { type: 'string', description: 'Reader identifier: "Claude" or "Gemini". Required for cursor tracking.' },
         sessionId: { type: 'string', description: 'Your session/branch identifier (e.g. "main", "feature/refactor", or UUID).' },
+        canonicalId: { type: 'string', description: 'The id your client issued for this window (Claude Code: get_session({session_id:"self"}).sessionId). Send it once and the human can address this window by it from the board.' },
+        client: { type: 'string', description: 'Which application this session runs in: claude-code | claude-desktop | antigravity.' },
+        cwd: { type: 'string', description: 'Working directory of this session. Stays on this machine; the database is never published.' },
+        title: { type: 'string', description: 'Window title, so the human recognises the session in the board.' },
         only: { type: 'string', enum: ['new', 'for_me', 'all'], description: 'Filter: new (default) | for_me | all' },
         thread: { type: 'number', description: 'Retrieve complete discussion thread around message #N.' },
         topic: { type: 'string', description: 'Filter by specific topic.' },
@@ -836,7 +844,7 @@ function doPost(id, a) {
     rec.file = file;
   }
 
-  noteSession(from, rec.fromSession, rec.topic, rec.to, rec.toSession);
+  noteSession(from, rec.fromSession, rec.topic, rec.to, rec.toSession, sessionIdentity(a));
 
   rememberAgent(from);
   if (priority === 'P0') {
@@ -864,6 +872,14 @@ function doPost(id, a) {
 
 function doGet(id, a) {
   rememberAgent(normAgent(a.reader), a.sessionId);
+  // Reading is usually a session's first contact with the bridge, and a session
+  // that only reads used to leave no trace at all: it existed for the board
+  // only once it wrote something. Everything that has to know where to send a
+  // reply — the watchman's filter, the human looking for a window to address —
+  // was waiting on that first message.
+  if (a.sessionId) {
+    noteSession(normAgent(a.reader), a.sessionId, a.topic || '', '', '', sessionIdentity(a));
+  }
   const board = readBoard();
   if (!board.length) return ok(id, 'Board is empty.');
 
@@ -1144,7 +1160,7 @@ ${a.context && String(a.context).trim() ? a.context : '⚠️ AUTHOR DID NOT PRO
   };
   index.push(rec);
   writeDocsIndex(index);
-  noteSession(from, fromSession, topic, to, toSession);
+  noteSession(from, fromSession, topic, to, toSession, sessionIdentity(a));
 
   if (a.announce !== false) {
     const board = readBoard();
@@ -1275,6 +1291,19 @@ function writeReg(r) {
   } catch (e) { logError(`writeReg: ${e.message}`); }
 }
 
+// The identity fields every bridge tool may carry. They are optional: an agent
+// that cannot learn its own window id (Claude Desktop has no way to) simply
+// keeps working under its label, and the board shows what it has.
+function sessionIdentity(a) {
+  if (!a) return null;
+  return {
+    canonicalId: a.canonicalId || a.canonical_id || '',
+    client: a.client || '',
+    cwd: a.cwd || '',
+    title: a.title || ''
+  };
+}
+
 function sessKey(agent, sessionId) {
   return `${normAgent(agent) || 'unknown'}/${String(sessionId || '').trim()}`;
 }
@@ -1282,7 +1311,7 @@ function sessKey(agent, sessionId) {
 /**
  *
  */
-function noteSession(agent, sessionId, topic, peerAgent, peerSession) {
+function noteSession(agent, sessionId, topic, peerAgent, peerSession, identity) {
   const sid = String(sessionId || '').trim();
   if (!sid) return;
   const reg = readReg();
@@ -1291,6 +1320,17 @@ function noteSession(agent, sessionId, topic, peerAgent, peerSession) {
   const rec = reg[key] || { agent: normAgent(agent), sessionId: sid, topics: [], contacts: {}, firstSeen: now };
   rec.lastSeen = now;
   if (topic && !rec.topics.includes(topic)) rec.topics.push(topic);
+
+  // Whatever the client knows about this window, recorded the first time the
+  // session speaks to the bridge and never overwritten with nothing. The label
+  // above is chosen by the agent; this is issued by the application, which is
+  // why the human can copy it from the board and address the window by it.
+  if (identity) {
+    for (const field of ['canonicalId', 'client', 'cwd', 'title']) {
+      const value = String(identity[field] || '').trim();
+      if (value) rec[field] = value;
+    }
+  }
 
   const peerSid = String(peerSession || '').trim();
   if (peerSid) {
@@ -1327,7 +1367,13 @@ function doListSessions(id, a) {
     .map(k => {
       const r = reg[k];
       const contacts = Object.keys(r.contacts || {});
-      return `👤 ${k}\n` +
+      return `👤 ${k}` +
+             (r.title ? `   «${r.title}»` : '') + '\n' +
+             // Both, always: the label is what a human reads, the canonical id
+             // is what actually addresses the window. Showing only one of them
+             // is how a mistyped label became a session of its own.
+             (r.canonicalId ? `   id: ${r.canonicalId}${r.client ? `   (${r.client})` : ''}\n` : '') +
+             (r.cwd ? `   cwd: ${r.cwd}\n` : '') +
              `   topics: ${r.topics && r.topics.length ? r.topics.join(', ') : '—'}\n` +
              `   last active: ${r.lastSeen ? ago(r.lastSeen) : '?'}` +
              (r.summary ? `\n   summary: ${r.summary}` : '') +
