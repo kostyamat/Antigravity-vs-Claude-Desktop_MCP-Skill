@@ -114,7 +114,7 @@ MCP-клієнт запускає власну копію сервера й тр
   activate bridge
   ```
   *(або `check board`)*.
-- Claude одразу запустить `Monitor({ command: "python3 {{BRIDGE_HOME_POSIX}}/watch_board.py", persistent: true })`, забере повідомлення з дошки й далі реагуватиме на події.
+- Claude одразу запустить `Monitor({ command: "python3 {{BRIDGE_HOME_POSIX}}/watch_board.py --session <your session id> --agent Claude", persistent: true })`, забере повідомлення з дошки й далі реагуватиме на події.
 
 ---
 

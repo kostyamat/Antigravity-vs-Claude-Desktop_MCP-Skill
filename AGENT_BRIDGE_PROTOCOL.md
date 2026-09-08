@@ -178,7 +178,7 @@ The board is active because background watchman processes monitor the SQLite dat
 Registers a **background watcher** against `agent_bridge.db` — **first step upon session initialization**:
 ```js
 Monitor({
-  command: "python3 {{BRIDGE_HOME_POSIX}}/watch_board.py",
+  command: "python3 {{BRIDGE_HOME_POSIX}}/watch_board.py --session <your session id> --agent Claude",
   description: "new messages on agent-bridge board",
   persistent: true
 })

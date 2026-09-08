@@ -114,7 +114,7 @@ and reopen Claude Desktop and Antigravity before expecting the bridge to answer.
   activate bridge
   ```
   *(or `check board`)*.
-- Claude will immediately launch `Monitor({ command: "python3 {{BRIDGE_HOME_POSIX}}/watch_board.py", persistent: true })`, fetch pending board messages, and remain fully reactive to subsequent events.
+- Claude will immediately launch `Monitor({ command: "python3 {{BRIDGE_HOME_POSIX}}/watch_board.py --session <your session id> --agent Claude", persistent: true })`, fetch pending board messages, and remain fully reactive to subsequent events.
 
 ---
 

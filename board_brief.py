@@ -27,6 +27,7 @@ import json
 import os
 import sqlite3
 import sys
+import threading
 
 # The database sits next to this script, so the kit works from any folder on any machine.
 def _bridge_home():
@@ -45,6 +46,40 @@ def _bridge_home():
 DB = os.path.join(_bridge_home(), "agent_bridge.db")
 ME = os.environ.get("BRIDGE_AGENT", "Claude")
 SHOW_LAST = 3
+
+
+def _client_session_id():
+    """The session id the client hands its hooks on stdin, or "".
+
+    Identity guessed from the working directory is wrong exactly when it matters
+    most — a session that has not yet written to the board is not in the
+    registry, which is the state every session starts in. The client knows the
+    answer and passes it here; taking it costs nothing and ends the guessing.
+
+    The read is bounded by a thread that is abandoned if it does not return: a
+    hook that blocks would hold up the start of the session it is briefing, and
+    a convenience must never be able to do that.
+    """
+    if sys.stdin is None or sys.stdin.closed:
+        return ""
+    box = {}
+
+    def _read():
+        try:
+            box["raw"] = sys.stdin.read()
+        except Exception:
+            pass
+
+    try:
+        t = threading.Thread(target=_read)
+        t.daemon = True
+        t.start()
+        t.join(1.5)
+        payload = json.loads(box.get("raw") or "{}")
+        value = payload.get("session_id") or payload.get("sessionId") or ""
+        return str(value).strip()
+    except Exception:
+        return ""
 
 
 def main():
@@ -83,26 +118,37 @@ def main():
                        from messages order by id desc limit ?""", (SHOW_LAST,))
         last = cur.fetchall()
 
-        # Session detection for watchman recommendation (safe non-blocking)
-        hook_session = os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("BRIDGE_SESSION")
+        # Session detection for watchman recommendation (safe non-blocking).
+        # The registry is asked first: if the board already knows a session for
+        # this working directory, that is the label the agent will keep using,
+        # and the watchman must filter on the same one. Only when the board
+        # knows nothing does the client's own session id become the answer —
+        # and then the brief says to use it on both sides.
+        hook_session = ""
+        try:
+            cwd_base = os.path.basename(os.getcwd()).strip().lower()
+            if cwd_base:
+                cur.execute("""
+                    SELECT session_id, project FROM sessions
+                    WHERE lower(agent) = lower(?)
+                    ORDER BY last_seen DESC
+                """, (ME,))
+                for sid, proj in cur.fetchall():
+                    if proj and cwd_base in proj.strip().lower():
+                        hook_session = sid.strip()
+                        break
+                    if cwd_base in sid.lower():
+                        hook_session = sid.strip()
+                        break
+        except Exception:
+            pass
+
+        from_client = False
         if not hook_session:
-            try:
-                cwd_base = os.path.basename(os.getcwd()).strip().lower()
-                if cwd_base:
-                    cur.execute("""
-                        SELECT session_id, project FROM sessions
-                        WHERE lower(agent) = lower(?)
-                        ORDER BY last_seen DESC
-                    """, (ME,))
-                    for sid, proj in cur.fetchall():
-                        if proj and cwd_base in proj.strip().lower():
-                            hook_session = sid.strip()
-                            break
-                        if cwd_base in sid.lower():
-                            hook_session = sid.strip()
-                            break
-            except Exception:
-                pass
+            hook_session = (os.environ.get("CLAUDE_SESSION_ID")
+                            or os.environ.get("BRIDGE_SESSION")
+                            or _client_session_id())
+            from_client = bool(hook_session)
 
         con.close()
     except Exception:
@@ -118,12 +164,46 @@ def main():
         lines.append("  #%-4s %-9s %-20s %s" % (i, who, topic[:20], head[:66]))
 
     watch = "%s/watch_board.py" % os.path.dirname(DB).replace("\\", "/")
-    cmd_str = ('python3 %s --session %s' % (watch, hook_session)) if hook_session else ('python3 %s' % watch)
+    # The interpreter is named outright rather than left as "python3". On Windows
+    # that name resolves to the Microsoft Store stub, which launches the real
+    # interpreter as a child of itself: two processes per watchman, and the one
+    # holding the board open is not the one the harness can stop. sys.executable
+    # is whatever python is running this hook, which is the one the installer found.
+    py = sys.executable.replace("\\", "/") if sys.executable else "python"
+    if " " in py:
+        py = '\\"%s\\"' % py               # the command is quoted inside the Monitor call
+    # Filtering by session is what keeps one session's orders apart from a
+    # neighbour's. Without the identifier the watchman has to guess it from the
+    # working directory and the registry, and a session that has not written to
+    # the board yet is not in the registry — which is every session at startup.
+    if hook_session:
+        cmd_str = "%s %s --session %s --agent %s" % (py, watch, hook_session, ME)
+        session_note = []
+        if from_client:
+            # The board has no session for this directory yet, so this id comes
+            # from the client rather than from the board. The two only agree if
+            # the agent then signs its messages with the same one.
+            session_note = [
+                "Use %s as your sessionId in every bridge call too — get_messages, post_message," % hook_session,
+                "all of them. The watchman filters on the identifier you pass it, so if you sign",
+                "the board with a different name, it will discard the messages addressed to you.",
+                "",
+            ]
+    else:
+        cmd_str = "%s %s --session <YOUR SESSION ID> --agent %s" % (py, watch, ME)
+        session_note = [
+            "Replace <YOUR SESSION ID> with the identifier you use on the board, the same one",
+            "you pass to get_messages and post_message. Do not drop the argument: without it the",
+            "watchman cannot tell an order addressed to you from one addressed to the session",
+            "next door, and it errs in both directions at once.",
+            "",
+        ]
     lines += [
         "",
         "MANDATORY FIRST ACTION, before anything else in this session:",
         '  Monitor({command: "%s", persistent: true})' % cmd_str,
         "",
+    ] + session_note + [
         "This is not a suggestion. The watchman is session-scoped: it died with the previous",
         "session and does not exist right now. Without it, messages from the human and from the",
         "other agent arrive nowhere — they write, nothing answers, and they have to ask whether",

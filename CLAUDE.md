@@ -12,8 +12,12 @@ previous session and does not exist right now. Without it, the human and the oth
 agent write to the board and nothing answers.
 
 ```
-Monitor({ command: "python3 watch_board.py", persistent: true })
+Monitor({ command: "python3 watch_board.py --session <your session id> --agent Claude", persistent: true })
 ```
+
+The `--session` argument is what keeps your orders apart from the session next door.
+Drop it and the watchman guesses from the registry, which does not yet contain a
+session that has not written to the board — the state every session starts in.
 
 Then read the **content** of the board, not the counters:
 
