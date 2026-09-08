@@ -302,7 +302,43 @@ function apiSessions() {
     };
   });
   out.sort((a, b) => String(b.lastSeen).localeCompare(String(a.lastSeen)));
-  return { sessions: out };
+  return { sessions: groupByWindow(out) };
+}
+
+// One window, one row. A client issues a fresh session label every time the
+// session starts, so a conversation that has been reopened three times appeared
+// here as three sessions — which is what made deliberate forks and ordinary
+// restarts look the same. The id the client issued does not change, so rows
+// that share it are the same window, and its earlier labels are history rather
+// than separate participants.
+//
+// Rows without that id cannot be grouped: they predate it or come from a client
+// that has none to give. They stay exactly as they were.
+function groupByWindow(rows) {
+  const groups = new Map();
+  const out = [];
+  for (const r of rows) {
+    if (!r.canonicalId) { out.push(r); continue; }
+    const key = r.agent + '|' + r.canonicalId;
+    const head = groups.get(key);
+    if (!head) {
+      groups.set(key, r);
+      r.aliases = [];
+      out.push(r);
+      continue;
+    }
+    // rows arrive newest first, so the first one seen is the current label
+    head.aliases.push({ sessionId: r.sessionId, lastSeen: r.lastSeen, messages: r.messages });
+    head.messages += r.messages;
+    head.hasSnapshot = head.hasSnapshot || r.hasSnapshot;
+    for (const t of r.topics || []) {
+      if (head.topics.length < 14 && !head.topics.includes(t)) head.topics.push(t);
+    }
+    for (const field of ['customName', 'client', 'cwd', 'title', 'summary', 'project']) {
+      if (!head[field] && r[field]) head[field] = r[field];
+    }
+  }
+  return out;
 }
 
 function apiSnapshot(q) {
@@ -647,6 +683,15 @@ aside h2 {
    the two are never confused at a glance: one can be invented, one cannot. */
 .sitem .scanon { opacity: 0.95; }
 .sitem .scanon code { color: var(--accent, inherit); }
+.sitem .solder {
+  font: 10px var(--mono);
+  color: var(--ink-dim);
+  opacity: 0.5;
+  cursor: pointer;
+  margin-top: 2px;
+}
+.sitem .solder:hover { opacity: 0.9; }
+.sitem .solderid { opacity: 0.45; padding-left: 8px; }
 .sitem .scwd {
   font: 10px var(--mono);
   color: var(--ink-dim);
@@ -1458,9 +1503,12 @@ function updateSemaphore(){
 function visible(){
   let items=DATA;
   if(SFILTER){
+    // Every label this window has carried counts as the same window: filtering
+    // on the current one alone hid the conversation's own earlier history.
+    const names = new Set(SFILTER_NAMES.length ? SFILTER_NAMES : [SFILTER]);
     const sessionMsgIds = new Set();
     for(const m of DATA){
-      if((m.fromSession||'') === SFILTER || (m.toSession||'') === SFILTER){
+      if(names.has(m.fromSession||'') || names.has(m.toSession||'')){
         sessionMsgIds.add(m.id);
       }
     }
@@ -1752,7 +1800,7 @@ function reply(id){
   segSet('to',dst);
   const sel=$('#toSession');
   if(sel)sel.value=m.fromSession||'';
-  if(m.fromSession)SFILTER=m.fromSession;
+  if(m.fromSession)setSessionFilter(m.fromSession);
   updateTargetBanner();
   const rb=$('#replyBadge');
   const rbt=$('#replyBadgeText');
@@ -1847,7 +1895,21 @@ $('#pause').onclick=()=>{
 };
 
 // ── Sessions in Sidebar ──────────────────────────────────────────────────
-let SESSIONS=[], SFILTER=null;
+let SESSIONS=[], SFILTER=null, SFILTER_NAMES=[];
+// A window answers to the label it uses now and to every one it used before.
+function windowNames(sid){
+  const s=SESSIONS.find(x=>x.sessionId===sid||(x.aliases||[]).some(a=>a.sessionId===sid));
+  if(!s)return [sid];
+  const names=[s.sessionId];
+  if(s.canonicalId)names.push(s.canonicalId);
+  for(const a of s.aliases||[])names.push(a.sessionId);
+  return names;
+}
+function setSessionFilter(sid){
+  SFILTER=sid;
+  SFILTER_NAMES=sid?windowNames(sid):[];
+}
+
 async function loadSessions(){
   try{
     const r=await fetch('/api/sessions');
@@ -1927,7 +1989,7 @@ function updateTargetBanner(){
 }
 
 window.clearTargetSession=function(){
-  SFILTER=null;
+  setSessionFilter(null);
   const sel=$('#toSession');
   if(sel)sel.value='';
   segSet('to','all');
@@ -1943,7 +2005,7 @@ window.setTargetSession=function(sid){
     window.clearTargetSession();
     return;
   }
-  SFILTER=sid;
+  setSessionFilter(sid);
   if(sel)sel.value=sid;
   const s=SESSIONS.find(x=>x.sessionId===sid);
   if(s){
@@ -2000,6 +2062,17 @@ function renderSessions(){
         'onclick="event.stopPropagation(); window.copyId(this, \''+esc(s.canonicalId)+'\')">'+
         '<code class="nt">'+esc(s.canonicalId)+'</code><span class="cpy">⧉</span></div>' : '')+
       (s.cwd ? '<div class="scwd" title="'+esc(s.cwd)+'"><code class="nt">'+esc(s.cwd)+'</code></div>' : '')+
+      // Labels this window used before. Folded away by default: they are the
+      // same conversation reopened, not other participants, and listing them
+      // all is what made one window look like three.
+      ((s.aliases&&s.aliases.length) ?
+        '<div class="solder" onclick="event.stopPropagation(); this.nextElementSibling.hidden=!this.nextElementSibling.hidden">'+
+          '<code class="nt">+'+s.aliases.length+' earlier '+(s.aliases.length===1?'label':'labels')+'</code></div>'+
+        '<div hidden>'+s.aliases.map(a=>
+          '<div class="sid solderid" title="Earlier label — click to copy" '+
+          'onclick="event.stopPropagation(); window.copyId(this, \''+esc(a.sessionId)+'\')">'+
+          '<code class="nt">'+esc(a.sessionId)+'</code><span class="cpy">⧉</span></div>').join('')+
+        '</div>' : '')+
       '<div class="sfoot">'+
         '<span class="cnt"><code class="nt">'+s.messages+' msg'+(s.messages===1?'':'s')+'</code></span>'+
         '<div class="sbtns">'+
@@ -2099,7 +2172,7 @@ window.setQuick=function(tgt){
       window.setTargetSession(bestMatch.sessionId);
     } else {
       if (sel) sel.value = '';
-      SFILTER = null;
+      setSessionFilter(null);
       updateTargetBanner();
       renderSessions();
       render(true);
