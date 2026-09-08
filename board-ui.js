@@ -1862,20 +1862,35 @@ async function loadSessions(){
 window.copyId = async function(el, value){
   // Addressing a specific window is the whole point of having ids, and until
   // now the only way to get one was to read it off the screen by hand.
+  //
+  // Both clipboard paths need a user gesture and a focused page, and both fail
+  // silently when they do not have one. The tick therefore reports what
+  // actually happened: on failure the text is selected instead, so Ctrl+C still
+  // works. A confirmation that appears either way is worse than none.
+  let copied=false;
   try{
     await navigator.clipboard.writeText(value);
+    copied=true;
   }catch(e){
     const ta=document.createElement('textarea');
     ta.value=value; ta.style.position='fixed'; ta.style.opacity='0';
     document.body.appendChild(ta); ta.select();
-    try{ document.execCommand('copy'); }catch(_){}
+    try{ copied=document.execCommand('copy'); }catch(_){}
     document.body.removeChild(ta);
+  }
+  if(!copied){
+    const code=el.querySelector('code');
+    if(code&&window.getSelection){
+      const r=document.createRange(); r.selectNodeContents(code);
+      const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }
   }
   const mark=el.querySelector('.cpy');
   if(mark){
     const was=mark.textContent;
-    mark.textContent='✓';
-    setTimeout(()=>{mark.textContent=was;},900);
+    mark.textContent=copied?'✓':'⌘C';
+    mark.title=copied?'Copied':'Selected — press Ctrl+C';
+    setTimeout(()=>{mark.textContent=was;mark.title='';},1400);
   }
 };
 
