@@ -143,6 +143,75 @@ function initSchema(db) {
   try {
     db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_canonical ON sessions(canonical_id)');
   } catch (_) {}
+
+  // A line of work: the sessions that carry one job across windows and accounts.
+  // The owner switches Claude Desktop between two accounts; each keeps its own
+  // list of windows, so one job ends up served by a window in each, and every
+  // window signs the board with labels of its own. A line is what says they are
+  // the same job, so a message to any of them — or to the line by name — reaches
+  // whichever window is alive.
+  //
+  // Its own table on purpose. Membership used to live in session_aliases, where
+  // the next window to report its canonical id overwrote "label -> line" with
+  // "label -> window". Nothing but linking writes here.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS line_members (
+      member TEXT PRIMARY KEY,
+      line TEXT NOT NULL,
+      agent TEXT DEFAULT '',
+      created_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_line_members_line ON line_members(line);
+  `);
+  migrateLinesOnce(db);
+}
+
+// The first lines were stitched together by hand on 11.09: every session of one
+// job got the same custom name, and the window ids were pointed at that name in
+// session_aliases. It held only while the alias rows stayed in a lucky order, and
+// one of them had already been rewritten by the time it was looked at again. This
+// turns that patch into membership rows. Once — user_version records it — so two
+// sessions renamed alike later are not silently merged into a line.
+function migrateLinesOnce(db) {
+  let version = 0;
+  try { version = Number(db.prepare('PRAGMA user_version').get().user_version) || 0; } catch (_) {}
+  if (version >= 1) return;
+
+  const groups = new Map();
+  const add = (line, member, agent) => {
+    const l = String(line || '').trim();
+    const m = String(member || '').trim();
+    if (!l || !m || l === m) return;
+    if (!groups.has(l)) groups.set(l, new Map());
+    const g = groups.get(l);
+    if (!g.has(m) || (!g.get(m) && agent)) g.set(m, agent || '');
+  };
+
+  try {
+    const named = db.prepare("SELECT agent, session_id, canonical_id, custom_name FROM sessions WHERE custom_name != ''").all();
+    for (const r of named) {
+      add(r.custom_name, r.session_id, r.agent);
+      if (r.canonical_id) add(r.custom_name, r.canonical_id, r.agent);
+    }
+    for (const a of db.prepare('SELECT alias, canonical_id FROM session_aliases').all()) {
+      const target = String(a.canonical_id || '').trim();
+      if (groups.has(target)) add(target, a.alias, '');
+    }
+
+    const insert = db.prepare('INSERT OR IGNORE INTO line_members (member, line, agent, created_at) VALUES (?, ?, ?, ?)');
+    const now = new Date().toISOString();
+    db.exec('BEGIN');
+    for (const [line, members] of groups) {
+      // A custom name on a single session is a rename, not a line.
+      if (members.size < 2) continue;
+      const known = [...members.values()].find(Boolean) || '';
+      for (const [member, agent] of members) insert.run(member, line, agent || known, now);
+    }
+    db.exec('PRAGMA user_version = 1');
+    db.exec('COMMIT');
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch (_) {}
+  }
 }
 
 function rowToMessage(r) {
@@ -454,60 +523,92 @@ function readCursors() {
 
 // ── Session Alias Resolution (UUID <-> Branch Name <-> Custom Name) ──────────────────
 
-function resolveSessionAliases(sessionId) {
+// Resolution runs to a fixed point. It used to make one pass over each table in
+// rowid order, so a chain — label -> window -> line — closed only when the rows
+// happened to be stored in the order the chain needed. Measured on the live
+// board before this change: of twelve names on two lines, three could not see
+// their whole line, and every radio label picked up a phantom alias shared by
+// all of them. A fixed point does not care what order anything is stored in.
+//
+// options.agent  keeps the match inside one agent's sessions: a label can be
+//                shared by a Claude session and a Gemini one, and they are not
+//                the same participant.
+// options.lines  (default true) follows line membership. Addressing wants it —
+//                a message to the line reaches every window on it. Read cursors
+//                do not: see getCursor.
+function resolveSessionAliases(sessionId, options) {
   const s = String(sessionId || '').trim();
   if (!s) return new Set();
+  const opts = options || {};
+  const agent = String(opts.agent || '').trim().toLowerCase();
+  const withLines = opts.lines !== false;
 
   const aliases = new Set([s]);
-  const sLower = s.toLowerCase();
   const db = getDb();
 
-  // 1. Session config from gemini_convs.json
+  let convs = {};
   const convsFile = path.join(SCRIPTS_DIR, 'gemini_convs.json');
-  if (fs.existsSync(convsFile)) {
-    try {
-      const convs = JSON.parse(fs.readFileSync(convsFile, 'utf8'));
-      for (const [k, v] of Object.entries(convs)) {
-        if (k === 'default' || !v) continue;
-        const kLow = k.toLowerCase();
-        const vLow = String(v).toLowerCase();
-        if (kLow === sLower || vLow === sLower) {
-          aliases.add(k);
-          aliases.add(String(v));
-        }
+  try {
+    if (fs.existsSync(convsFile)) convs = JSON.parse(fs.readFileSync(convsFile, 'utf8')) || {};
+  } catch (_) { convs = {}; }
+
+  let sessions = [];
+  let aliasRows = [];
+  let members = [];
+  try { sessions = db.prepare('SELECT agent, key, session_id, custom_name, canonical_id FROM sessions').all(); } catch (_) {}
+  try { aliasRows = db.prepare('SELECT alias, canonical_id FROM session_aliases').all(); } catch (_) {}
+  try { members = db.prepare('SELECT member, line FROM line_members').all(); } catch (_) {}
+  const lineNames = new Set(members.map(m => String(m.line || '').trim()).filter(Boolean));
+
+  let grew = true;
+  const has = v => !!v && aliases.has(v);
+  const put = v => { if (v && !aliases.has(v)) { aliases.add(v); grew = true; } };
+
+  for (let round = 0; grew && round < 32; round++) {
+    grew = false;
+
+    // 1. gemini_convs.json: window <-> conversation, matched without regard to case
+    const lower = new Set([...aliases].map(x => x.toLowerCase()));
+    for (const [k, v] of Object.entries(convs)) {
+      if (k === 'default' || !v) continue;
+      if (lower.has(k.toLowerCase()) || lower.has(String(v).toLowerCase())) { put(k); put(String(v)); }
+    }
+
+    // 2. sessions
+    for (const r of sessions) {
+      if (agent && String(r.agent || '').trim().toLowerCase() !== agent) continue;
+      const sid = String(r.session_id || '').trim();
+      const canon = String(r.canonical_id || '').trim();
+      const key = String(r.key || '').trim();
+      // Everything after the FIRST slash. Labels contain slashes themselves, and
+      // split('/')[1] cut "kostyamat_fmradio/main-05-09" down to
+      // "kostyamat_fmradio" — a name every radio label then shared.
+      const keySess = key.includes('/') ? key.slice(key.indexOf('/') + 1).trim() : key;
+      // A shared custom name is how lines were first stitched together by hand,
+      // so it joins sessions only when lines are being followed.
+      const cname = withLines ? String(r.custom_name || '').trim() : '';
+      if ([sid, canon, keySess, cname].some(has)) { put(sid); put(canon); put(keySess); put(cname); }
+    }
+
+    // 3. session_aliases: label -> window
+    for (const r of aliasRows) {
+      const a = String(r.alias || '').trim();
+      const c = String(r.canonical_id || '').trim();
+      // Rows pointing a label at a line name are the hand patch of 11.09 — line
+      // membership kept in the wrong table — and say nothing about the window.
+      if (!withLines && (lineNames.has(a) || lineNames.has(c))) continue;
+      if (has(a) || has(c)) { put(a); put(c); }
+    }
+
+    // 4. line membership
+    if (withLines) {
+      for (const m of members) {
+        const member = String(m.member || '').trim();
+        const line = String(m.line || '').trim();
+        if (has(member) || has(line)) { put(member); put(line); }
       }
-    } catch (_) {}
+    }
   }
-
-  // 2. sessions table in SQLite
-  try {
-    const rows = db.prepare('SELECT key, session_id, custom_name FROM sessions').all();
-    for (const r of rows) {
-      const sid = (r.session_id || '').trim();
-      const cname = (r.custom_name || '').trim();
-      const keySess = (r.key || '').includes('/') ? r.key.split('/')[1].trim() : r.key.trim();
-
-      const itemMatches = [sid, cname, keySess].some(cand => cand && aliases.has(cand));
-      if (itemMatches) {
-        if (sid) aliases.add(sid);
-        if (cname) aliases.add(cname);
-        if (keySess) aliases.add(keySess);
-      }
-    }
-  } catch (_) {}
-
-  // 3. session_aliases table in SQLite
-  try {
-    const aRows = db.prepare('SELECT alias, canonical_id FROM session_aliases').all();
-    for (const r of aRows) {
-      const a = (r.alias || '').trim();
-      const c = (r.canonical_id || '').trim();
-      if (aliases.has(a) || aliases.has(c)) {
-        if (a) aliases.add(a);
-        if (c) aliases.add(c);
-      }
-    }
-  } catch (_) {}
 
   return aliases;
 }
@@ -526,6 +627,12 @@ function registerSessionAlias(alias, canonicalId) {
   } catch (_) {}
 }
 
+// Read state is kept per window, not per line. A line is served by a window in
+// each of two accounts, and a message one of them has read is not a message the
+// other has seen: sharing the cursor would mark it read for a context that never
+// held it. So a cursor follows the window's own labels and the id its client
+// issued, and stops there. Sharing it across the line is one argument away —
+// lines: true — should the owner want that; the choice is recorded as open.
 function getCursor(reader, sessionId) {
   const db = getDb();
   const r = (reader || '').trim();
@@ -536,7 +643,7 @@ function getCursor(reader, sessionId) {
     return globalRow ? Number(globalRow.last_read_id) || 0 : 0;
   }
 
-  const aliases = Array.from(resolveSessionAliases(s));
+  const aliases = Array.from(resolveSessionAliases(s, { agent: r, lines: false }));
   const placeholders = aliases.map(() => '?').join(',');
   const keys = aliases.map(a => `${r}/${a}`);
   const row = db.prepare(`
@@ -573,7 +680,7 @@ function markRead(reader, upTo, sessionId) {
   const maxRow = db.prepare('SELECT MAX(id) as maxId FROM messages').get();
   const targetId = typeof upTo === 'number' ? upTo : (maxRow ? maxRow.maxId : 0);
   if (r && s) {
-    const aliases = Array.from(resolveSessionAliases(s));
+    const aliases = Array.from(resolveSessionAliases(s, { agent: r, lines: false }));
     for (const a of aliases) {
       writeCursor(`${r}/${a}`, targetId);
     }
@@ -846,6 +953,97 @@ function saveDocIndex(d) {
   );
 }
 
+// ── Lines of work ───────────────────────────────────────────────────────────────────
+
+function listFrom(members) {
+  const raw = Array.isArray(members) ? members : String(members || '').split(/[,\n]+/);
+  return [...new Set(raw.map(m => String(m || '').trim()).filter(Boolean))];
+}
+
+function lineOf(member) {
+  const m = String(member || '').trim();
+  if (!m) return '';
+  try {
+    const row = getDb().prepare('SELECT line FROM line_members WHERE member = ?').get(m);
+    return row ? String(row.line || '') : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function lineMembers(line) {
+  const l = String(line || '').trim();
+  if (!l) return [];
+  try {
+    return getDb().prepare('SELECT member, agent, created_at FROM line_members WHERE line = ? ORDER BY created_at, member').all(l);
+  } catch (_) {
+    return [];
+  }
+}
+
+function readLines() {
+  const out = new Map();
+  try {
+    for (const r of getDb().prepare('SELECT member, line, agent, created_at FROM line_members ORDER BY line, created_at, member').all()) {
+      if (!out.has(r.line)) out.set(r.line, []);
+      out.get(r.line).push({ member: r.member, agent: r.agent || '', created_at: r.created_at });
+    }
+  } catch (_) {}
+  return out;
+}
+
+// A member belongs to one line at most. Moving it to another line is what linking
+// means, so it is allowed — but it is reported, never done quietly.
+function linkSessions(line, members, agent) {
+  const l = String(line || '').trim();
+  if (!l) throw new Error('a line name is required');
+  const list = listFrom(members).filter(m => m !== l);
+  if (!list.length) throw new Error('no members given');
+  // A line named after something that is already a member elsewhere would fuse
+  // two lines the moment anything resolved through it.
+  const clash = lineOf(l);
+  if (clash) throw new Error(`"${l}" is itself a member of the line "${clash}" and cannot name another`);
+
+  const db = getDb();
+  const now = new Date().toISOString();
+  const who = String(agent || '').trim();
+  const current = db.prepare('SELECT line FROM line_members WHERE member = ?');
+  const upsert = db.prepare(`
+    INSERT INTO line_members (member, line, agent, created_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(member) DO UPDATE SET
+      line = excluded.line,
+      agent = CASE WHEN excluded.agent != '' THEN excluded.agent ELSE line_members.agent END
+  `);
+  const added = [];
+  const moved = [];
+  db.exec('BEGIN');
+  try {
+    for (const m of list) {
+      const prev = current.get(m);
+      if (prev && prev.line === l) continue;
+      if (prev) moved.push({ member: m, from: prev.line });
+      else added.push(m);
+      upsert.run(m, l, who, now);
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch (_) {}
+    throw e;
+  }
+  return { line: l, added, moved, members: lineMembers(l) };
+}
+
+function unlinkSessions(line, members) {
+  const l = String(line || '').trim();
+  if (!l) throw new Error('a line name is required');
+  const list = listFrom(members);
+  if (!list.length) throw new Error('no members given');
+  const del = getDb().prepare('DELETE FROM line_members WHERE member = ? AND line = ?');
+  let removed = 0;
+  for (const m of list) removed += Number(del.run(m, l).changes) || 0;
+  return { line: l, removed, members: lineMembers(l) };
+}
+
 module.exports = {
   DB_PATH,
   getDb,
@@ -865,6 +1063,11 @@ module.exports = {
   saveSession,
   resolveSessionAliases,
   registerSessionAlias,
+  lineOf,
+  lineMembers,
+  readLines,
+  linkSessions,
+  unlinkSessions,
   readDocsIndex,
   saveDocIndex
 };

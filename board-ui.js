@@ -293,6 +293,8 @@ function apiSessions() {
       client: s.client || '',
       cwd: s.cwd || '',
       title: s.title || '',
+      line: lineFor(s),
+      lineMembers: lineRoster(s),
       topics: (s.topics || []).slice(0, 14),
       summary: s.summary || '',
       project: s.project || '',
@@ -314,6 +316,25 @@ function apiSessions() {
 //
 // Rows without that id cannot be grouped: they predate it or come from a client
 // that has none to give. They stay exactly as they were.
+// The line a session belongs to, found through its window: a label issued this
+// morning is not a member itself, but the window it belongs to is.
+function lineFor(s) {
+  try {
+    for (const name of bridgeDb.resolveSessionAliases(s.sessionId, { agent: s.agent, lines: false })) {
+      const line = bridgeDb.lineOf(name);
+      if (line) return line;
+    }
+  } catch (_) {}
+  return '';
+}
+
+// The whole roster of a line, so the dashboard can filter by it even when some
+// members have never posted and therefore have no card of their own.
+function lineRoster(s) {
+  const line = lineFor(s);
+  return line ? bridgeDb.lineMembers(line).map(m => m.member) : [];
+}
+
 function groupByWindow(rows) {
   const groups = new Map();
   const out = [];
@@ -334,9 +355,10 @@ function groupByWindow(rows) {
     for (const t of r.topics || []) {
       if (head.topics.length < 14 && !head.topics.includes(t)) head.topics.push(t);
     }
-    for (const field of ['customName', 'client', 'cwd', 'title', 'summary', 'project']) {
+    for (const field of ['customName', 'client', 'cwd', 'title', 'summary', 'project', 'line']) {
       if (!head[field] && r[field]) head[field] = r[field];
     }
+    if (!(head.lineMembers || []).length && (r.lineMembers || []).length) head.lineMembers = r.lineMembers;
   }
   return out;
 }
@@ -683,6 +705,14 @@ aside h2 {
    the two are never confused at a glance: one can be invented, one cannot. */
 .sitem .scanon { opacity: 0.95; }
 .sitem .scanon code { color: var(--accent, inherit); }
+.sitem .sline {
+  font: 10px var(--mono);
+  color: var(--accent, inherit);
+  cursor: pointer;
+  margin-top: 2px;
+  opacity: 0.85;
+}
+.sitem .sline:hover { opacity: 1; }
 .sitem .solder {
   font: 10px var(--mono);
   color: var(--ink-dim);
@@ -1909,6 +1939,21 @@ function setSessionFilter(sid){
   SFILTER=sid;
   SFILTER_NAMES=sid?windowNames(sid):[];
 }
+// Every window on a line, with all the names each of them has carried.
+window.filterLine=function(line){
+  const names=[line];
+  for(const s of SESSIONS){
+    if(s.line!==line)continue;
+    names.push(s.sessionId);
+    if(s.canonicalId)names.push(s.canonicalId);
+    for(const a of s.aliases||[])names.push(a.sessionId);
+    for(const m of s.lineMembers||[])names.push(m);
+  }
+  SFILTER=line;
+  SFILTER_NAMES=[...new Set(names)];
+  renderSessions();
+  render(true);
+};
 
 async function loadSessions(){
   try{
@@ -1954,6 +1999,26 @@ window.copyId = async function(el, value){
     mark.title=copied?'Copied':'Selected — press Ctrl+C';
     setTimeout(()=>{mark.textContent=was;mark.title='';},1400);
   }
+};
+
+window.linkSession = async function(sid){
+  const s=SESSIONS.find(x=>x.sessionId===sid);
+  if(!s)return;
+  const members=[s.sessionId, s.canonicalId].concat((s.aliases||[]).map(a=>a.sessionId)).filter(Boolean);
+  const current=s.line||'';
+  const name=prompt('Line of work for this window. Give windows in either account the same line name and a message to any of them reaches whichever is alive.\nLeave empty to take this window off its line.', current);
+  if(name===null)return;
+  const line=name.trim();
+  if(line===current)return;
+  try{
+    const payload=line?{line,members,agent:s.agent}:{line:current,members,remove:true};
+    const r=await fetch('/api/session/link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const j=await r.json();
+    if(j.error){alert(j.error);return;}
+    const moved=(j.result&&j.result.moved)||[];
+    if(moved.length)alert('Moved from another line: '+moved.map(m=>m.member+' (was '+m.from+')').join(', '));
+    loadSessions();
+  }catch(e){alert('Failed to link: '+e.message);}
 };
 
 window.renameSession = async function(key, currentName){
@@ -2026,8 +2091,13 @@ function populateSessionSelect(){
     const name=s.customName||s.sessionId;
     html+='<option value="'+esc(s.sessionId)+'">'+icon+' '+esc(name)+' ('+esc(s.agent)+')</option>';
   }
+  // A line is a full address: a message to it reaches every window on it.
+  const lineNames=[...new Set(SESSIONS.map(s=>s.line).filter(Boolean))];
+  for(const l of lineNames){
+    html+='<option value="'+esc(l)+'">🧵 '+esc(l)+' (line)</option>';
+  }
   sel.innerHTML=html;
-  if(curr&&SESSIONS.some(s=>s.sessionId===curr)){
+  if(curr&&(SESSIONS.some(s=>s.sessionId===curr)||lineNames.includes(curr))){
     sel.value=curr;
   }else{
     sel.value='';
@@ -2049,7 +2119,9 @@ function renderSessions(){
       '<div class="stitle-row">'+
         '<span class="stitle" title="Filter by this session">'+esc(displayName)+'</span>'+
         '<button type="button" class="rename-btn" onclick="event.stopPropagation(); window.renameSession(\''+esc(s.key)+'\', \''+esc(s.customName||'')+'\')" title="Rename this session">✏️</button>'+
+        '<button type="button" class="rename-btn" onclick="event.stopPropagation(); window.linkSession(\''+esc(s.sessionId)+'\')" title="Put this window on a line of work">🧵</button>'+
       '</div>'+
+      (s.line ? '<div class="sline" title="Line of work — click to show the whole line" onclick="event.stopPropagation(); window.filterLine(\''+esc(s.line)+'\')"><code class="nt">🧵 '+esc(s.line)+'</code></div>' : '')+
       (s.summary ? '<div class="ssummary">'+esc(s.summary)+'</div>' :
         (s.topics&&s.topics.length ? '<div class="stopics"><code class="nt">'+esc(s.topics.slice(0, 5).join(' · '))+'</code></div>' : ''))+
       // Both identifiers, each copyable. The label is what the agents sign
@@ -2274,6 +2346,22 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  if (req.method === 'POST' && req.url === '/api/session/link') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 2e6) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const { line, members, agent, remove } = JSON.parse(body || '{}');
+        const result = remove
+          ? bridgeDb.unlinkSessions(line, members)
+          : bridgeDb.linkSessions(line, members, agent);
+        return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ ok: true, result }));
+      } catch (e) {
+        return send(res, 400, 'application/json; charset=utf-8', JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
   if (req.method === 'POST' && req.url === '/api/cursor') {
     let body = '';
     req.on('data', c => { body += c; if (body.length > 2e6) req.destroy(); });
@@ -2447,6 +2535,13 @@ function raiseTargetEnvironment(m) {
           'SELECT agent FROM sessions WHERE session_id = ? OR canonical_id = ? OR key = ?'
         ).get(toSession, toSession, toSession);
         if (row && row.agent) agent = String(row.agent).trim().toLowerCase();
+      } catch (_) {}
+    }
+
+    if (!agent && toSession) {
+      try {
+        const known = bridgeDb.lineMembers(toSession).find(x => x.agent);
+        if (known) agent = String(known.agent).trim().toLowerCase();
       } catch (_) {}
     }
 

@@ -94,34 +94,48 @@ def detect_session(agent):
     return ""
 
 
-def session_aliases(session_id, agent):
-    """Every label that means this same window.
+def session_aliases(session_id, agent, lines=True):
+    """Every name this session answers to.
 
-    The label a session signs with is not stable: the client issues a fresh one
-    each time the session starts, while the window it belongs to stays the same.
-    One window here already carried three labels across three days. So a literal
-    comparison drops mail addressed to yesterday's name for today's window —
-    which is the failure this watchman exists to prevent.
+    A window collects labels — the client issues a fresh one each time a session
+    starts — and a line of work collects windows, one per account. Resolution runs
+    to a fixed point over all of it, so the order the rows happen to be stored in
+    does not decide what closes.
 
-    The canonical id the client issued is the fixed point: everything that
-    resolves to it is us.
+    lines=True   the addressee side: a message to the line, or to any window on
+                 it, is for us.
+    lines=False  the sender side: only our own window's names. A sibling window on
+                 the same line is somebody else posting, and discarding it as "our
+                 own replica" would hide exactly the conversation the line exists
+                 to carry.
     """
     names = {session_id}
-    # Scoped to this agent: one label is currently shared by a Claude session and
-    # a Gemini one, and pulling in the neighbour's names would make this watchman
-    # answer to an address that is not its own.
     try:
         con = sqlite3.connect(DB_PATH, timeout=3.0)
         try:
             cur = con.cursor()
-            for _ in range(3):            # label -> canonical -> sibling labels
+            try:
+                line_rows = cur.execute("SELECT member, line FROM line_members").fetchall()
+            except sqlite3.Error:
+                line_rows = []                # a board from before lines existed
+            line_names = {line for _, line in line_rows if line}
+            for _ in range(32):
                 before = len(names)
                 marks = list(names)
                 q = ",".join("?" * len(marks))
-                cur.execute(
-                    "SELECT session_id, canonical_id, custom_name FROM sessions "
-                    "WHERE lower(agent) = lower(?) AND (session_id IN (%s) OR canonical_id IN (%s))" % (q, q),
-                    [agent.strip()] + marks + marks)
+                # Scoped to this agent: a label can be shared by a Claude session
+                # and a Gemini one, and they are not the same participant.
+                if lines:
+                    cur.execute(
+                        "SELECT session_id, canonical_id, custom_name FROM sessions "
+                        "WHERE lower(agent) = lower(?) AND "
+                        "(session_id IN (%s) OR canonical_id IN (%s) OR custom_name IN (%s))" % (q, q, q),
+                        [agent.strip()] + marks + marks + marks)
+                else:
+                    cur.execute(
+                        "SELECT session_id, canonical_id, '' FROM sessions "
+                        "WHERE lower(agent) = lower(?) AND (session_id IN (%s) OR canonical_id IN (%s))" % (q, q),
+                        [agent.strip()] + marks + marks)
                 for sid, canon, cname in cur.fetchall():
                     for value in (sid, canon, cname):
                         if value and value.strip():
@@ -133,15 +147,31 @@ def session_aliases(session_id, agent):
                     "WHERE alias IN (%s) OR canonical_id IN (%s)" % (q, q),
                     marks + marks)
                 for alias, canon in cur.fetchall():
+                    if not lines and (alias in line_names or canon in line_names):
+                        continue              # line membership kept in the alias table
                     for value in (alias, canon):
                         if value and value.strip():
                             names.add(value.strip())
+                if lines:
+                    for member, line in line_rows:
+                        if member in names or line in names:
+                            names.add(member)
+                            names.add(line)
                 if len(names) == before:
                     break
         finally:
             con.close()
     except Exception:
         pass
+    return names
+
+
+def names_of(session_id, window_id, agent, lines):
+    """The union of what the label and the window each resolve to."""
+    names = set()
+    for seed in (session_id, window_id):
+        if seed:
+            names |= session_aliases(seed, agent, lines=lines)
     return names
 
 
@@ -182,6 +212,10 @@ def main():
     parser = argparse.ArgumentParser(description="Watch agent-bridge board")
     parser.add_argument("--session", default=os.environ.get("BRIDGE_SESSION", ""), help="Current session identifier")
     parser.add_argument("--agent", default=os.environ.get("BRIDGE_AGENT", "Claude"), help="Agent name")
+    # The window id the client issued. The hook finds it and passes it, so the line
+    # this window belongs to resolves from the first poll, before the agent has
+    # made a single bridge call to register its label against the window.
+    parser.add_argument("--window", default=os.environ.get("BRIDGE_WINDOW", ""), help="Client window id")
     args, _ = parser.parse_known_args()
 
     my_session = args.session.strip()
@@ -190,7 +224,8 @@ def main():
         my_session = detect_session(args.agent)
 
     parent_pid = os.getppid()
-    my_names = session_aliases(my_session, args.agent) if my_session else set()
+    my_names = names_of(my_session, args.window, args.agent, True)
+    my_window = names_of(my_session, args.window, args.agent, False)
     last = None
     misses = 0
     now = time.time()
@@ -214,14 +249,16 @@ def main():
                 my_session = found
                 print("watchman: session recognised as %s — filtering by session is now on"
                       % my_session, flush=True)
-                my_names = session_aliases(my_session, args.agent)
+                my_names = names_of(my_session, args.window, args.agent, True)
+                my_window = names_of(my_session, args.window, args.agent, False)
 
         # Labels accumulate: a window keeps the one it was given today and every
         # one it was given before. Re-reading them costs one query a minute and
         # is what keeps yesterday's address working.
         if my_session and now - last_alias_refresh >= IDENTITY_RETRY_SEC:
             last_alias_refresh = now
-            my_names = session_aliases(my_session, args.agent)
+            my_names = names_of(my_session, args.window, args.agent, True)
+            my_window = names_of(my_session, args.window, args.agent, False)
 
 
         try:
@@ -244,7 +281,7 @@ def main():
                     # session along with this one's own replicas, and a reply
                     # addressed to this very session lay unseen for hours.
                     if my_session:
-                        if who.lower().startswith(my_agent) and from_sess in my_names:
+                        if who.lower().startswith(my_agent) and from_sess in my_window:
                             continue
                         # Addressed to one specific other session: not ours.
                         if to_sess and to_sess != "all" and to_sess not in my_names:

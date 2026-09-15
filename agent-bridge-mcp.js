@@ -479,7 +479,12 @@ function pendingP0Banner() {
     if (!myAgent) return '';
     const board = readBoard();
     const cursor = mySession ? bridgeDb.getCursor(myAgent, mySession) : (readCursors()[myAgent] || 0);
-    const myAliases = mySession ? bridgeDb.resolveSessionAliases(mySession) : new Set();
+    // Two sets, because they answer different questions. Whether a P0 is for us
+    // follows the line: sent to it, or to a sibling window on it, it is ours to
+    // see. Whether it is our own echo does not: a sibling window posting on the
+    // same line is somebody else talking.
+    const myLine = mySession ? bridgeDb.resolveSessionAliases(mySession, { agent: myAgent }) : new Set();
+    const myWindow = mySession ? bridgeDb.resolveSessionAliases(mySession, { agent: myAgent, lines: false }) : new Set();
     const mine = board.filter(m => {
       if ((m.id || 0) <= cursor) return false;
       if (m.priority !== 'P0') return false;
@@ -488,7 +493,7 @@ function pendingP0Banner() {
         let isOwn = false;
         if (m.from === myAgent) {
           const fromLower = String(m.fromSession || '').trim().toLowerCase();
-          for (const a of myAliases) {
+          for (const a of myWindow) {
             if (String(a).trim().toLowerCase() === fromLower) { isOwn = true; break; }
           }
         }
@@ -502,7 +507,7 @@ function pendingP0Banner() {
         if (!mySession) return false;
         const toLower = String(m.toSession).trim().toLowerCase();
         let match = false;
-        for (const a of myAliases) {
+        for (const a of myLine) {
           if (String(a).trim().toLowerCase() === toLower) { match = true; break; }
         }
         if (!match) return false;
@@ -731,6 +736,27 @@ const TOOLS = [
     }
   },
   {
+    name: 'link_sessions',
+    description:
+      'Put sessions on one line of work, so one job carried by windows in different accounts behaves as one ' +
+      'participant: a message to the line name — or to any member — reaches whichever window is alive, and ' +
+      'load_session_context({line}) restores the freshest snapshot any of them saved. Members can be board labels ' +
+      'or the window ids clients issue (Claude Code: get_session({session_id:"self"}).sessionId); link window ids ' +
+      'where you can, because every future label of that window then joins by itself. A member belongs to one ' +
+      'line at most: linking it elsewhere moves it, and says so. `remove: true` takes the members off the line. ' +
+      'The line is an address, not a signature — keep signing with your own label.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        line: { type: 'string', description: 'Line name, e.g. "Claude wDSP". It becomes a valid toSession address.' },
+        members: { type: 'array', items: { type: 'string' }, description: 'Labels or window ids to put on the line.' },
+        agent: { type: 'string', description: '"Claude" or "Gemini" — whose sessions these are.' },
+        remove: { type: 'boolean', description: 'Take the given members off the line instead.' }
+      },
+      required: ['line', 'members']
+    }
+  },
+  {
     name: 'save_session_context',
     description:
       'Save a session context snapshot — safeguards against context loss or window reset. ' +
@@ -756,12 +782,14 @@ const TOOLS = [
     name: 'load_session_context',
     description:
       'Load a session context snapshot. Use when resuming work after a restart or context compaction. ' +
-      'Omit `sessionId` to list all available saved snapshots.',
+      'Omit `sessionId` to list all available saved snapshots. Pass `line` to pick a line of work up from ' +
+      'whichever member saved last — that is how context crosses from one account to the other.',
     inputSchema: {
       type: 'object',
       properties: {
         agent: { type: 'string', description: '"Claude" or "Gemini".' },
-        sessionId: { type: 'string', description: 'Session identifier to restore. Omit to list snapshots.' }
+        sessionId: { type: 'string', description: 'Session identifier to restore. Omit to list snapshots.' },
+        line: { type: 'string', description: 'Line of work (or any member of one): restores the freshest snapshot saved by any member.' }
       }
     }
   },
@@ -820,6 +848,7 @@ function handleRequest(req) {
     if (toolName === 'load_session_context') return doLoadCtx(id, args);
     if (toolName === 'list_sessions') return doListSessions(id, args);
     if (toolName === 'find_session') return doFindSession(id, args);
+    if (toolName === 'link_sessions') return doLinkSessions(id, args);
   } catch (err) {
     logError(`${toolName}: ${err.stack || err.message}`);
     return fail(id, `${toolName} failed: ${err.message}`);
@@ -984,7 +1013,11 @@ function doGet(id, a) {
       if (row && row.agent) reader = normAgent(row.agent);
     } catch (_) {}
   }
-  const myAliases = sessionId ? bridgeDb.resolveSessionAliases(sessionId) : new Set();
+  // The line answers "is this for me"; the window answers "is this mine" and
+  // "what have I read". Mixing them would either hide a sibling window's posts
+  // as our own echo, or mark a message read for a window that never saw it.
+  const myLine = sessionId ? bridgeDb.resolveSessionAliases(sessionId, { agent: reader }) : new Set();
+  const myWindow = sessionId ? bridgeDb.resolveSessionAliases(sessionId, { agent: reader, lines: false }) : new Set();
   const cursor = reader ? bridgeDb.getCursor(reader, sessionId) : 0;
   const only = a.only || (reader ? 'new' : 'all');
   const limit = typeof a.limit === 'number' && a.limit > 0 ? a.limit : DEFAULT_LIMIT;
@@ -1001,7 +1034,7 @@ function doGet(id, a) {
       if (!sessionId) return false;
       const targetLower = String(m.toSession).trim().toLowerCase();
       let match = false;
-      for (const a of myAliases) {
+      for (const a of myLine) {
         if (String(a).trim().toLowerCase() === targetLower) { match = true; break; }
       }
       if (!match) return false;
@@ -1017,7 +1050,7 @@ function doGet(id, a) {
     if (sessionId) {
       if (m.from !== reader) return false;
       const fromLower = String(m.fromSession || '').trim().toLowerCase();
-      for (const a of myAliases) {
+      for (const a of myWindow) {
         if (String(a).trim().toLowerCase() === fromLower) return true;
       }
       return false;
@@ -1060,7 +1093,7 @@ function doGet(id, a) {
   if (reader && !a.peek) {
     const maxSeen = shown.reduce((mx, m) => Math.max(mx, m.id || 0), cursor);
     if (sessionId) {
-      for (const a of myAliases) {
+      for (const a of myWindow) {
         bridgeDb.writeCursor(`${reader}/${a}`, maxSeen);
       }
     } else if (reader) {
@@ -1126,6 +1159,27 @@ function doStatus(id, a) {
     out.push('   (no active sessions in working/done/blocked status)');
   }
   out.push('');
+
+  const lineSummary = bridgeDb.readLines();
+  if (lineSummary.size) {
+    const byId = sessionsById(readReg());
+    out.push('🧵 LINES OF WORK:');
+    for (const [line, members] of lineSummary) {
+      let latest = null;
+      for (const m of members) {
+        const r = byId.get(m.member);
+        if (r && r.lastSeen && (!latest || String(r.lastSeen) > String(latest.r.lastSeen))) latest = { m, r };
+      }
+      let where = '';
+      if (latest) {
+        const windowId = latest.m.member.startsWith('local_') ? latest.m.member : (latest.r.canonicalId || '');
+        const account = accountOfWindow(windowId);
+        where = ` · last active ${latest.m.member}${account ? ` (account ${account.slice(0, 8)})` : ''} ${ago(latest.r.lastSeen)}`;
+      }
+      out.push(`   «${line}» — ${members.length} members${where}`);
+    }
+    out.push('');
+  }
 
   if (dbStatus.openQuestions && dbStatus.openQuestions.length) {
     out.push('❓ UNANSWERED QUESTIONS:');
@@ -1445,6 +1499,102 @@ function noteSession(agent, sessionId, topic, peerAgent, peerSession, identity) 
   writeReg(reg);
 }
 
+// Which account a window lives in. Claude Desktop keeps one folder of window
+// records per account, and the file name is the window id, so a directory
+// listing answers it: nothing is parsed, and nothing leaves this machine.
+let accountCache = { at: 0, map: new Map() };
+function accountOfWindow(windowId) {
+  const w = String(windowId || '').trim();
+  if (!w.startsWith('local_')) return '';
+  if (Date.now() - accountCache.at > 60000) {
+    const map = new Map();
+    const root = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Claude', 'claude-code-sessions');
+    try {
+      for (const acc of fs.readdirSync(root, { withFileTypes: true })) {
+        if (!acc.isDirectory()) continue;
+        const accDir = path.join(root, acc.name);
+        for (const sub of fs.readdirSync(accDir, { withFileTypes: true })) {
+          if (!sub.isDirectory()) continue;
+          for (const f of fs.readdirSync(path.join(accDir, sub.name))) {
+            if (f.startsWith('local_') && f.endsWith('.json')) map.set(f.slice(0, -5), acc.name);
+          }
+        }
+      }
+    } catch (_) {}
+    accountCache = { at: Date.now(), map };
+  }
+  return accountCache.map.get(w) || '';
+}
+
+function lineOfSession(r) {
+  if (!r) return '';
+  return bridgeDb.lineOf(r.sessionId) || (r.canonicalId ? bridgeDb.lineOf(r.canonicalId) : '');
+}
+
+function sessionsById(reg) {
+  const byId = new Map();
+  for (const r of Object.values(reg)) {
+    if (r.sessionId) byId.set(r.sessionId, r);
+    if (r.canonicalId && !byId.has(r.canonicalId)) byId.set(r.canonicalId, r);
+  }
+  return byId;
+}
+
+// Lines first: they are what a human addresses, and the part of the registry that
+// most needs to be seen whole — which windows carry the job, in which account, and
+// which of them spoke last.
+function describeLines(reg, agentFilter) {
+  const lines = bridgeDb.readLines();
+  if (!lines.size) return '';
+  const byId = sessionsById(reg);
+  const out = [];
+  for (const [line, members] of lines) {
+    if (agentFilter && !members.some(m => !m.agent || m.agent === agentFilter)) continue;
+    const rows = members.map(m => {
+      const r = byId.get(m.member);
+      const windowId = m.member.startsWith('local_') ? m.member : ((r && r.canonicalId) || '');
+      return { member: m.member, r, account: accountOfWindow(windowId), seen: (r && r.lastSeen) || '' };
+    });
+    const latest = rows.filter(x => x.seen).sort((x, y) => String(y.seen).localeCompare(String(x.seen)))[0];
+    out.push('');
+    out.push(`«${line}»   address it as toSession: "${line}"`);
+    for (const x of rows) {
+      const bits = [];
+      if (x.r && x.r.client) bits.push(x.r.client);
+      if (x.account) bits.push(`account ${x.account.slice(0, 8)}`);
+      if (x.seen) bits.push(ago(x.seen));
+      out.push(`   · ${x.member}${bits.length ? `   (${bits.join(', ')})` : ''}${latest && x === latest ? '   ← last active' : ''}`);
+    }
+  }
+  return out.length ? `🧵 LINES OF WORK — ${lines.size}\n${out.join('\n')}` : '';
+}
+
+function doLinkSessions(id, a) {
+  let result;
+  try {
+    result = a.remove
+      ? bridgeDb.unlinkSessions(a.line, a.members)
+      : bridgeDb.linkSessions(a.line, a.members, normAgent(a.agent) || '');
+  } catch (e) {
+    return fail(id, `link_sessions: ${e.message}`);
+  }
+  const roster = (result.members || [])
+    .map(m => `   · ${m.member}${m.agent ? `   (${m.agent})` : ''}`).join('\n') || '   (no members left)';
+  const notes = [];
+  if (a.remove) {
+    notes.push(`Removed ${result.removed}.`);
+  } else {
+    if (result.added && result.added.length) notes.push(`Added: ${result.added.join(', ')}.`);
+    if (result.moved && result.moved.length) {
+      notes.push('⚠️ Moved from another line: ' +
+        result.moved.map(m => `${m.member} (was «${m.from}»)`).join(', ') + '.');
+    }
+    if (!notes.length) notes.push('Every member given was already on this line.');
+  }
+  ok(id, `🧵 Line «${result.line}»\n${roster}\n\n${notes.join('\n')}\n\n` +
+    `Address the whole line with toSession: "${result.line}". Keep signing with your own label.`);
+}
+
 function doListSessions(id, a) {
   const reg = readReg();
   const keys = Object.keys(reg);
@@ -1463,13 +1613,16 @@ function doListSessions(id, a) {
              // is how a mistyped label became a session of its own.
              (r.canonicalId ? `   id: ${r.canonicalId}${r.client ? `   (${r.client})` : ''}\n` : '') +
              (r.cwd ? `   cwd: ${r.cwd}\n` : '') +
+             (lineOfSession(r) ? `   line: ${lineOfSession(r)}\n` : '') +
              `   topics: ${r.topics && r.topics.length ? r.topics.join(', ') : '—'}\n` +
              `   last active: ${r.lastSeen ? ago(r.lastSeen) : '?'}` +
              (r.summary ? `\n   summary: ${r.summary}` : '') +
              (contacts.length ? `\n   contacted: ${contacts.join(', ')}` : '') +
              (r.hasSnapshot ? '\n   💾 has context snapshot' : '');
     });
-  ok(id, `🗂️ SESSION REGISTRY — ${rows.length}\n\n${rows.join('\n\n')}\n\n` +
+  const linesText = describeLines(reg, agent);
+  ok(id, (linesText ? linesText + '\n\n' : '') +
+        `🗂️ SESSION REGISTRY — ${rows.length}\n\n${rows.join('\n\n')}\n\n` +
         '🔴 Before opening a NEW session on a topic already investigated, find an existing one ' +
         '(`find_session`) and communicate with it.');
 }
@@ -1568,14 +1721,59 @@ function doSaveCtx(id, a) {
   if (!a.decisions) missing.push('`decisions`');
   if (!a.openTasks) missing.push('`openTasks`');
   if (!a.paths) missing.push('`paths`');
+  // The usual reason fields go missing is not an agent leaving them out: a literal
+  // "<decisions>" inside the text of one field swallows everything after it, because
+  // the call itself is parsed as markup. The text still reaches the file, merged into
+  // the field before it — so say where to look instead of only that something is gone.
+  const angle = ['summary', 'decisions', 'openTasks', 'paths', 'gotchas']
+    .some(k => typeof a[k] === 'string' && a[k].includes('<'));
   ok(id, `💾 Snapshot saved: ${file}` +
-        (missing.length ? `\n⚠️ Missing fields: ${missing.join(', ')} — context restoration may be incomplete.` : ''));
+        (missing.length ? `\n⚠️ Missing fields: ${missing.join(', ')} — context restoration may be incomplete.` : '') +
+        (missing.length && angle
+          ? '\n   Likely cause: a "<" inside a field value (a literal <decisions> tag, say) merged the fields after it ' +
+            'into that one. Their text is still in the file — reread it, and keep angle brackets out of snapshot text.'
+          : ''));
 }
 
 function doLoadCtx(id, a) {
   ensureDir(SESSIONS_DIR);
   const agent = normAgent(a.agent);
   const sid = String(a.sessionId || '').trim();
+
+  // A session does not survive a change of account, so a line carries its
+  // context: the freshest snapshot any member saved is the one to pick up from.
+  if (a.line) {
+    const asked = String(a.line).trim();
+    const line = bridgeDb.lineMembers(asked).length ? asked : bridgeDb.lineOf(asked);
+    const members = line ? bridgeDb.lineMembers(line) : [];
+    if (!members.length) {
+      return fail(id, `load_session_context: "${asked}" is neither a line nor a member of one. See list_sessions.`);
+    }
+    let files = [];
+    try { files = fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.md')); } catch (_) {}
+    const suffixes = members.map(m => ({ suffix: `__${slug(m.member, 'session')}.md`, member: m.member }));
+    const found = [];
+    for (const f of files) {
+      const hit = suffixes.find(x => f.endsWith(x.suffix));
+      if (!hit) continue;
+      try { found.push({ f, member: hit.member, mtime: fs.statSync(path.join(SESSIONS_DIR, f)).mtimeMs }); } catch (_) {}
+    }
+    if (!found.length) {
+      return ok(id, `🧵 Line «${line}» has ${members.length} members, and none of them has saved a snapshot yet:\n` +
+        members.map(m => `   · ${m.member}`).join('\n'));
+    }
+    found.sort((x, y) => y.mtime - x.mtime);
+    const top = found[0];
+    let text = '';
+    try {
+      text = fs.readFileSync(path.join(SESSIONS_DIR, top.f), 'utf8');
+    } catch (e) {
+      return fail(id, `load_session_context: failed to read ${top.f}: ${e.message}`);
+    }
+    const older = found.slice(1).map(x => `   · ${x.member} — ${ago(new Date(x.mtime).toISOString())}`).join('\n');
+    return ok(id, `🧵 Line «${line}» — freshest snapshot is from ${top.member}, saved ${ago(new Date(top.mtime).toISOString())}.` +
+      (older ? `\nOlder snapshots on the same line:\n${older}` : '') + `\n\n───\n\n${text}`);
+  }
 
   if (!sid) {
     let files = [];

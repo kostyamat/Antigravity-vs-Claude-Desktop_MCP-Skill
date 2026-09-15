@@ -82,6 +82,55 @@ def _client_session_id():
         return ""
 
 
+def _find_window(cli_id):
+    """The Claude Desktop window this session runs in, and the account it lives under.
+
+    Claude Desktop keeps one folder of window records per account, and every record
+    names the transcript it writes — the very id this hook receives. So the window a
+    session belongs to can be looked up instead of asked for: the agent does not
+    have to remember a label, or call anything, to be recognised as that window.
+    """
+    if not cli_id:
+        return None
+    root = os.path.join(os.environ.get("APPDATA", ""), "Claude", "claude-code-sessions")
+    try:
+        accounts = [d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))]
+    except OSError:
+        return None
+    for acc in accounts:
+        acc_dir = os.path.join(root, acc)
+        try:
+            subs = [d for d in os.listdir(acc_dir) if os.path.isdir(os.path.join(acc_dir, d))]
+        except OSError:
+            continue
+        for sub in subs:
+            sub_dir = os.path.join(acc_dir, sub)
+            try:
+                names = [f for f in os.listdir(sub_dir) if f.startswith("local_") and f.endswith(".json")]
+            except OSError:
+                continue
+            for name in names:
+                try:
+                    with open(os.path.join(sub_dir, name), encoding="utf-8") as fh:
+                        raw = fh.read()
+                except (OSError, UnicodeDecodeError):
+                    continue
+                if cli_id not in raw:
+                    continue
+                try:
+                    rec = json.loads(raw)
+                except ValueError:
+                    continue
+                if str(rec.get("cliSessionId", "")).strip() != cli_id:
+                    continue
+                return {
+                    "window": str(rec.get("sessionId") or name[:-5]),
+                    "account": acc,
+                    "title": str(rec.get("title") or ""),
+                }
+    return None
+
+
 def main():
     if not os.path.exists(DB):
         return 0                       # no bridge on this machine — stay silent
@@ -108,6 +157,7 @@ def main():
     except Exception:
         pass                           # a wrong cursor only makes the brief noisier, never fatal
 
+    window, line, line_members = None, "", []
     try:
         cur.execute("""select count(*),
                               coalesce(sum(case when priority = 'P0' then 1 else 0 end), 0)
@@ -143,12 +193,35 @@ def main():
         except Exception:
             pass
 
+        # Read once: stdin can only be read once, and the id is needed below whether
+        # or not the registry already knew a label for this directory.
+        client_id = (os.environ.get("CLAUDE_SESSION_ID")
+                     or os.environ.get("BRIDGE_SESSION")
+                     or _client_session_id())
         from_client = False
         if not hook_session:
-            hook_session = (os.environ.get("CLAUDE_SESSION_ID")
-                            or os.environ.get("BRIDGE_SESSION")
-                            or _client_session_id())
+            hook_session = client_id
             from_client = bool(hook_session)
+
+        # Which window this is, and whether that window carries a line of work.
+        window = _find_window(client_id)
+        try:
+            names = [n for n in (hook_session, client_id, window and window["window"]) if n]
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='line_members'")
+            if cur.fetchone() and names:
+                q = ",".join("?" * len(names))
+                # a label points at its window, and the window is what joins a line
+                cur.execute("SELECT canonical_id FROM session_aliases WHERE alias IN (%s)" % q, names)
+                names += [r[0] for r in cur.fetchall() if r[0]]
+                q = ",".join("?" * len(names))
+                cur.execute("SELECT line FROM line_members WHERE member IN (%s) LIMIT 1" % q, names)
+                row = cur.fetchone()
+                if row:
+                    line = row[0]
+                    cur.execute("SELECT member FROM line_members WHERE line = ? ORDER BY member", (line,))
+                    line_members = [r[0] for r in cur.fetchall()]
+        except Exception:
+            line, line_members = "", []
 
         con.close()
     except Exception:
@@ -178,6 +251,9 @@ def main():
     # the board yet is not in the registry — which is every session at startup.
     if hook_session:
         cmd_str = "%s %s --session %s --agent %s" % (py, watch, hook_session, ME)
+        if window:
+            # the window from the first second: its line resolves before any label is registered
+            cmd_str += " --window %s" % window["window"]
         session_note = []
         if from_client:
             # The board has no session for this directory yet, so this id comes
@@ -209,8 +285,29 @@ def main():
         "other agent arrive nowhere — they write, nothing answers, and they have to ask whether",
         "anyone is listening. That has already happened three times in one day.",
     ]
+    if window:
+        lines += [
+            "",
+            "This window: %s   (account %s)%s" % (
+                window["window"], window["account"][:8], ("   «%s»" % window["title"]) if window["title"] else ""),
+            "Pass it as canonicalId in your first bridge call: every label you sign with then resolves",
+            "to this window, and through it to its line, without anyone linking by hand.",
+        ]
+    if line:
+        lines += [
+            "",
+            "LINE OF WORK: «%s» — %d members." % (line, len(line_members)),
+            "You are one window of a job that other windows, possibly in the other account, have been",
+            "carrying. Before reading the board, pick up where the line left off:",
+            '  load_session_context({line: "%s"})' % line,
+            'Others reach every window on this line with toSession: "%s". Keep signing with your' % line,
+            "own label: the line is an address, not a signature — two windows signing alike could no",
+            "longer tell their own posts from each other's.",
+        ]
     if unread:
-        lines.append('Then: get_messages({reader:"%s"}) — the CONTENT, not the counters.' % ME)
+        extra = (', canonicalId:"%s", client:"claude-code"' % window["window"]) if window else ""
+        lines.append('Then: get_messages({reader:"%s", sessionId:"%s"%s}) — the CONTENT, not the counters.'
+                     % (ME, hook_session or "<your session id>", extra))
 
     text = "\n".join(lines)
 
