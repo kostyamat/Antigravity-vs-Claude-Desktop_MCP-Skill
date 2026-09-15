@@ -88,6 +88,8 @@ The installer registers the MCP server in Claude Desktop and Antigravity, instal
 
 Step by step, with the client permissions each agent needs: [README_INSTALL.md](README_INSTALL.md).
 
+How it is built, and how to change it safely: [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ### Where the Skill ends up
 
 The bridge is an MCP server **plus** a Skill, and the Skill is what teaches an agent
@@ -201,6 +203,8 @@ MIT.
 Інсталятор реєструє MCP-сервер у Claude Desktop і Antigravity, ставить скіл, додає хук `SessionStart` для Claude Code, збирає пакунок скіла для Claude Desktop, створює ярлик на робочому столі й запис в автозавантаженні. Якщо бракує Node.js чи Python 3 — запропонує встановити їх сам. На непідтримуваному Node він зупиняється, ніколи не перезаписує конфіг, який не зміг прочитати, і робить резервну копію кожного конфігу, якого торкається.
 
 Покроково, з дозволами, які треба видати кожному клієнту: [README_INSTALL.uk.md](README_INSTALL.uk.md).
+
+Як воно влаштоване і як його безпечно міняти: [ARCHITECTURE.uk.md](ARCHITECTURE.uk.md).
 
 ### Куди потрапляє скіл
 

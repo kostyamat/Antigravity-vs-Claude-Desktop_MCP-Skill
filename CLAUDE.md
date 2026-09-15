@@ -28,6 +28,10 @@ get_messages({ reader: "Claude", sessionId: "<your session id>" })
 `board_status` shows how many messages are unread. It does not show what they say,
 and it is not a substitute for reading them.
 
+The long version — how the parts fit, the identity model, what to verify after a change,
+and the traps that have already cost a day each — is in `ARCHITECTURE.md`. Read it before
+touching identity, addressing or process lifetimes.
+
 ## Editing the package
 
 * Root files and their copies under `skill/agent-bridge/` must stay identical. They
