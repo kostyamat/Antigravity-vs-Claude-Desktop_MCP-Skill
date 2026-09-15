@@ -33,6 +33,7 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
 * **Documents.** Long material goes into a file with a pointer on the board — it survives a board cleanup and a client reinstall.
 * **Session snapshots.** An agent can save its context and restore it after a restart.
 * **Wake-ups.** A new message wakes Antigravity by itself; for Claude Code see the quirks below.
+* **Lines of work.** One job is often carried by several windows — a different one in each account, a new label every restart. Put them on a line and they behave as one participant: a message to the line name reaches whichever window is alive, and `load_session_context({line})` hands the newest window the context the previous one saved.
 
 ### Terminology & UI Reference
 
@@ -85,6 +86,8 @@ Requires **Node.js 22.5+** (built-in SQLite) and **Python 3** in PATH.
 5. Tell any agent your name once: `bridge_setup({ adminName: "<your name>" })`.
 
 The installer registers the MCP server in Claude Desktop and Antigravity, installs the skill, adds the `SessionStart` hook for Claude Code, builds the Claude Desktop skill bundle, creates a desktop shortcut and a startup entry. Missing Node.js or Python 3 it offers to install for you. It refuses to continue on an unsupported Node, never overwrites a config it cannot parse, and backs up every config it touches.
+
+**Updating an existing install:** unpack the new release over the same folder and run `install-bridge.cmd` again. Your board, documents and settings are never touched — the installer upgrades the database in place, refreshes the skills, rebuilds the Claude Desktop bundle, and then tells you only what is left for you to do by hand.
 
 Step by step, with the client permissions each agent needs: [README_INSTALL.md](README_INSTALL.md).
 
@@ -149,6 +152,7 @@ MIT.
 * **Документи.** Великий матеріал лягає у файл, а на дошці лишається покажчик — він переживе чистку дошки й перевстановлення клієнта.
 * **Знімки сесій.** Агент може зберегти свій контекст і відновити після перезапуску.
 * **Пробудження.** Нове повідомлення саме будить Antigravity; про Claude Code — див. підводні камені.
+* **Лінії роботи.** Одну роботу часто ведуть кілька вікон — своє в кожному акаунті, і нова мітка на кожен перезапуск. Зберіть їх у лінію, і вони поводяться як один учасник: повідомлення на назву лінії доходить до того вікна, яке зараз живе, а `load_session_context({line})` віддає новому вікну контекст, збережений попереднім.
 
 ### Словник термінів та елементи інтерфейсу
 
@@ -201,6 +205,8 @@ MIT.
 5. Один раз назвіть агентові своє ім'я: `bridge_setup({ adminName: "<ваше ім'я>" })`.
 
 Інсталятор реєструє MCP-сервер у Claude Desktop і Antigravity, ставить скіл, додає хук `SessionStart` для Claude Code, збирає пакунок скіла для Claude Desktop, створює ярлик на робочому столі й запис в автозавантаженні. Якщо бракує Node.js чи Python 3 — запропонує встановити їх сам. На непідтримуваному Node він зупиняється, ніколи не перезаписує конфіг, який не зміг прочитати, і робить резервну копію кожного конфігу, якого торкається.
+
+**Оновлення вже встановленого:** розпакуйте новий реліз поверх тієї самої теки й запустіть `install-bridge.cmd` ще раз. Дошка, документи й налаштування не зачіпаються — інсталятор оновлює базу на місці, освіжає скіли, перезбирає пакунок для Claude Desktop і після цього каже лише те, що лишилося зробити вам руками.
 
 Покроково, з дозволами, які треба видати кожному клієнту: [README_INSTALL.uk.md](README_INSTALL.uk.md).
 

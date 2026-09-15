@@ -21,6 +21,70 @@ const SCRIPTS_DIR = path.resolve(__dirname);
 const USER_PROFILE = process.env.USERPROFILE || os.homedir();
 const APPDATA = process.env.APPDATA || path.join(USER_PROFILE, 'AppData', 'Roaming');
 
+// An update has to be able to say what actually changed. A client holds the MCP
+// server it spawned, so "restart Claude Desktop" is worth printing only when the
+// server really is new — and worth printing loudly when it is. Printing the same
+// four instructions after every run is how people learn to skip all four.
+const crypto = require('crypto');
+
+const VERSION = (() => {
+  try { return fs.readFileSync(path.join(SCRIPTS_DIR, 'VERSION'), 'utf8').trim(); } catch (_) { return ''; }
+})();
+
+function fingerprintFile(rel) {
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(path.join(SCRIPTS_DIR, rel))).digest('hex').slice(0, 16);
+  } catch (_) { return ''; }
+}
+
+function fingerprintTree(rel) {
+  const hash = crypto.createHash('sha256');
+  const walk = (dir) => {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    } catch (_) { return; }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      hash.update(e.name);
+      try { hash.update(fs.readFileSync(p)); } catch (_) {}
+    }
+  };
+  walk(path.join(SCRIPTS_DIR, rel));
+  return hash.digest('hex').slice(0, 16);
+}
+
+const CONFIG_FILE = path.join(SCRIPTS_DIR, 'bridge_config.json');
+let previousConfig = {};
+try {
+  if (fs.existsSync(CONFIG_FILE)) previousConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) || {};
+} catch (_) { previousConfig = {}; }
+
+const fingerprints = {
+  server: fingerprintFile('agent-bridge-mcp.js'),
+  db: fingerprintFile('bridge-db.js'),
+  ui: fingerprintFile('board-ui.js'),
+  skill: fingerprintTree(path.join('skill', 'agent-bridge'))
+};
+const lastTime = previousConfig.installedFingerprints || {};
+// A machine with a config has been installed on before, whatever that install
+// knew about versions. Calling that a first install would be a lie on the one
+// line the human reads to decide whether anything of theirs is at risk.
+const isFirstInstall = !fs.existsSync(CONFIG_FILE);
+// No fingerprint from last time means this is the first run that keeps them —
+// every install made before this version. Unknown is not the same as unchanged,
+// and guessing "unchanged" would tell exactly those people that an update which
+// replaced their server and their skill left them nothing to do.
+const changedSince = key => !lastTime[key] || lastTime[key] !== fingerprints[key];
+const serverChanged = changedSince('server') || changedSince('db');
+const uiChanged = changedSince('ui');
+const skillChanged = changedSince('skill');
+// A package without a VERSION file — anything built before versions were stamped —
+// still deserves an honest answer: if not one fingerprint moved, this is the same
+// build being run again, not an update.
+const nothingMoved = !serverChanged && !uiChanged && !skillChanged;
+
 let errorCount = 0;
 let warnCount = 0;
 // Claude Desktop takes its Skill only by hand. Remember where the bundle was
@@ -28,8 +92,17 @@ let warnCount = 0;
 let desktopBundlePath = null;
 
 console.log('════════════════════════════════════════════════════════════════');
-console.log('🚀 Agent-Bridge v2: Complete Ecosystem Deployment & Setup');
-console.log('════════════════════════════════════════════════════════════════\n');
+console.log('🚀 Agent-Bridge' + (VERSION ? ' v' + VERSION : '') + ': Deployment & Setup');
+console.log('════════════════════════════════════════════════════════════════');
+if (isFirstInstall) {
+  console.log('First install on this machine.');
+} else if ((VERSION && previousConfig.installedVersion === VERSION) || (!VERSION && nothingMoved)) {
+  console.log('Re-running over the same ' + (VERSION ? 'version (' + VERSION + ')' : 'build') + '.');
+} else {
+  console.log('Updating in place: ' + (previousConfig.installedVersion || 'an earlier build') +
+    ' -> ' + (VERSION || 'this build') + '. The board, its documents and your settings are left alone.');
+}
+console.log('');
 
 // Helper: dynamically discover real Python 3 command
 function detectPython() {
@@ -662,8 +735,13 @@ try {
   if (fs.existsSync(configPath)) {
     cfg = Object.assign({}, cfg, JSON.parse(fs.readFileSync(configPath, 'utf8')));
   }
+  // Remembered so the next run can tell an update from a re-run, and name what moved.
+  cfg.installedVersion = VERSION || cfg.installedVersion || '';
+  cfg.installedAt = new Date().toISOString();
+  cfg.installedFingerprints = fingerprints;
   fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf8');
-  console.log(`  ✅ Config saved (Administrator: ${cfg.adminName || 'Not configured'}, Port: ${cfg.uiPort})`);
+  console.log(`  ✅ Config saved (Administrator: ${cfg.adminName || 'Not configured'}, Port: ${cfg.uiPort}` +
+    (cfg.installedVersion ? `, version ${cfg.installedVersion}` : '') + ')');
 } catch (e) {
   errorCount++;
   console.error(`  ❌ Configuration error: ${e.message}`);
@@ -678,6 +756,63 @@ function printManualStep() {
   console.log('    via Settings > Capabilities > Skills');
 }
 
+// Only what this run actually changed. On a re-run that moved nothing, the honest
+// output is that there is nothing to do — and that is what makes the times it does
+// ask for something worth reading.
+function printNextSteps() {
+  const steps = [];
+  if (isFirstInstall || skillChanged) {
+    if (desktopBundlePath) {
+      steps.push([
+        'Upload the Claude Desktop Skill — this is the one thing no installer can do:',
+        '   ' + desktopBundlePath,
+        '   Settings > Capabilities > Skills'
+      ]);
+    }
+  }
+  if (isFirstInstall || serverChanged) {
+    steps.push([
+      'Restart Claude Desktop and Antigravity.',
+      '   A client holds the MCP server it spawned, so both are still running the',
+      '   previous one; nothing new reaches their tools until they restart.'
+    ]);
+  }
+  if (!steps.length) {
+    console.log('• Nothing is left to do by hand: no part that needs your help changed.');
+    return;
+  }
+  console.log('• Left for you:');
+  steps.forEach((lines, i) => {
+    console.log('   ' + (i + 1) + '. ' + lines[0]);
+    lines.slice(1).forEach(l => console.log('   ' + l));
+  });
+}
+
+// The dashboard is ours, not the human's application, so when its code changes we
+// restart it instead of asking. A client holding a conversation is a different
+// matter and is only ever asked for.
+function restartDashboardIfChanged() {
+  if (!uiChanged) return;
+  try {
+    const port = Number(previousConfig.uiPort || 8787);
+    const query = spawnSync('powershell', ['-NoProfile', '-Command',
+      `try { (Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction Stop | Select-Object -First 1).OwningProcess } catch { '' }`],
+      { encoding: 'utf8', windowsHide: true });
+    const pid = parseInt(String(query.stdout || '').trim(), 10);
+    if (!pid) return;
+    spawnSync('taskkill', ['/PID', String(pid), '/F'], { stdio: 'ignore', windowsHide: true });
+    const vbs = path.join(SCRIPTS_DIR, 'board-ui-hidden.vbs');
+    if (!fs.existsSync(vbs)) return;
+    spawnSync('cmd.exe', ['/c', 'start', '""', 'wscript.exe', vbs], { cwd: SCRIPTS_DIR, windowsHide: true });
+    console.log('  ↻ Dashboard restarted: its code changed in this update.');
+  } catch (e) {
+    warnCount++;
+    console.warn('  Could not restart the dashboard (' + e.message + ') — start it yourself: board-ui-hidden.vbs');
+  }
+}
+
+restartDashboardIfChanged();
+
 if (errorCount > 0) {
   console.log('\n════════════════════════════════════════════════════════════════');
   console.log(`❌ DEPLOYMENT COMPLETED WITH ERRORS (errors: ${errorCount}, warnings: ${warnCount})`);
@@ -691,7 +826,7 @@ if (errorCount > 0) {
   console.log('════════════════════════════════════════════════════════════════');
   console.log(`• Web UI: click the Agent-Bridge shortcut on your Desktop or run: node "${path.join(SCRIPTS_DIR, 'board-ui.js')}"`);
   console.log('• Please review the warnings above (e.g. Python 3 requirement).');
-  printManualStep();
+  printNextSteps();
   console.log('');
 } else {
   console.log('\n════════════════════════════════════════════════════════════════');
@@ -700,6 +835,6 @@ if (errorCount > 0) {
   console.log(`• Web UI: click the Agent-Bridge shortcut on your Desktop or run: node "${path.join(SCRIPTS_DIR, 'board-ui.js')}"`);
   console.log('• Claude Code: SessionStart hook will display board digest on session start');
   console.log('• Antigravity & Claude Desktop: MCP server registered and ready to use');
-  printManualStep();
+  printNextSteps();
   console.log('');
 }

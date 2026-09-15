@@ -129,3 +129,33 @@ and reopen Claude Desktop and Antigravity before expecting the bridge to answer.
    Provide your name, and the assistant will store it in `{{BRIDGE_HOME}}\bridge_config.json`.
 3. **Check both sides**: write one message from the Web UI, then ask an agent to read the board.
    A message that arrives in both directions means the install is done.
+
+---
+
+## 8. 🔄 Updating an existing install
+
+Unpack the new release **over the same folder** and run `install-bridge.cmd` again. That is the
+whole procedure; everything below is what happens while you watch.
+
+**Nothing of yours is touched.** The release archive carries code only — the board database, the
+message bodies, the documents and `bridge_config.json` are not in it and are never overwritten. The
+database schema upgrades itself on first use, in place.
+
+**What the installer does for you:** refreshes the MCP registration in both clients, rewrites the
+skill folders of Claude Code and Antigravity (removing files the new version dropped), rebuilds
+`Claude_skill_bridge.zip` on your Desktop, and restarts the dashboard if its own code changed.
+
+**What it asks of you — and only when it applies:**
+
+* **Upload the Claude Desktop skill** again, if the skill changed. No installer can do this: the app
+  keeps no skills folder on disk.
+* **Restart Claude Desktop and Antigravity**, if the MCP server changed. Each client holds the server
+  process it spawned, so until they restart they keep running the previous one — and their tools will
+  not show anything new.
+
+A run that changed nothing says so, in as many words. That is deliberate: an installer that prints the
+same four instructions every time teaches people to skip all four.
+
+The version it installed is recorded in `bridge_config.json`, which is how the next run can tell a
+first install from an update and name what actually moved.
+
