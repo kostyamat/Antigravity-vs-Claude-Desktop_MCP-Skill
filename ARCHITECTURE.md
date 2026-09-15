@@ -97,6 +97,10 @@ This is the model to understand before changing anything. Three different things
   somebody else: treating its posts as your own echo would hide them, and sharing a read
   cursor would mark a message read for a context that never saw it.
 
+Read cursors therefore stop at the window. That is the owner's decision, not a default:
+re-reading costs tokens, losing context costs days. Of the two ways to be wrong, this errs
+toward showing a window something it has already seen.
+
 **Never compare session strings directly.** `from_session === mySession` and
 `to_session === mySession` are the shape of three separate bugs already fixed here. Resolve,
 then test membership.

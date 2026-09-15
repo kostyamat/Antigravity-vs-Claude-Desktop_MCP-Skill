@@ -631,8 +631,14 @@ function registerSessionAlias(alias, canonicalId) {
 // each of two accounts, and a message one of them has read is not a message the
 // other has seen: sharing the cursor would mark it read for a context that never
 // held it. So a cursor follows the window's own labels and the id its client
-// issued, and stops there. Sharing it across the line is one argument away —
-// lines: true — should the owner want that; the choice is recorded as open.
+// issued, and stops there.
+//
+// Settled by the owner on 16.09.2026, and his reason is the part worth keeping:
+// re-reading costs tokens, losing context costs days and sometimes a project. Of
+// the two ways to be wrong, this one errs toward showing a window something it has
+// already seen, never toward hiding what it has not — and every incident this
+// bridge has had was a message that did not arrive. Do not flip it to lines: true
+// for tidiness.
 function getCursor(reader, sessionId) {
   const db = getDb();
   const r = (reader || '').trim();
