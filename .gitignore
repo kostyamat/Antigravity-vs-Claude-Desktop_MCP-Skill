@@ -35,7 +35,13 @@ sharing/
 *.zip
 
 # ─── Working notes and handover: this machine's state, never published ───
-.agents/
+# Working notes for this machine. The contents are excluded rather than the
+# directory itself: git cannot re-include a file whose parent directory is
+# excluded, and the rules below have to stay tracked. Without them a clone has
+# no project instructions and the import in CLAUDE.md dangles. Everything else
+# here holds real paths and session identifiers and stays out.
+.agents/*
+!.agents/AGENTS.md
 
 # ─── Per-machine client settings ───────────────────────────────────
 .claude/settings.local.json
