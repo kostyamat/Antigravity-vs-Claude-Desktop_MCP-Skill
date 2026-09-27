@@ -7,26 +7,9 @@ by `.gitignore`.
 
 ## First thing in a session
 
-Raise the watchman before anything else. It is session-scoped: it died with the
-previous session and does not exist right now. Without it, the human and the other
-agent write to the board and nothing answers.
-
-```
-Monitor({ command: "python3 watch_board.py --session <your session id> --agent Claude", persistent: true })
-```
-
-The `--session` argument is what keeps your orders apart from the session next door.
-Drop it and the watchman guesses from the registry, which does not yet contain a
-session that has not written to the board — the state every session starts in.
-
-Then read the **content** of the board, not the counters:
-
-```
-get_messages({ reader: "Claude", sessionId: "<your session id>" })
-```
-
-`board_status` shows how many messages are unread. It does not show what they say,
-and it is not a substitute for reading them.
+Run the `Monitor(...)` and `get_messages(...)` lines the `SessionStart` hook printed, and
+sign every bridge call with the `sessionId` it names. The hook is the single place that
+states identity; this file and the skill defer to it.
 
 The long version — how the parts fit, the identity model, what to verify after a change,
 and the traps that have already cost a day each — is in `ARCHITECTURE.md`. Read it before
@@ -56,14 +39,6 @@ holds real paths and session ids. `.agents/HANDOFF.md` is the one to read first 
 you take over: what was done, what was decided with the human and what is still open,
 the sharp edges, and how to bring the processes back. Keep it current — a session ends
 without warning, and the next one starts from that file, not from your memory.
-
-The order that works, first three actions of a session:
-
-```
-get_session({ session_id: "self" })    // who you actually are, before you sign anything
-Monitor(the watchman, with --session)  // the SessionStart hook prints it filled in
-get_messages({ reader, sessionId })    // the CONTENT, not the counters
-```
 
 Before starting a topic, `find_session` — several sessions legitimately share a thread,
 and re-doing someone's research costs more than reading it.

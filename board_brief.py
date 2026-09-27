@@ -198,10 +198,9 @@ def main():
         client_id = (os.environ.get("CLAUDE_SESSION_ID")
                      or os.environ.get("BRIDGE_SESSION")
                      or _client_session_id())
-        from_client = False
+
         if not hook_session:
             hook_session = client_id
-            from_client = bool(hook_session)
 
         # Which window this is, and whether that window carries a line of work.
         window = _find_window(client_id)
@@ -227,12 +226,9 @@ def main():
     except Exception:
         return 0
 
-    lines = ["agent-bridge board:"]
-    if unread:
-        lines.append("  unread for %s: %d%s"
-                     % (ME, unread, ("   P0 PENDING: %d" % p0) if p0 else ""))
-    else:
-        lines.append("  nothing new")
+    lines = ["agent-bridge: %s%s" % (
+        ("%d unread for %s" % (unread, ME)) if unread else "nothing new",
+        ("   P0 PENDING: %d" % p0) if p0 else "")]
     for i, who, topic, head in reversed(last):
         lines.append("  #%-4s %-9s %-20s %s" % (i, who, topic[:20], head[:66]))
 
@@ -245,69 +241,30 @@ def main():
     py = sys.executable.replace("\\", "/") if sys.executable else "python"
     if " " in py:
         py = '\\"%s\\"' % py               # the command is quoted inside the Monitor call
-    # Filtering by session is what keeps one session's orders apart from a
-    # neighbour's. Without the identifier the watchman has to guess it from the
-    # working directory and the registry, and a session that has not written to
-    # the board yet is not in the registry — which is every session at startup.
-    if hook_session:
-        cmd_str = "%s %s --session %s --agent %s" % (py, watch, hook_session, ME)
-        if window:
-            # the window from the first second: its line resolves before any label is registered
-            cmd_str += " --window %s" % window["window"]
-        session_note = []
-        if from_client:
-            # The board has no session for this directory yet, so this id comes
-            # from the client rather than from the board. The two only agree if
-            # the agent then signs its messages with the same one.
-            session_note = [
-                "Use %s as your sessionId in every bridge call too — get_messages, post_message," % hook_session,
-                "all of them. The watchman filters on the identifier you pass it, so if you sign",
-                "the board with a different name, it will discard the messages addressed to you.",
-                "",
-            ]
-    else:
-        cmd_str = "%s %s --session <YOUR SESSION ID> --agent %s" % (py, watch, ME)
-        session_note = [
-            "Replace <YOUR SESSION ID> with the identifier you use on the board, the same one",
-            "you pass to get_messages and post_message. Do not drop the argument: without it the",
-            "watchman cannot tell an order addressed to you from one addressed to the session",
-            "next door, and it errs in both directions at once.",
-            "",
-        ]
-    lines += [
-        "",
-        "MANDATORY FIRST ACTION, before anything else in this session:",
-        '  Monitor({command: "%s", persistent: true})' % cmd_str,
-        "",
-    ] + session_note + [
-        "This is not a suggestion. The watchman is session-scoped: it died with the previous",
-        "session and does not exist right now. Without it, messages from the human and from the",
-        "other agent arrive nowhere — they write, nothing answers, and they have to ask whether",
-        "anyone is listening. That has already happened three times in one day.",
-    ]
+    # One identity, stated once. The watchman filters on --session, so the agent
+    # must sign the board with exactly the same id. Project instruction files defer
+    # to this line instead of repeating it: repeated, the copies drifted and
+    # contradicted each other, and every session paid to reconcile them.
+    sid = hook_session or "<YOUR SESSION ID>"
+    cmd_str = "%s %s --session %s --agent %s" % (py, watch, sid, ME)
     if window:
-        lines += [
-            "",
-            "This window: %s   (account %s)%s" % (
-                window["window"], window["account"][:8], ("   «%s»" % window["title"]) if window["title"] else ""),
-            "Pass it as canonicalId in your first bridge call: every label you sign with then resolves",
-            "to this window, and through it to its line, without anyone linking by hand.",
-        ]
+        # the window from the first second: its line resolves before any label is registered
+        cmd_str += " --window %s" % window["window"]
+    if hook_session:
+        lines.append("Your board sessionId: %s — sign every bridge call with it; do not invent another."
+                     % hook_session)
+    else:
+        lines.append("No sessionId found: use the label list_sessions shows for this project,"
+                     " the same one in the watchman and in every bridge call.")
+    lines += [
+        "First action (the watchman died with the previous session):",
+        '  Monitor({command: "%s", persistent: true})' % cmd_str,
+    ]
     if line:
-        lines += [
-            "",
-            "LINE OF WORK: «%s» — %d members." % (line, len(line_members)),
-            "You are one window of a job that other windows, possibly in the other account, have been",
-            "carrying. Before reading the board, pick up where the line left off:",
-            '  load_session_context({line: "%s"})' % line,
-            'Others reach every window on this line with toSession: "%s". Keep signing with your' % line,
-            "own label: the line is an address, not a signature — two windows signing alike could no",
-            "longer tell their own posts from each other's.",
-        ]
-    if unread:
-        extra = (', canonicalId:"%s", client:"claude-code"' % window["window"]) if window else ""
-        lines.append('Then: get_messages({reader:"%s", sessionId:"%s"%s}) — the CONTENT, not the counters.'
-                     % (ME, hook_session or "<your session id>", extra))
+        lines.append('Line of work «%s» (%d windows): load_session_context({line: "%s"}) before reading;'
+                     " keep signing with your own sessionId." % (line, len(line_members), line))
+    extra = (', canonicalId:"%s", client:"claude-code"' % window["window"]) if window else ""
+    lines.append('Then: get_messages({reader:"%s", sessionId:"%s"%s})' % (ME, sid, extra))
 
     text = "\n".join(lines)
 
