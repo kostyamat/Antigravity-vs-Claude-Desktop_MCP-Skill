@@ -200,6 +200,12 @@ function initSchema(db) {
   try {
     db.exec("ALTER TABLE messages ADD COLUMN room TEXT DEFAULT ''");
   } catch (_) {}
+  // A document is written by one window for another, so it belongs behind the
+  // same door as the conversation that produced it. Without this the documents
+  // of a thread scatter and are found again only by whoever remembers the topic.
+  try {
+    db.exec("ALTER TABLE docs_index ADD COLUMN room TEXT DEFAULT ''");
+  } catch (_) {}
   try {
     db.exec('CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room)');
   } catch (_) {}
@@ -954,6 +960,7 @@ function readDocsIndex() {
     to: r.to_agent,
     toSession: r.to_session || '',
     topic: r.topic || '',
+    room: r.room || '',
     priority: r.priority || 'normal',
     file: r.file,
     created: r.created,
