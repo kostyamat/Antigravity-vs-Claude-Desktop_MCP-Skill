@@ -34,7 +34,6 @@ const PROTOCOL_DOC = path.join(SCRIPTS_DIR, 'AGENT_BRIDGE_PROTOCOL.md');
 //
 const DOCS_DIR     = path.join(SCRIPTS_DIR, 'docs');
 const DOCS_ARCHIVE = path.join(SCRIPTS_DIR, 'docs', 'archive');
-const DOCS_INDEX   = path.join(SCRIPTS_DIR, 'docs', '_index.json');
 
 // ═════════════════════════════════════════════════════════════════════════════════════════
 //
@@ -684,6 +683,7 @@ const TOOLS = [
         reader: { type: 'string', description: '"Claude" or "Gemini".' },
         mine: { type: 'boolean', description: 'Only show documents addressed to me (default true).' },
         topic: { type: 'string', description: 'Filter by topic.' },
+        room: { type: 'string', description: 'Only the documents of this room (id from list_rooms).' },
         archived: { type: 'boolean', description: 'Show archive instead of active documents.' }
       }
     }
@@ -1390,22 +1390,21 @@ function doMarkRead(id, a) {
 }
 
 
+// The document index lives in the database, the same table the board reads.
+// It used to be a JSON file here with the database as a mirror, and the two
+// drifted: a document tied to a room in the database reached every agent
+// without its room. docs/_index.json is no longer written; the database
+// imported it once, on first start.
 function readDocsIndex() {
-  try {
-    if (!fs.existsSync(DOCS_INDEX)) return [];
-    const d = JSON.parse(fs.readFileSync(DOCS_INDEX, 'utf8'));
-    return Array.isArray(d) ? d : [];
-  } catch (e) { logError(`readDocsIndex: ${e.message}`); return []; }
+  try { return bridgeDb.readDocsIndex(); }
+  catch (e) { logError(`readDocsIndex: ${e.message}`); return []; }
 }
 
 function writeDocsIndex(d) {
-  ensureDir(DOCS_DIR);
-  fs.writeFileSync(DOCS_INDEX, JSON.stringify(d, null, 2), 'utf8');
-  try {
-    if (Array.isArray(d)) {
-      d.forEach(item => bridgeDb.saveDocIndex(item));
-    }
-  } catch (_) {}
+  for (const item of Array.isArray(d) ? d : []) {
+    try { bridgeDb.saveDocIndex(item); }
+    catch (e) { logError(`writeDocsIndex ${item && item.name}: ${e.message}`); }
+  }
 }
 
 function slug(s, fallback) {
@@ -1479,6 +1478,7 @@ ${a.context && String(a.context).trim() ? a.context : '⚠️ AUTHOR DID NOT PRO
 
   const rec = {
     name, file, from, fromSession, to, toSession, topic,
+    room: resolveRoom(a, toSession),
     title: a.title || topic,
     created: now,
     priority: PRIORITIES.includes(a.priority) ? a.priority : 'normal',
@@ -1534,13 +1534,19 @@ function archiveDoc(rec, why) {
   }
 }
 
+function roomName(id) {
+  try { const r = bridgeDb.getRoom(id); return r ? `${r.name} (${id})` : id; }
+  catch (_) { return id; }
+}
+
 function doListDocs(id, a) {
   const index = readDocsIndex();
   const reader = normAgent(a.reader);
   const wantArchived = !!a.archived;
   let list = index.filter(r => !!r.archived === wantArchived);
   if (a.topic) list = list.filter(r => r.topic.toLowerCase() === String(a.topic).toLowerCase());
-  if (reader && a.mine !== false) list = list.filter(r => r.to === reader);
+  if (a.room) list = list.filter(r => r.room === String(a.room));
+  else if (reader && a.mine !== false) list = list.filter(r => r.to === reader);
 
   if (!list.length) {
     return ok(id, wantArchived ? 'Document archive is empty (for this filter).'
@@ -1554,7 +1560,7 @@ function doListDocs(id, a) {
     if (r.archived) flags.push(`archived: ${r.archivedWhy || ''}`);
     return `${r.priority === 'P0' ? '🚨' : '📄'} ${r.title}\n` +
            `   ${r.from}${r.fromSession ? ` (${r.fromSession})` : ''} → ${r.to}${r.toSession ? ` (${r.toSession})` : ''}` +
-           `  ·  topic: ${r.topic}  ·  ${ago(r.created)}${flags.length ? `  ·  ${flags.join(', ')}` : ''}\n` +
+           `  ·  topic: ${r.topic}${r.room ? `  ·  room: ${roomName(r.room)}` : ''}  ·  ${ago(r.created)}${flags.length ? `  ·  ${flags.join(', ')}` : ''}\n` +
            `   name: ${r.name}`;
   });
   ok(id, `${wantArchived ? '📦 ARCHIVE' : '📄 ACTIVE DOCUMENTS'} — ${list.length}\n\n${lines.join('\n\n')}`);

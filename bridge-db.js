@@ -38,6 +38,7 @@ function getDb() {
 
   initSchema(_db);
   migrateFromJsonIfEmpty(_db);
+  adoptDocsIndexJson(_db);
 
   return _db;
 }
@@ -289,6 +290,42 @@ function rowToMessage(r) {
     editedBy: r.edited_by || null,
     originalMessage: r.original_message || null
   };
+}
+
+// Releases up to 2.1 kept the document index in docs/_index.json and wrote the
+// database only as a mirror — and not a faithful one: the upsert never updated a
+// document's path, so every archived document still pointed at a file that had
+// been moved. From 2.2 the database is the only index. On the first start after
+// an upgrade the JSON file is taken as the truth one last time, then renamed so
+// it is never read again. It is renamed, not deleted: it is the user's data.
+//
+// Rooms are not in the JSON file and are kept: the upsert leaves a room alone
+// when the incoming record has none.
+function adoptDocsIndexJson(db) {
+  if (!fs.existsSync(DOCS_INDEX_JSON)) return;
+  let list;
+  try {
+    list = JSON.parse(fs.readFileSync(DOCS_INDEX_JSON, 'utf8'));
+  } catch (e) {
+    console.error(`[bridge-db] docs/_index.json unreadable, left in place: ${e.message}`);
+    return;
+  }
+  if (!Array.isArray(list)) return;
+  db.exec('BEGIN');
+  try {
+    for (const d of list) if (d && d.name) saveDocIndex(d);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    console.error(`[bridge-db] docs/_index.json not adopted, left in place: ${e.message}`);
+    return;
+  }
+  try {
+    fs.renameSync(DOCS_INDEX_JSON, DOCS_INDEX_JSON + '.migrated');
+  } catch (e) {
+    // Adopting it again next time is harmless: the same records, the same result.
+    console.error(`[bridge-db] docs/_index.json adopted but not renamed: ${e.message}`);
+  }
 }
 
 function migrateFromJsonIfEmpty(db) {
@@ -979,10 +1016,12 @@ function saveDocIndex(d) {
     INSERT INTO docs_index (
       name, title, from_agent, from_session, to_agent, to_session,
       topic, priority, file, created, read_by, acked_by, ack_note,
-      archived, archived_at, archived_why
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      archived, archived_at, archived_why, room
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET
       title = excluded.title,
+      file = excluded.file,
+      room = CASE WHEN excluded.room <> '' THEN excluded.room ELSE docs_index.room END,
       read_by = excluded.read_by,
       acked_by = excluded.acked_by,
       ack_note = excluded.ack_note,
@@ -1005,7 +1044,8 @@ function saveDocIndex(d) {
     d.ackNote || '',
     d.archived ? 1 : 0,
     d.archivedAt || null,
-    d.archivedWhy || ''
+    d.archivedWhy || '',
+    d.room || ''
   );
 }
 
