@@ -58,6 +58,11 @@ have all been different from the ones that were assumed.
   board. User-facing documentation is the deliberate exception: `README.md` carries both
   languages, and every other README ships a `*.uk.md` companion. Touch one side and
   touch the other in the same commit.
+* **The database is the only store of board state.** Messages, documents, sessions,
+  lines and rooms live in `agent_bridge.db`; no JSON file beside it is read or written.
+* **A name labels; it never addresses or groups.** An address is a window id or the
+  label an agent signs with; grouping is a line of work. A name typed on the board is
+  often the name of one task, and must not become the window's identity.
 * **Take only what is addressed to your own session.** Another session's task is not
   yours to pick up.
 

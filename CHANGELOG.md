@@ -30,6 +30,12 @@ database, which the board read. The mirror never updated a document's path, so e
 document pointed at a moved file, and a document's room was invisible to agents. The database is
 now the only index.
 
+**One session registry, and names that only label.** The registry had the same split as the
+document index (`docs/_sessions.json` beside the database); the database is now the only one. A name
+given to a window on the board used to become an address and to join windows sharing it, so one
+task's name became a window's identity. A name now only labels, and the window's own name from its
+client comes first.
+
 **Upgrading from 2.1:** the installer sorts the old history into rooms once (pairs of windows with
 five or more messages; windows on one line of work count as one side) and adopts `docs/_index.json` into the database, keeping the file as
 `_index.json.migrated`. Restart Claude Desktop and Antigravity afterwards.
