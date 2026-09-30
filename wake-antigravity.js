@@ -92,23 +92,42 @@ function wakeAntigravity(rec) {
 
     if (!targetConvIds.size) return;
 
+    // Every way this can fail used to return quietly, so a waker that had
+    // stopped working looked exactly like a board with nothing to say. The
+    // owner had to open the window and tell the session to read the board,
+    // with no hint anywhere that delivery had failed. Leave a trace.
+    const giveUp = (why) => {
+      try {
+        fs.appendFileSync(path.join(SCRIPTS_DIR, 'bridge_mcp.log'),
+          `${new Date().toISOString()} wakeAntigravity: #${rec.id} not delivered - ${why}` + "\n");
+      } catch (_) {}
+    };
+
     // Extract CSRF token from language_server.exe
     const cmd = "powershell -NoProfile -Command \"Get-WmiObject Win32_Process -Filter 'name = ''language_server.exe''' | Select-Object -ExpandProperty CommandLine\"";
     const cmdline = execSync(cmd, { encoding: 'utf8', windowsHide: true });
     const csrfMatch = cmdline.match(/--csrf_token\s+([0-9a-fA-F-]+)/);
-    if (!csrfMatch) return;
+    if (!csrfMatch) return giveUp('no csrf token on the language_server command line');
     const csrf = csrfMatch[1];
 
     // Extract HTTP port from language_server.log
     const logPath = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Antigravity', 'logs', 'language_server.log');
-    if (!fs.existsSync(logPath)) return;
+    if (!fs.existsSync(logPath)) return giveUp('no language_server log at ' + logPath);
     const log = fs.readFileSync(logPath, 'utf8');
     const matches = [...log.matchAll(/listening on random port at (\d+) for HTTP$/gm)];
-    if (!matches.length) return;
+    if (!matches.length) return giveUp('no HTTP port line in the language_server log');
     const port = matches[matches.length - 1][1];
 
     const bodyText = rec.text || rec.message || '';
-    const prompt = `🔔 [NEW BOARD MESSAGE #${rec.id}]\nFrom: ${rec.from} (topic: ${rec.topic || 'no topic'})\n"${bodyText.slice(0, 300)}"\nGive immediate ACK with status: "working" or reply.`;
+    // The old wording ended with "Give immediate ACK with status: working or
+    // reply" — so every woken session dutifully posted a receipt, and one
+    // remark from the human drew seven of them in a couple of minutes. The
+    // waker was ordering the very noise the board was drowning in.
+    const prompt = `🔔 Board message #${rec.id} from ${rec.from}` +
+      `${rec.topic ? ' (topic: ' + rec.topic + ')' : ''}\n` +
+      `"${bodyText.slice(0, 300)}"\n` +
+      `Read it with get_messages. Act on it if it is yours. ` +
+      `Do not reply to acknowledge - a receipt wakes the sender for nothing.`;
     const lsExe = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'antigravity', 'resources', 'bin', 'language_server.exe');
 
     const env = Object.assign({}, process.env, {

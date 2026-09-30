@@ -996,8 +996,19 @@ function doPost(id, a) {
   // on how many it is sent to.
   const fromHuman = String(rec.fromSession || '').toLowerCase().startsWith('human');
   const rollCall = fromHuman && status === 'question';
-  const addressed = Boolean(rec.toSession) || rec.to === 'Claude' || rec.to === 'Gemini';
-  if (priority === 'P0' || rollCall || (addressed && WAKING_STATUSES.includes(status))) {
+
+  // Naming a session IS the intent to reach it, whatever the status says. Most
+  // messages carry no status at all and default to `info`; gating those on the
+  // status list meant a message addressed to one exact session woke nobody, and
+  // the human had to open the window and tell it to read the board. Only an ack
+  // is excluded — a receipt addressed to someone is still just a receipt.
+  const toOneSession = Boolean(rec.toSession) && rec.toSession !== 'all' && status !== 'ack';
+
+  // Addressed to an agent but to no session in particular: nobody is named, so
+  // wake only for something that actually asks.
+  const toAgentOnly = (rec.to === 'Claude' || rec.to === 'Gemini') && WAKING_STATUSES.includes(status);
+
+  if (priority === 'P0' || rollCall || toOneSession || toAgentOnly) {
     raiseTargetEnvironment(rec);
     wakeAntigravity(rec);
   }
