@@ -1494,6 +1494,12 @@ async function load(full){
         }
         render(false);
         updateSemaphore();
+        // A message just landed, so the room it belongs to is now the freshest
+        // one. Waiting for the next tick of a timer would leave the live
+        // conversation sitting below rooms that went quiet days ago — which is
+        // exactly how the owner opened the board onto a conversation whose door
+        // he could not find.
+        loadRooms();
       }
     }else{
       DATA = j.messages || [];
@@ -2067,6 +2073,7 @@ async function loadRooms(){
   el.innerHTML=ROOMS.map(r=>{
     const who=r.members.map(m=>esc(cardLabel(m.card))).join(' + ');
     const on=ROOM===r.id;
+    const when=r.lastTs?ago(r.lastTs):'';
     return '<div class="scard'+(on?' on':'')+'" '+
            'style="padding:6px 8px;border-radius:var(--radius-sm);'+
            (on?'background:var(--surface-variant);':'')+'margin-bottom:2px">'+
@@ -2078,7 +2085,8 @@ async function loadRooms(){
              '<button type="button" data-room-del="'+esc(r.id)+'" title="Remove the room. The messages stay on the board." '+
                'style="padding:0 4px;font-size:11px;line-height:1.4">✕</button>'+
            '</div>'+
-           '<div data-room="'+esc(r.id)+'" class="hint" style="cursor:pointer;font-size:11px">'+who+' · '+r.messages+'</div>'+
+           '<div data-room="'+esc(r.id)+'" class="hint" style="cursor:pointer;font-size:11px">'+
+             who+' · '+r.messages+(when?' · '+esc(when):'')+'</div>'+
            '</div>';
   }).join('');
   el.querySelectorAll('[data-room]').forEach(n=>{
@@ -2528,7 +2536,7 @@ loadDocs();
 checkAgents();
 setInterval(()=>load(false),2000);
 setInterval(loadSessions,12000);
-setInterval(loadRooms,15000);
+setInterval(loadRooms,45000);   // safety net; the delta poll reorders on arrival
 // The header renders window names, so the card list has to exist before
 // the first paint and stay current as windows open and close.
 async function loadCards(){

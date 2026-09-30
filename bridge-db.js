@@ -1178,13 +1178,20 @@ function getRoom(id) {
 function readRooms(account) {
   const db = getDb();
   const rows = account
-    ? db.prepare("SELECT * FROM rooms WHERE account = ? OR account = '' ORDER BY last_activity DESC").all(String(account))
-    : db.prepare('SELECT * FROM rooms ORDER BY last_activity DESC').all();
+    ? db.prepare("SELECT * FROM rooms WHERE account = ? OR account = ''").all(String(account))
+    : db.prepare('SELECT * FROM rooms').all();
   for (const r of rows) {
     r.members = db.prepare('SELECT card, agent FROM room_members WHERE room = ? ORDER BY agent, card').all(r.id);
-    const c = db.prepare('SELECT COUNT(*) AS n FROM messages WHERE room = ?').get(r.id);
+    const c = db.prepare('SELECT COUNT(*) AS n, MAX(id) AS last, MAX(ts) AS lastTs FROM messages WHERE room = ?').get(r.id);
     r.messages = (c && c.n) || 0;
+    r.lastMessage = (c && c.last) || 0;
+    r.lastTs = (c && c.lastTs) || r.last_activity || '';
   }
+  // By what was last said in the room, not by when the room was made. A batch
+  // of rooms created in one second has nothing to sort by, and the one holding
+  // the conversation on screen ends up below rooms that went quiet days ago.
+  rows.sort((a, b) => (b.lastMessage - a.lastMessage) ||
+                      String(b.last_activity || '').localeCompare(String(a.last_activity || '')));
   return rows;
 }
 
