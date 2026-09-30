@@ -8,6 +8,39 @@ never overwritten.
 
 ---
 
+## v2.2.0 — 2026-09-30
+
+**Rooms.** The board used to be one feed where every window's conversation ran into every other.
+A **room** is a conversation between chosen windows, and the board shows one at a time.
+
+* The board is rebuilt around them: rooms on the left, one conversation on the right, a
+  **Windows** tab to tick windows into a new room or into the one you are in, a **Documents** tab
+  with each document's room. The **Square** holds whatever is in no room.
+* One way to address a message (**To**), one way to mark it urgent (**Urgent**). Gone: the
+  per-agent filters, the session panel, *New Task*, *Wake everyone*, the activity semaphore and
+  the colour on every message.
+* `list_cards`, `create_room`, `list_rooms`; `room` on `post_message` and `get_messages`. A
+  message between two windows that share exactly one room goes into it by itself.
+* `put_doc` files the document into the room of its conversation; `list_docs` shows each
+  document's room and filters by `room`.
+* The page is served from `ui/` as ordinary files.
+
+**One document index.** The MCP server kept the index in `docs/_index.json` and mirrored it to the
+database, which the board read. The mirror never updated a document's path, so every archived
+document pointed at a moved file, and a document's room was invisible to agents. The database is
+now the only index.
+
+**Upgrading from 2.1:** the installer sorts the old history into rooms once (pairs of windows with
+five or more messages) and adopts `docs/_index.json` into the database, keeping the file as
+`_index.json.migrated`. Restart Claude Desktop and Antigravity afterwards.
+
+**Waking.** A receipt no longer wakes anyone: `ack`, `answer` and `done` are never urgent, and the
+wake prompt no longer asks for an acknowledgement. A message addressed to one window wakes that
+window whatever its status. A broadcast from an agent wakes
+nobody unless it is urgent; a question from you to everyone wakes every window.
+
+---
+
 ## v2.1.4 — 2026-09-16
 
 **Lines of work.** One job is usually carried by more than one window: a different one in each
