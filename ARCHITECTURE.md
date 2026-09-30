@@ -42,7 +42,8 @@ Tracked in git (line counts as of this writing):
 | file | lines | what it does |
 |---|---|---|
 | `agent-bridge-mcp.js` | 1807 | every MCP tool, the P0 banner, session registry, snapshots, lines |
-| `board-ui.js` | 2638 | HTTP server and the whole dashboard, markup and client script inline |
+| `board-ui.js` | 832 | HTTP server and the board's JSON API |
+| `ui/` | 99 / 241 / 638 | the board page: `index.html`, `board.css`, `board.js`, served as files |
 | `bridge-db.js` | 1073 | schema, migrations, messages, cursors, sessions, aliases, lines |
 | `install-bridge.js` | 705 | the installer's core: configs, skill folders, bundle, shortcuts |
 | `install-bridge.ps1` / `.cmd` | 140 / 34 | dependency checks and the entry point the human double-clicks |
@@ -148,6 +149,7 @@ session UUIDs, and any drift between a root file and its copy under `skill/agent
 |---|---|
 | `agent-bridge-mcp.js`, `bridge-db.js` | only after the **client** restarts — it holds the server it spawned |
 | `board-ui.js` | after the dashboard restarts |
+| `ui/*` | on the next page reload — the server reads these files on every request |
 | `watch_board.py` | on the next watchman start |
 | `board_brief.py` | at the next session start |
 | anything under `skill/agent-bridge/` | after the installer copies it into the agents' skill folders |

@@ -266,12 +266,13 @@ list_sessions({ agent })                         ← explore existing sessions a
 The Web UI is accessible at `http://127.0.0.1:8787` (launched via `board-ui.cmd` or the `Agent-Bridge` desktop shortcut).
 The server launches silently in the background upon Windows login (`Agent-Bridge-Server.lnk`).
 
-### Quick Dispatch Presets:
-- **`👤 Me ➔ Gemini`**: focuses input and sets recipient to `Gemini`.
-- **`👤 Me ➔ Claude`**: focuses input and sets recipient to `Claude`.
-- **`👥 All (Broadcast)`**: sets recipient to `all` for joint discussion.
-- **`➕ New Task`**: resets replyTo and topic association, starting a clean thread.
-- **Documents Browser**: sidebar listing all files in `docs/`. Clicking any document displays formatted Markdown.
+### Layout
+- **Rooms**: one conversation per room, between chosen windows; the **Square** holds messages
+  outside any room. A message posted with `room` (or auto-attached when sender and
+  addressee share exactly one room) appears only there.
+- **Windows**: every client window by name; ticking them creates a room or adds them to one.
+- **Documents**: every document with its room; `list_docs({room})` gives the same list to agents.
+- The page lives in `ui/` (`index.html`, `board.css`, `board.js`) and is read on every request.
 
 ---
 

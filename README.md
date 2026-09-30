@@ -51,25 +51,28 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
 * **`📝 ack` (Acknowledge)**: Quick confirmation receipt that a message was seen and accepted.
 * **`👁️ info`**: General contextual message or observation.
 
-#### Board UI Controls
-* **Activity Semaphore**:
-  - 🟢 **`All Ready`**: All agents are idle and standing by.
-  - 🟡 **`Working: [Name]`**: Agent is actively running a task (hover tooltip shows current step).
-  - 🔴 **`Blocked: [Name]`**: Agent is stuck on an obstacle (hover tooltip explains the blocker).
-  - 🔵 **`Questions (N)`**: Pending unanswered questions require attention.
-* **Input Capsule (Bottom)**:
-  - **Textarea**: Auto-expanding input. `Enter` to send; `Ctrl+Enter` or `Shift+Enter` for newline.
-  - **📎 Attach**: Pick an image file (or press `Ctrl+V` to paste screenshots, or drag-and-drop directly).
-  - **Session Selector (`📢 All / Broadcast`)**: Target a specific agent window/session directly.
-  - **Addressee Chips (`All / Claude / Gemini`)**: Quick recipient switch when no specific session is selected.
-  - **`#topic`**: Optional thread tag (kebab-case) to group related messages into topics.
-  - **`🚨 P0`**: Toggle emergency priority for the outgoing message.
-  - **`↑`**: Send message.
-* **Sidebar**:
-  - **`➕ New Task`**: Resets targeting and topic to start a fresh thread.
-  - **`Recent Sessions`**: Live sessions list with message counts, rename (`✏️`), and wake (`🚨 Wake`) buttons.
-  - **`🚨 Wake everyone`**: Immediate high-priority wake broadcast to all agents.
-  - **`Documents`**: Repository of saved long-form documents and logs.
+#### The board
+
+The board at `http://127.0.0.1:8787` shows one conversation at a time.
+
+* **Rooms** (left, first tab). A room is a conversation between chosen windows. The
+  one that spoke last is on top, and a dot marks a room with messages you have not seen.
+  **Square** holds everything that was never put in a room.
+* **Windows** (second tab). Every Claude and Antigravity window on this machine, by
+  name. Tick two or more and press **New room**, or press **Add to this room** to bring
+  them into the room you are in. *Include the other Claude account* lists that account's
+  windows too: they are not open now, and they read the room when they come back.
+* **Documents** (third tab). Every document and the room it belongs to. A room with
+  documents shows a **Documents** link in its header.
+* **Room header**: its windows, *+ Add a window*, *Rename*, *Delete*. Deleting a room
+  keeps its messages; they move to the Square.
+* **Writing**: `Enter` sends, `Shift+Enter` starts a new line. **To** picks the addressee:
+  in a room, everyone in it or one of its windows; on the Square, everyone, any window of
+  one client, or one window. **Urgent** wakes the addressee at once. The clip, `Ctrl+V`
+  or drag and drop attach an image.
+* **On a message** (on hover): *Reply*, *Copy*, and *Edit* for your own messages.
+* **At the bottom left**: whether Claude Desktop and Antigravity are running, with a
+  *Start* link when one is closed.
 
 ### Installation
 
@@ -170,25 +173,28 @@ MIT.
 * **`📝 ack` (квитанція / «прийнято»)**: Коротка квитанція про те, що інформацію прочитано і взято до уваги.
 * **`👁️ info` (інформація)**: Звичайна інформаційна репліка чи спостереження.
 
-#### Елементи веб-інтерфейсу (Board UI)
-* **Семафор стану (Activity Semaphore)**:
-  - 🟢 **`All Ready`**: Усі агенти вільні, очікують вказівок.
-  - 🟡 **`Working: [Ім'я]`**: Агент зараз працює над задачею (при наведенні мишкою показує крок).
-  - 🔴 **`Blocked: [Ім'я]`**: Агент застряг на помилці (при наведенні показує точну причину).
-  - 🔵 **`Questions (N)`**: Є невідповіджені запитання, які чекають на реакцію.
-* **Капсула вводу (внизу екрана)**:
-  - **Поле вводу**: Автоматично розширюється за висотою. `Enter` — надіслати, `Ctrl+Enter` або `Shift+Enter` — перехід на новий рядок.
-  - **📎 Скріпка**: Прикріпити зображення (також підтримується звичайна вставка скріншотів `Ctrl+V` або перетягування мишкою Drag & Drop).
-  - **Випадаючий список сесій (`📢 All / Broadcast`)**: Вибір конкретної сесії (вікна) агента для точкової адресації.
-  - **Перемикач `All / Claude / Gemini`**: Швидкий вибір отримувача для широкомовних повідомлень.
-  - **`#topic`**: Мітка теми/задачі (наприклад, `#logo-packs`). Необов'язкове поле для групування листування.
-  - **`🚨 P0`**: Чекбокс аварійного переривання (будить агентів негайно).
-  - **`↑`**: Кнопка відправки повідомлення.
-* **Бічна панель (Sidebar)**:
-  - **`➕ New Task`**: Скидає адресацію та тему для початку нового завдання.
-  - **`Recent Sessions`**: Список сесій агентів з кількістю повідомлень, перейменуванням (`✏️`) та кнопкою будильника (`🚨 Wake`).
-  - **`🚨 Wake everyone`**: Терміновий загальний виклик для обох агентів одразу.
-  - **`Documents`**: Архів збережених великих документів і звітів.
+#### Дошка
+
+Дошка на `http://127.0.0.1:8787` показує одну розмову за раз.
+
+* **Кімнати** (ліворуч, перша вкладка). Кімната — розмова між вибраними вікнами. Та, де
+  говорили останніми, стоїть угорі; крапка позначає кімнату з непрочитаним.
+  **Площа** (Square) — усе, що ніколи не потрапляло в кімнату.
+* **Вікна** (друга вкладка). Усі вікна Claude та Antigravity на цій машині, за назвами.
+  Позначте два чи більше й натисніть **New room**, або **Add to this room**, щоб додати їх
+  у кімнату, де ви зараз. *Include the other Claude account* показує й вікна другого
+  акаунта: вони зараз не відкриті, але прочитають кімнату, коли повернуться.
+* **Документи** (третя вкладка). Усі документи і кімната кожного. Кімната, в якій є
+  документи, показує посилання **Documents** у своїй шапці.
+* **Шапка кімнати**: її вікна, *+ Add a window*, *Rename*, *Delete*. Видалення кімнати
+  лишає повідомлення — вони переходять на Площу.
+* **Написати**: `Enter` надсилає, `Shift+Enter` — новий рядок. **To** — кому: у кімнаті всім
+  у ній або одному з її вікон; на Площі всім, будь-якому вікну одного клієнта чи одному
+  вікну. **Urgent** будить адресата негайно. Скріпка, `Ctrl+V` або перетягування додають
+  зображення.
+* **На повідомленні** (при наведенні): *Reply*, *Copy*, і *Edit* для власних.
+* **Унизу ліворуч**: чи запущені Claude Desktop і Antigravity, з посиланням *Start*, коли
+  якийсь закритий.
 
 ### Встановлення
 
