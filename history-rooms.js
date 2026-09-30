@@ -5,7 +5,13 @@
 // install of 2.2 the installer sorts that history into rooms once, so the board
 // opens on conversations instead of a crowd.
 //
-// The seam is the pair of windows, not the topic. A topic names one exchange and
+// The seam is the pair of sides, not the topic. A side is a window, or the line
+// of work the window is on: one job is often carried by several windows — a
+// restart, a continuation, a clone in the other Claude account — and a line says
+// which. Without it, one conversation that moved between windows came out as
+// three rooms with the same name.
+//
+// Before lines: the seam is the pair of windows, not the topic. A topic names one exchange and
 // there are hundreds of them, which would be the crowd again with doors on it.
 // A pair of windows that wrote to each other is a working relationship; it spans
 // many topics. Pairs with fewer than MIN_MESSAGES are passing remarks and stay
@@ -92,6 +98,24 @@ function roomsFromHistory(bridgeDb, cardsLib, options) {
     return /^local_/.test(card) ? 'Claude' : '';
   };
 
+  const lineOfWindow = new Map();
+  const sideOf = w => {
+    if (!w || isHuman(w)) return w;
+    if (!lineOfWindow.has(w)) {
+      let line = '';
+      try {
+        for (const a of bridgeDb.resolveSessionAliases(w, { lines: false })) {
+          line = bridgeDb.lineOf(a) || '';
+          if (line) break;
+        }
+      } catch (_) {}
+      lineOfWindow.set(w, line);
+    }
+    const line = lineOfWindow.get(w);
+    return line ? 'line:' + line : w;
+  };
+  const sideName = side => side.startsWith('line:') ? side.slice(5) : shortName(side);
+
   const messages = bridgeDb.readAllMessages();
   const pairs = new Map();
   for (const m of messages) {
@@ -99,9 +123,13 @@ function roomsFromHistory(bridgeDb, cardsLib, options) {
     const a = windowOf(m.fromSession);
     const b = windowOf(m.toSession);
     if (!a || !b || a === b || (isHuman(a) && isHuman(b))) continue;
-    const key = [a, b].sort().join('|');
-    if (!pairs.has(key)) pairs.set(key, { cards: key.split('|'), ids: [] });
-    pairs.get(key).ids.push(m.id);
+    const sa = sideOf(a), sb = sideOf(b);
+    if (sa === sb) continue;                  // two windows of one line talking to themselves
+    const key = [sa, sb].sort().join('|');
+    if (!pairs.has(key)) pairs.set(key, { sides: key.split('|'), members: new Set(), ids: [] });
+    const p = pairs.get(key);
+    for (const w of [a, b]) if (!isHuman(w)) p.members.add(w);
+    p.ids.push(m.id);
   }
   const chosen = [...pairs.values()].filter(p => p.ids.length >= opts.minMessages);
 
@@ -110,12 +138,15 @@ function roomsFromHistory(bridgeDb, cardsLib, options) {
   result.leftOnSquare = messages.length - result.messages;
 
   const docs = raw.prepare("SELECT name, from_session, to_session FROM docs_index WHERE room = ''").all();
+  const pairKey = (x, y) => {
+    const a = windowOf(x), b = windowOf(y);
+    if (!a || !b || a === b) return '';
+    const sa = sideOf(a), sb = sideOf(b);
+    return sa === sb ? '' : [sa, sb].sort().join('|');
+  };
   if (!opts.apply) {
-    const keys = new Set(chosen.map(p => p.cards.join('|')));
-    result.docs = docs.filter(d => {
-      const a = windowOf(d.from_session), b = windowOf(d.to_session);
-      return a && b && a !== b && keys.has([a, b].sort().join('|'));
-    }).length;
+    const keys = new Set(chosen.map(p => p.sides.join('|')));
+    result.docs = docs.filter(d => keys.has(pairKey(d.from_session, d.to_session))).length;
     return result;
   }
 
@@ -136,19 +167,16 @@ function roomsFromHistory(bridgeDb, cardsLib, options) {
   raw.exec('BEGIN');
   try {
     for (const p of chosen) {
-      const windowsOnly = p.cards.filter(c => !isHuman(c));
       const room = bridgeDb.createRoom(
-        distinct(windowsOnly.map(shortName).join(' ↔ ')),
-        windowsOnly.map(card => ({ card, agent: agentOf(card) })),
+        distinct(p.sides.filter(x => !isHuman(x)).map(sideName).join(' ↔ ')),
+        [...p.members].sort().map(card => ({ card, agent: agentOf(card) })),
         account
       );
-      roomOfPair.set(p.cards.join('|'), room.id);
+      roomOfPair.set(p.sides.join('|'), room.id);
       for (const id of p.ids) tag.run(room.id, id);
     }
     for (const d of docs) {
-      const a = windowOf(d.from_session), b = windowOf(d.to_session);
-      if (!a || !b || a === b) continue;
-      const room = roomOfPair.get([a, b].sort().join('|'));
+      const room = roomOfPair.get(pairKey(d.from_session, d.to_session));
       if (room) { tagDoc.run(room, d.name); result.docs++; }
     }
     raw.exec('COMMIT');

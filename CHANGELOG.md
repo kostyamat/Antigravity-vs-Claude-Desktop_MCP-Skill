@@ -31,7 +31,7 @@ document pointed at a moved file, and a document's room was invisible to agents.
 now the only index.
 
 **Upgrading from 2.1:** the installer sorts the old history into rooms once (pairs of windows with
-five or more messages) and adopts `docs/_index.json` into the database, keeping the file as
+five or more messages; windows on one line of work count as one side) and adopts `docs/_index.json` into the database, keeping the file as
 `_index.json.migrated`. Restart Claude Desktop and Antigravity afterwards.
 
 **Waking.** A receipt no longer wakes anyone: `ack`, `answer` and `done` are never urgent, and the
