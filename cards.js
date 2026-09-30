@@ -30,6 +30,21 @@ const CLAUDE_CONFIG = path.join(APPDATA, 'Claude', 'config.json');
 const GEMINI_HOME = path.join(HOME, '.gemini', 'antigravity');
 const GEMINI_CONVERSATIONS = path.join(GEMINI_HOME, 'conversations');
 const GEMINI_SUMMARIES = path.join(GEMINI_HOME, 'conversation_summaries.db');
+const GEMINI_ANNOTATIONS = path.join(GEMINI_HOME, 'annotations');
+
+// The name the owner gave a conversation. Antigravity writes a rename to
+// annotations/<id>.pbtxt first (title:"..."); conversation_summaries.db is its
+// cache of that for the sidebar, rebuilt from these files. A rename overwrites
+// the automatic name everywhere and the automatic name is not kept.
+function annotatedTitle(id) {
+  try {
+    const t = fs.readFileSync(path.join(GEMINI_ANNOTATIONS, id + '.pbtxt'), 'utf8');
+    const m = t.match(/(?:^|\s)title:"((?:[^"\\]|\\.)*)"/);
+    return m ? m[1].replace(/\\(.)/g, '$1') : '';
+  } catch (_) {
+    return '';
+  }
+}
 
 function readJson(file) {
   try {
@@ -166,7 +181,7 @@ function geminiCards() {
     out.push({
       agent: 'Gemini',
       id,
-      name: (m && (m.title || m.preview)) || '',
+      name: annotatedTitle(id) || (m && (m.title || m.preview)) || '',
       project: m ? firstWorkspace(m.workspace_uris) : '',
       account: null,          // Antigravity switches accounts without splitting these
       archived: false,
