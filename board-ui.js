@@ -1622,6 +1622,32 @@ function isImageFile(f) {
   return /\.(png|jpe?g|webp|gif|svg)$/i.test(f);
 }
 
+// Who a message is actually from and to. The agent name is the label three
+// windows have already shared, so it identifies nobody: what the human needs is
+// the window. Fall back to the agent only when the window is unknown, and say
+// "all" plainly rather than pretending a broadcast has an addressee.
+function whoName(session, agent) {
+  const s = String(session || '').trim();
+  if (!s || s === 'all') return String(agent || 'all');
+  const c = CARDS.find(x => x.id === s);
+  if (c && c.name) return c.name;
+  const r = SESSIONS.find(x => x.sessionId === s || x.canonicalId === s);
+  if (r && (r.customName || r.title)) return r.customName || r.title;
+  if (/^local_|^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(s)) return String(agent || '') + ' ' + s.slice(0, 8);
+  return s;
+}
+
+// An Antigravity window takes its name from the preview of its conversation,
+// which is a whole sentence. Cut it at a word for the header; the full name and
+// the id stay in the tooltip, where length costs nothing.
+function whoShort(session, agent) {
+  const full = whoName(session, agent);
+  if (full.length <= 30) return full;
+  const cut = full.slice(0, 30);
+  const sp = cut.lastIndexOf(' ');
+  return (sp > 14 ? cut.slice(0, sp) : cut).trim() + '…';
+}
+
 function cardHTML(m) {
   const k = kind(m.from), targetKind = kind(m.to), long = (m.text || '').length > 650, open = OPEN.has(m.id);
   const targetIcon = m.to === 'all' ? '👥' : (targetKind === 'Claude' ? '🤖' : (targetKind === 'Gemini' ? '✨' : '👤'));
@@ -1632,7 +1658,8 @@ function cardHTML(m) {
         '<div class="bubble-meta">' +
           '<span class="bubble-author">👤 <code class="nt" translate="no">' + esc(m.from) + '</code></span>' +
           '<span class="arrow">→</span>' +
-          '<span class="bubble-target">' + targetIcon + ' <code class="nt" translate="no">' + esc(m.to) + '</code></span>' +
+          '<span class="bubble-target" title="' + esc(whoName(m.toSession, m.to) + ' · ' + (m.toSession || m.to)) + '">' + targetIcon +
+            ' <code class="nt" translate="no">' + esc(whoShort(m.toSession, m.to)) + '</code></span>' +
           (m.topic ? '<span class="pill-topic" title="Topic"><code class="nt" translate="no">#' + esc(m.topic) + '</code></span>' : '') +
           (m.priority !== 'normal' ? '<span class="pill-priority ' + esc(m.priority) + '" title="' + priorityHelp(m.priority) + '">' +
             (m.priority === 'P0' ? '🚨 ' : '') + '<code class="nt" translate="no">' + esc(m.priority) + '</code></span>' : '') +
@@ -1656,9 +1683,11 @@ function cardHTML(m) {
     '<div class="agent-avatar ' + k + '">' + avatarIcon + '</div>' +
     '<div class="agent-content">' +
       '<div class="agent-meta">' +
-        '<span class="agent-name ' + k + '"><code class="nt" translate="no">' + esc(m.from) + '</code></span>' +
+        '<span class="agent-name ' + k + '" title="' + esc(whoName(m.fromSession, m.from) + ' · ' + (m.fromSession || m.from)) + '">' +
+          '<code class="nt" translate="no">' + esc(whoShort(m.fromSession, m.from)) + '</code></span>' +
         '<span class="arrow">→</span>' +
-        '<span class="agent-target">' + targetIcon + ' <code class="nt" translate="no">' + esc(m.to) + '</code></span>' +
+        '<span class="agent-target" title="' + esc(whoName(m.toSession, m.to) + ' · ' + (m.toSession || m.to)) + '">' + targetIcon +
+          ' <code class="nt" translate="no">' + esc(whoShort(m.toSession, m.to)) + '</code></span>' +
         '<span class="pill-status" title="' + statusHelp(m.status) + '">' +
           statusIcon(m.status) + ' <code class="nt" translate="no">' + esc(m.status) + '</code></span>' +
         (m.priority !== 'normal' ? '<span class="pill-priority ' + esc(m.priority) + '" title="' + priorityHelp(m.priority) + '">' +
@@ -2500,6 +2529,13 @@ checkAgents();
 setInterval(()=>load(false),2000);
 setInterval(loadSessions,12000);
 setInterval(loadRooms,15000);
+// The header renders window names, so the card list has to exist before
+// the first paint and stay current as windows open and close.
+async function loadCards(){
+  try{const r=await fetch('/api/cards?hours=720');const j=await r.json();CARDS=j.cards||[];}catch(_){}
+}
+loadCards().then(()=>load(true));
+setInterval(loadCards,60000);
 const nrBtn=$('#newRoom'); if(nrBtn) nrBtn.onclick=openRoomPicker;
 const rcBtn=$('#roomCancel'); if(rcBtn) rcBtn.onclick=closeRoomPicker;
 const rpBox=$('#roomPicker'); if(rpBox) rpBox.onclick=e=>{ if(e.target===rpBox) closeRoomPicker(); };
