@@ -42,6 +42,10 @@ const DOCS_INDEX   = path.join(SCRIPTS_DIR, 'docs', '_index.json');
 // ═════════════════════════════════════════════════════════════════════════════════════════
 const P0_FLAG_FILE = path.join(SCRIPTS_DIR, 'P0_PENDING.txt');
 
+// Statuses that never justify P0, and statuses that are worth waking someone for.
+const QUIET_P0_STATUSES = ['ack', 'answer', 'done'];
+const WAKING_STATUSES = ['question', 'blocked', 'done', 'answer'];
+
 // ═════════════════════════════════════════════════════════════════════════════════════════
 //
 //
@@ -909,8 +913,17 @@ function doPost(id, a) {
   const text = typeof a.message === 'string' ? a.message : '';
   if (!text.trim()) return fail(id, 'post_message: empty `message`. Message NOT recorded.');
 
-  const priority = PRIORITIES.includes(a.priority) ? a.priority : 'normal';
+  let priority = PRIORITIES.includes(a.priority) ? a.priority : 'normal';
   const status = STATUSES.includes(a.status) ? a.status : 'info';
+
+  // A receipt is not an emergency. P0 rings the human, raises every closed
+  // environment and leaves a line in the pending file that is then prepended to
+  // every tool answer until someone clears it. An acknowledgement, an answer or
+  // a report that work is finished needs none of that, and when they carry P0
+  // the warning stops meaning anything. Demote rather than refuse: the message
+  // still lands, and the sender is told why it landed quieter.
+  const demoted = priority === 'P0' && QUIET_P0_STATUSES.includes(status);
+  if (demoted) priority = 'normal';
 
   const storedMessage = text.length > INLINE_LIMIT ? (text.slice(0, INLINE_LIMIT) + '\n…') : text;
 
@@ -962,8 +975,6 @@ function doPost(id, a) {
   }
 
   noteSession(from, rec.fromSession, rec.topic, rec.to, rec.toSession, sessionIdentity(a));
-  raiseTargetEnvironment(rec);
-
   rememberAgent(from);
   if (priority === 'P0') {
     try {
@@ -973,9 +984,19 @@ function doPost(id, a) {
     } catch (_) {}
   }
 
-  wakeAntigravity(rec);
+  // Waking costs the recipient a full inference cycle, so only a message that
+  // actually asks something does it: a question, a blocker, an answer, or work
+  // reported finished — and only when it is addressed to someone. A P0 still
+  // wakes everyone, which is what P0 is for. An ack, a status note or a plain
+  // broadcast waits to be read.
+  const addressed = Boolean(rec.toSession) || rec.to === 'Claude' || rec.to === 'Gemini';
+  if (priority === 'P0' || (addressed && WAKING_STATUSES.includes(status))) {
+    raiseTargetEnvironment(rec);
+    wakeAntigravity(rec);
+  }
 
   const hints = [];
+  if (demoted) hints.push(`ℹ️ P0 lowered to normal — a \`${status}\` is not an emergency, so nobody was woken`);
   if (!rec.fromSession) hints.push('⚠️ `sessionId` not specified — recipient will not know which session to reply to');
   if (rec.to === 'all') hints.push('ℹ️ addressed to all (`to: "all"`)');
   if (rec.file) hints.push(`📄 long text stored completely in ${rec.file}`);

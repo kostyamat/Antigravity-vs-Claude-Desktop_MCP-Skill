@@ -286,6 +286,22 @@ def main():
                         # Addressed to one specific other session: not ours.
                         if to_sess and to_sess != "all" and to_sess not in my_names:
                             continue
+                        # A plain broadcast from another agent is not an
+                        # interruption. One remark from the owner drew seven
+                        # agreeing replies from agent sessions in a couple of
+                        # minutes, and every one of them landed here as a wake.
+                        # Broadcasts wait to be read on the next get_messages;
+                        # P0 still comes through, and so does anything the human
+                        # writes, because he posts rarely and missing him is the
+                        # failure this watchman exists to prevent.
+                        # The human is recognised by his session, not by the
+                        # sender name: some posts carry a session id in the name
+                        # column instead of an agent, and treating those as human
+                        # let every one of them through.
+                        broadcast = (not to_sess) or to_sess == "all"
+                        from_human = from_sess.lower().startswith("human")
+                        if broadcast and not from_human and pri != "P0":
+                            continue
                     # Session unknown: show everything, directed messages
                     # included. Filtering here would hide exactly the orders
                     # meant for this session, and a watchman that misses its
