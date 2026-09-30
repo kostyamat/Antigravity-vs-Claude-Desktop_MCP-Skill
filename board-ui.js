@@ -21,6 +21,7 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 const bridgeDb = require('./bridge-db');
+const cardsLib = require('./cards');
 const { wakeAntigravity } = require('./wake-antigravity');
 
 const SCRIPTS_DIR = path.resolve(__dirname);
@@ -141,7 +142,7 @@ function apiBoard(options = {}) {
     cursors,
     messages: board.map(m => ({
       id: m.id, ts: m.ts, from: m.from, fromSession: m.fromSession || '',
-      to: m.to || 'all', toSession: m.toSession || '', replyTo: m.replyTo || null,
+      to: m.to || 'all', toSession: m.toSession || '', room: m.room || '', replyTo: m.replyTo || null,
       topic: m.topic || '', priority: m.priority || 'normal', status: m.status || 'info',
       progress: m.progress || '', text: bodyOf(m),
       file: m.file ? path.basename(m.file) : null,
@@ -163,6 +164,7 @@ function apiPost(data) {
   let toSession = (data.toSession || '').trim();
   let topic = (data.topic || '').trim();
   const replyTo = data.replyTo ? Number(data.replyTo) : null;
+  const room = (data.room || '').trim();
 
   // 🧵 Preserve conversation thread context when replying from UI
   if (replyTo) {
@@ -190,6 +192,7 @@ function apiPost(data) {
   const rec = {
     ts: new Date().toISOString(),
     from,
+    room,
     fromSession: data.fromSession || 'human/web',
     to,
     toSession,
@@ -271,6 +274,36 @@ function slug(s, fallback) {
     .replace(/[^\p{L}\p{N}]+/gui, '-')
     .replace(/^-+|-+$/g, '');
   return v || fallback || 'unknown';
+}
+
+// What the board calls a window, so a card with no title of its own still shows
+// the name a human or an agent gave it here.
+function boardCardNames() {
+  const names = {};
+  try {
+    const sessions = bridgeDb.readSessions();
+    for (const s of Object.values(sessions || {})) {
+      if (!s) continue;
+      const label = s.customName || s.title || '';
+      if (!label) continue;
+      if (s.canonicalId) names[s.canonicalId] = label;
+      if (s.sessionId) names[s.sessionId] = label;
+    }
+  } catch (_) {}
+  return names;
+}
+
+function apiCards(hours) {
+  const list = cardsLib.allCards({
+    sinceHours: hours || 48,
+    names: boardCardNames()
+  });
+  return { account: cardsLib.currentAccount() || '', cards: list };
+}
+
+function apiRooms() {
+  const account = cardsLib.currentAccount() || '';
+  return { account, rooms: bridgeDb.readRooms(account) };
 }
 
 function apiSessions() {
@@ -1315,6 +1348,12 @@ aside h2 {
   <button type="button" class="btn-new-task" onclick="newTask()" title="Start a fresh task or message">
     ➕ New Task
   </button>
+  <h2 style="display:flex;align-items:center;justify-content:space-between">
+    <span>Rooms (<span id="roomCount">0</span>)</span>
+    <button type="button" id="newRoom" title="Pick the windows this conversation is between"
+            style="padding:1px 7px;font-size:12px">＋</button>
+  </h2>
+  <div id="rlist"><div class="hint">no rooms yet</div></div>
   <h2>Recent Sessions (<span id="sessCount">0</span>)</h2>
   <div id="slist"><div class="hint">loading sessions…</div></div>
   <button id="pokeAll" class="sbtn-poke" style="width:100%;margin-top:auto;padding:6px;font-size:12px"
@@ -1324,6 +1363,20 @@ aside h2 {
     <div id="dlist" style="margin-top:8px"><div class="hint">loading docs…</div></div>
   </details>
 </aside>
+<div id="roomPicker"
+     style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+              padding:16px;width:min(620px,92vw);max-height:82vh;display:flex;flex-direction:column;gap:10px">
+    <div style="font-weight:600">New room</div>
+    <div class="hint">Tick the windows this conversation is between. One agent is a room too.</div>
+    <input id="roomName" placeholder="Room name, e.g. Calls" style="padding:6px 8px">
+    <div id="roomCards" style="overflow:auto;flex:1;display:flex;flex-direction:column;gap:2px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="button" id="roomCancel">Cancel</button>
+      <button type="button" id="roomCreate">Create room</button>
+    </div>
+  </div>
+</div>
 <main class="main-chat">
   <div id="snap" hidden></div>
   <div id="list" class="chat-feed"><div class="empty">loading messages…</div></div>
@@ -1532,6 +1585,10 @@ function updateSemaphore(){
 
 function visible(){
   let items=DATA;
+  // A room is a door. Inside one, the rest of the board is not dimmed or sorted
+  // lower — it is simply not here, which is the whole point of having asked for
+  // rooms in the first place.
+  if(ROOM) return items.filter(m=>String(m.room||'')===ROOM);
   if(SFILTER){
     // Every label this window has carried counts as the same window: filtering
     // on the current one alone hid the conversation's own earlier history.
@@ -1873,6 +1930,7 @@ $('#compose').addEventListener('submit',async e=>{
     r=await fetch('/api/post',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         from:$('#from').value,
+        room:ROOM,
         to:toVal,
         toSession:toSessionVal,
         topic:$('#topic').value,
@@ -1954,6 +2012,144 @@ window.filterLine=function(line){
   renderSessions();
   render(true);
 };
+
+let ROOM='';
+let ROOMS=[];
+let CARDS=[];
+
+// The name the human sees for a card; the id is what everything routes on, but
+// nobody should have to read one.
+function cardLabel(id){
+  const c=CARDS.find(x=>x.id===id);
+  if(c&&c.name)return c.name;
+  const s=SESSIONS.find(x=>x.sessionId===id||x.canonicalId===id);
+  if(s&&(s.customName||s.sessionId))return s.customName||s.sessionId;
+  return String(id||'').slice(0,12)+'…';
+}
+
+async function loadRooms(){
+  try{
+    const r=await fetch('/api/rooms');const j=await r.json();
+    ROOMS=j.rooms||[];
+  }catch(_){ROOMS=[];}
+  const el=$('#rlist');if(!el)return;
+  $('#roomCount').textContent=ROOMS.length;
+  if(!ROOMS.length){el.innerHTML='<div class="hint">no rooms yet</div>';return;}
+  el.innerHTML=ROOMS.map(r=>{
+    const who=r.members.map(m=>esc(cardLabel(m.card))).join(' + ');
+    const on=ROOM===r.id;
+    return '<div class="scard'+(on?' on':'')+'" '+
+           'style="padding:6px 8px;border-radius:var(--radius-sm);'+
+           (on?'background:var(--surface-variant);':'')+'margin-bottom:2px">'+
+           '<div style="display:flex;align-items:center;gap:4px">'+
+             '<div data-room="'+esc(r.id)+'" style="cursor:pointer;flex:1;font-weight:600;font-size:12px">'+
+               '🚪 '+esc(r.name)+'</div>'+
+             '<button type="button" data-room-rename="'+esc(r.id)+'" title="Rename this room" '+
+               'style="padding:0 4px;font-size:11px;line-height:1.4">✏️</button>'+
+             '<button type="button" data-room-del="'+esc(r.id)+'" title="Remove the room. The messages stay on the board." '+
+               'style="padding:0 4px;font-size:11px;line-height:1.4">✕</button>'+
+           '</div>'+
+           '<div data-room="'+esc(r.id)+'" class="hint" style="cursor:pointer;font-size:11px">'+who+' · '+r.messages+'</div>'+
+           '</div>';
+  }).join('');
+  el.querySelectorAll('[data-room]').forEach(n=>{
+    n.onclick=()=>enterRoom(n.getAttribute('data-room'));
+  });
+  el.querySelectorAll('[data-room-rename]').forEach(n=>{
+    n.onclick=async e=>{
+      e.stopPropagation();
+      const id=n.getAttribute('data-room-rename');
+      const cur=(ROOMS.find(x=>x.id===id)||{}).name||'';
+      const name=prompt('Room name:',cur);
+      if(name===null||!name.trim())return;
+      await fetch('/api/room/rename',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({id,name:name.trim()})});
+      loadRooms();
+    };
+  });
+  el.querySelectorAll('[data-room-del]').forEach(n=>{
+    n.onclick=async e=>{
+      e.stopPropagation();
+      const id=n.getAttribute('data-room-del');
+      const r=ROOMS.find(x=>x.id===id)||{};
+      // Say what is not lost, because "delete" next to a message count reads
+      // like it takes the messages with it.
+      if(!confirm('Remove the room "'+(r.name||id)+'"?\n\n'+
+                  'Its '+(r.messages||0)+' messages stay on the board — only the door goes.'))return;
+      await fetch('/api/room/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({id})});
+      if(ROOM===id){ROOM='';load(true);}
+      loadRooms();
+    };
+  });
+}
+
+window.enterRoom=function(id){
+  ROOM=(ROOM===id)?'':id;
+  const r=ROOMS.find(x=>x.id===ROOM);
+  const hint=$('#hint');
+  if(ROOM&&r){
+    if(hint)hint.innerHTML='🚪 In <code class="nt">'+esc(r.name)+'</code> — '+
+      'only these windows see this. <a href="#" onclick="enterRoom(\''+esc(ROOM)+'\');return false">leave</a>';
+    // One other window in the room is the obvious addressee; more than one and
+    // the human picks, because guessing would put the message in front of the
+    // wrong agent.
+    const others=r.members.filter(m=>m.card!==(SELF_CARD||''));
+    if(others.length===1)window.setTargetSession(others[0].card);
+  }else if(hint){
+    hint.textContent='Ctrl+Enter to send';
+  }
+  loadRooms();
+  load(true);
+};
+
+let SELF_CARD='';
+
+async function openRoomPicker(){
+  const dlg=$('#roomPicker');if(!dlg)return;
+  const box=$('#roomCards');
+  box.innerHTML='<div class="hint">reading open windows…</div>';
+  dlg.style.display='flex';
+  $('#roomName').value='';
+  try{
+    const r=await fetch('/api/cards?hours=72');const j=await r.json();
+    CARDS=j.cards||[];
+  }catch(_){CARDS=[];}
+  if(!CARDS.length){box.innerHTML='<div class="hint">no window has been touched in three days</div>';return;}
+  box.innerHTML=CARDS.map(c=>{
+    const proj=(c.project||'').split(/[\\/]/).filter(Boolean).pop()||'';
+    return '<label style="display:flex;gap:8px;align-items:center;padding:5px 6px;border-radius:var(--radius-sm);cursor:pointer">'+
+      '<input type="checkbox" value="'+esc(c.id)+'">'+
+      '<span style="flex:1">'+(c.agent==='Claude'?'🤖':'✨')+' '+esc(c.name||'(unnamed)')+
+        (proj?' <span class="hint">· '+esc(proj)+'</span>':'')+
+        (c.busy?' <span class="hint">· busy</span>':'')+'</span>'+
+      '<code class="hint" style="font-size:10px">'+esc(c.id.slice(0,12))+'…</code>'+
+      '</label>';
+  }).join('');
+}
+
+function closeRoomPicker(){const d=$('#roomPicker');if(d)d.style.display='none';}
+
+// Clicking the dark area around the dialog closes it, and so does Escape. A
+// modal with no way out but one small button is the kind of thing that makes a
+// board feel like a trap.
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){const d=$('#roomPicker');if(d&&d.style.display!=='none')closeRoomPicker();}
+});
+
+async function createRoomFromPicker(){
+  const cards=[...document.querySelectorAll('#roomCards input:checked')].map(i=>i.value);
+  if(!cards.length){alert('Tick at least one window.');return;}
+  const name=($('#roomName').value||'').trim()||
+    cards.map(c=>cardLabel(c)).join(' + ');
+  const r=await fetch('/api/room/create',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,cards})});
+  const j=await r.json();
+  if(j.error){alert(j.error);return;}
+  closeRoomPicker();
+  await loadRooms();
+  enterRoom(j.id);
+}
 
 async function loadSessions(){
   try{
@@ -2303,6 +2499,12 @@ loadDocs();
 checkAgents();
 setInterval(()=>load(false),2000);
 setInterval(loadSessions,12000);
+setInterval(loadRooms,15000);
+const nrBtn=$('#newRoom'); if(nrBtn) nrBtn.onclick=openRoomPicker;
+const rcBtn=$('#roomCancel'); if(rcBtn) rcBtn.onclick=closeRoomPicker;
+const rpBox=$('#roomPicker'); if(rpBox) rpBox.onclick=e=>{ if(e.target===rpBox) closeRoomPicker(); };
+const rkBtn=$('#roomCreate'); if(rkBtn) rkBtn.onclick=createRoomFromPicker;
+loadRooms();
 setInterval(loadDocs,10000);
 setInterval(checkAgents,5000);
 </script></body></html>`;
@@ -2327,6 +2529,42 @@ const server = http.createServer((req, res) => {
       opts.since = Number(sinceParam) || 0;
     }
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(apiBoard(opts)));
+  }
+  if (req.method === 'GET' && req.url.startsWith('/api/cards')) {
+    const q = new URL(req.url, 'http://x').searchParams;
+    return send(res, 200, 'application/json; charset=utf-8',
+      JSON.stringify(apiCards(Number(q.get('hours')) || 48)));
+  }
+  if (req.method === 'GET' && req.url === '/api/rooms') {
+    return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(apiRooms()));
+  }
+  if (req.method === 'POST' && req.url.startsWith('/api/room/')) {
+    const what = req.url.slice('/api/room/'.length).split('?')[0];
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e6) req.destroy(); });
+    req.on('end', () => {
+      let out;
+      try {
+        const d = JSON.parse(body || '{}');
+        if (what === 'create') {
+          const cards = (d.cards || []).map(x => String(x).trim()).filter(Boolean);
+          const known = new Map(cardsLib.allCards({}).map(c => [c.id, c]));
+          const members = cards.map(c => ({ card: c, agent: (known.get(c) || {}).agent || '' }));
+          out = bridgeDb.createRoom(d.name || 'room', members, cardsLib.currentAccount() || '');
+        } else if (what === 'rename') {
+          out = bridgeDb.renameRoom(d.id, d.name);
+        } else if (what === 'delete') {
+          bridgeDb.deleteRoom(d.id);
+          out = { ok: true };
+        } else {
+          out = { error: 'unknown room action: ' + what };
+        }
+      } catch (e) {
+        out = { error: e.message };
+      }
+      send(res, 200, 'application/json; charset=utf-8', JSON.stringify(out));
+    });
+    return;
   }
   if (req.method === 'GET' && req.url === '/api/sessions') {
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(apiSessions()));
