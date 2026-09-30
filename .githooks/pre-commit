@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Guard against leaking private data into this public repository.
 #
 # This repo is developed on a machine where several agents write notes in
@@ -12,6 +12,10 @@ fail=0
 # Cyrillic in UTF-8 always begins with lead byte 0xD0 or 0xD1 (U+0400-U+047F).
 # The class is built with printf because GNU grep understands hex escapes only
 # under -P, and -P needs a UTF-8 locale Git for Windows does not always provide.
+# The shebang asks for bash on purpose: under /bin/sh, which is dash on Debian,
+# printf does not know \xNN and silently emits those four characters instead of
+# the bytes. The class then became a set of ASCII letters and matched almost
+# every line, so the guard refused plain English code and called it Cyrillic.
 CYR=$(printf '[\xd0\xd1][\x80-\xbf]')
 files=$(git diff --cached --name-only --diff-filter=ACM)
 
