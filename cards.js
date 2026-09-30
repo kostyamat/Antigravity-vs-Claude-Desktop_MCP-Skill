@@ -183,9 +183,12 @@ function byActivity(a, b) {
   return String(b.activeAt || '').localeCompare(String(a.activeAt || ''));
 }
 
-// Both sides in one list. `names` maps an id to the name the board knows for it,
-// which is the only source Gemini cards have; a Claude card keeps its own title
-// unless the board has been told otherwise.
+// Both sides in one list. The name a window carries in its own client comes
+// first — that is where the owner names and renames it. `names` (what the board
+// knows) only fills a window the client left unnamed. The other way round, a
+// task name typed on the board once replaced a window's name for good: the
+// window "Restore Corrupted Radio Logos" showed everywhere as "Logo Packs
+// (Serbia)", one of the jobs it did.
 //
 // `sinceHours` drops windows nobody has touched lately: there are over two
 // hundred Antigravity conversations on this machine, and a picker showing all of
@@ -206,7 +209,7 @@ function allCards(opts) {
       const t = Date.parse(c.activeAt);
       return Number.isNaN(t) ? true : t >= cutoff;
     })
-    .map(c => Object.assign({}, c, { name: names[c.id] || c.name || '' }));
+    .map(c => Object.assign({}, c, { name: c.name || names[c.id] || '' }));
 }
 
 module.exports = {

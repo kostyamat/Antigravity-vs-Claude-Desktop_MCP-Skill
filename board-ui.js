@@ -266,7 +266,6 @@ function apiEdit(data) {
 }
 
 // ── Sessions ────────────────────────────────────────────────────────────────────────────
-const SESSIONS_REG = path.join(SCRIPTS_DIR, 'docs', '_sessions.json');
 const SESSIONS_DIR = path.join(SCRIPTS_DIR, 'docs', 'sessions');
 
 function slug(s, fallback) {
@@ -306,7 +305,7 @@ function apiCards(hours, allAccounts) {
       if (acct === here) continue;
       for (const c of cardsLib.claudeCards(acct)) {
         if (c.archived) continue;
-        list.push(Object.assign({}, c, { name: names[c.id] || c.name || '', elsewhere: true }));
+        list.push(Object.assign({}, c, { name: c.name || names[c.id] || '', elsewhere: true }));
       }
     }
   }
@@ -321,9 +320,6 @@ function apiRooms() {
 function apiSessions() {
   let reg = {};
   try { reg = bridgeDb.readSessions(); } catch (_) {}
-  if (!Object.keys(reg).length) {
-    try { reg = JSON.parse(fs.readFileSync(SESSIONS_REG, 'utf8')) || {}; } catch (_) {}
-  }
   const board = readBoard() || [];
   const out = Object.keys(reg).map(k => {
     const s = reg[k];

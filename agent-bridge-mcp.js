@@ -176,7 +176,6 @@ const SESSIONS_DIR = path.join(SCRIPTS_DIR, 'docs', 'sessions');
 
 //
 //
-const SESSIONS_REG = path.join(SCRIPTS_DIR, 'docs', '_sessions.json');
 
 const INLINE_LIMIT = 4000;
 const DEFAULT_LIMIT = 20;
@@ -1609,21 +1608,25 @@ function doAckDoc(id, a) {
 }
 
 
+// The session registry lives in the database, the table the board reads. It used
+// to be docs/_sessions.json here with the database as a mirror — the same split
+// the document index had — and names given on the board existed only in the
+// database. The database imported the file once, on first start.
 function readReg() {
-  try {
-    if (!fs.existsSync(SESSIONS_REG)) return {};
-    return JSON.parse(fs.readFileSync(SESSIONS_REG, 'utf8')) || {};
-  } catch (e) { logError(`readReg: ${e.message}`); return {}; }
+  try { return bridgeDb.readSessions(); }
+  catch (e) { logError(`readReg: ${e.message}`); return {}; }
 }
 
 function writeReg(r) {
-  ensureDir(DOCS_DIR);
+  const db = bridgeDb.getDb();
   try {
-    fs.writeFileSync(SESSIONS_REG, JSON.stringify(r, null, 2), 'utf8');
-    for (const s of Object.values(r)) {
-      bridgeDb.saveSession(s);
-    }
-  } catch (e) { logError(`writeReg: ${e.message}`); }
+    db.exec('BEGIN');
+    for (const s of Object.values(r || {})) bridgeDb.saveSession(s);
+    db.exec('COMMIT');
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch (_) {}
+    logError(`writeReg: ${e.message}`);
+  }
 }
 
 // The identity fields every bridge tool may carry. They are optional: an agent

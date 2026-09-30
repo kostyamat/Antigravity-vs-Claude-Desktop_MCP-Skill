@@ -39,6 +39,7 @@ function getDb() {
   initSchema(_db);
   migrateFromJsonIfEmpty(_db);
   adoptDocsIndexJson(_db);
+  adoptSessionsJson(_db);
 
   return _db;
 }
@@ -301,6 +302,30 @@ function rowToMessage(r) {
 //
 // Rooms are not in the JSON file and are kept: the upsert leaves a room alone
 // when the incoming record has none.
+// The session registry had the same split as the document index: MCP kept
+// docs/_sessions.json and mirrored it here. The mirror was rewritten on every
+// save, so the database is already current; the file is taken in one last time
+// and renamed. Names given on the board were only ever here and are kept: the
+// upsert never blanks a name.
+function adoptSessionsJson(db) {
+  if (!fs.existsSync(SESSIONS_JSON)) return;
+  let reg;
+  try { reg = JSON.parse(fs.readFileSync(SESSIONS_JSON, 'utf8')); }
+  catch (e) { console.error(`[bridge-db] docs/_sessions.json unreadable, left in place: ${e.message}`); return; }
+  if (!reg || typeof reg !== 'object') return;
+  db.exec('BEGIN');
+  try {
+    for (const s of Object.values(reg)) if (s && s.sessionId) saveSession(s);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    console.error(`[bridge-db] docs/_sessions.json not adopted, left in place: ${e.message}`);
+    return;
+  }
+  try { fs.renameSync(SESSIONS_JSON, SESSIONS_JSON + '.migrated'); }
+  catch (e) { console.error(`[bridge-db] docs/_sessions.json adopted but not renamed: ${e.message}`); }
+}
+
 function adoptDocsIndexJson(db) {
   if (!fs.existsSync(DOCS_INDEX_JSON)) return;
   let list;
@@ -670,10 +695,10 @@ function resolveSessionAliases(sessionId, options) {
       // split('/')[1] cut "kostyamat_fmradio/main-05-09" down to
       // "kostyamat_fmradio" — a name every radio label then shared.
       const keySess = key.includes('/') ? key.slice(key.indexOf('/') + 1).trim() : key;
-      // A shared custom name is how lines were first stitched together by hand,
-      // so it joins sessions only when lines are being followed.
-      const cname = withLines ? String(r.custom_name || '').trim() : '';
-      if ([sid, canon, keySess, cname].some(has)) { put(sid); put(canon); put(keySess); put(cname); }
+      // A custom name once stitched lines together by hand. Lines have their own
+      // table now (and the names that did this were moved into it), so a name
+      // joins nothing: two windows given the same task name are still two.
+      if ([sid, canon, keySess].some(has)) { put(sid); put(canon); put(keySess); }
     }
 
     // 3. session_aliases: label -> window
@@ -921,13 +946,8 @@ function readSessions() {
 function renameSession(key, customName) {
   const db = getDb();
   const trimmed = String(customName || '').trim();
+  // A label only. It neither addresses the window nor joins it to others.
   const res = db.prepare('UPDATE sessions SET custom_name = ? WHERE key = ? OR session_id = ?').run(trimmed, key, key);
-  if (trimmed) {
-    const row = db.prepare('SELECT session_id FROM sessions WHERE key = ? OR session_id = ?').get(key, key);
-    if (row && row.session_id) {
-      registerSessionAlias(trimmed, row.session_id);
-    }
-  }
   return res.changes > 0;
 }
 
@@ -973,14 +993,12 @@ function saveSession(s) {
     s.lastSeen || new Date().toISOString()
   );
 
-  if (s.customName && s.sessionId) {
-    registerSessionAlias(s.customName, s.sessionId);
-  }
   // The label the agent signs with resolves to the id the client issued, so a
-  // message addressed to either reaches the same window.
+  // message addressed to either reaches the same window. A name is not an
+  // address: it is what a human typed, often the name of one task, and making
+  // it resolve turned a task name into a second identity for the window.
   if (s.canonicalId && s.sessionId) {
     registerSessionAlias(s.sessionId, s.canonicalId);
-    if (s.customName) registerSessionAlias(s.customName, s.canonicalId);
   }
 }
 
