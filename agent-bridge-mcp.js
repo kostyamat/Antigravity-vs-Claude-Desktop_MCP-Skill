@@ -20,6 +20,7 @@ const os = require('os');
 const readline = require('readline');
 const { spawn } = require('child_process');
 const bridgeDb = require('./bridge-db');
+const cardsLib = require('./cards');
 const { wakeAntigravity } = require('./wake-antigravity');
 
 const SCRIPTS_DIR  = path.resolve(__dirname);
@@ -567,6 +568,7 @@ const TOOLS = [
         toSession: { type: 'string', description: 'Target session of recipient (if replyTo is not specified).' },
         replyTo: { type: 'number', description: 'Message ID (#N) being replied to. Automatically links thread and routes to parent author.' },
         topic: { type: 'string', description: 'Short topic/category (e.g. "auth", "refactoring") for filtering.' },
+        room: { type: 'string', description: 'Room id: keeps this message inside that conversation. Left out, the bridge attaches the room when sender and recipient share exactly one.' },
         priority: { type: 'string', enum: PRIORITIES, description: 'P0 = immediate attention/stop; normal; fyi = for information only.' },
         status: { type: 'string', enum: STATUSES, description: 'info | question | answer | working | done | blocked | ack' },
         progress: { type: 'string', description: 'Current progress description, e.g. "step 3 of 5" or "awaiting build".' }
@@ -596,6 +598,7 @@ const TOOLS = [
         title: { type: 'string', description: 'Window title, so the human recognises the session in the board.' },
         only: { type: 'string', enum: ['new', 'for_me', 'all'], description: 'Filter: new (default) | for_me | all' },
         thread: { type: 'number', description: 'Retrieve complete discussion thread around message #N.' },
+        room: { type: 'string', description: 'Only this room, so the crowd outside it stays outside.' },
         topic: { type: 'string', description: 'Filter by specific topic.' },
         since: { type: 'number', description: 'Retrieve messages with ID greater than this value.' },
         limit: { type: 'number', description: 'Maximum number of messages to return (default 20).' },
@@ -761,6 +764,48 @@ const TOOLS = [
     }
   },
   {
+    name: 'list_cards',
+    description:
+      'The windows open on this machine, the way a human sees them: a name, the project, and the id to address. ' +
+      'Claude windows come from the desktop client cards of the signed-in account, Antigravity windows from its ' +
+      'conversation summaries. Use this to find who to talk to instead of guessing a label — a label is picked by ' +
+      'the agent itself and three windows of one project have shared one, so only the id addresses anybody.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: { type: 'string', description: 'Only "Claude" or only "Gemini".' },
+        sinceHours: { type: 'number', description: 'Only windows touched this recently. Default 48; there are hundreds otherwise.' },
+        account: { type: 'string', description: 'A Claude account id, to look at its windows without switching to it.' }
+      }
+    }
+  },
+  {
+    name: 'create_room',
+    description:
+      'Create a room: a named conversation between the given windows. Members are card ids from list_cards, never ' +
+      'labels. Ticking the same set again returns the room that already exists rather than making a second one. ' +
+      'A room with one member is a conversation with one agent, which is a normal thing to want.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'What the human will see, e.g. "Calls" or "Me and DialerKM".' },
+        cards: { type: 'array', items: { type: 'string' }, description: 'Card ids of the windows in the room.' },
+        account: { type: 'string', description: 'Claude account the room belongs to. Defaults to the one signed in.' }
+      },
+      required: ['name', 'cards']
+    }
+  },
+  {
+    name: 'list_rooms',
+    description:
+      'The rooms of the signed-in Claude account, most recently used first, with their members and message counts. ' +
+      'Rooms follow the account, because each account keeps its own windows.',
+    inputSchema: {
+      type: 'object',
+      properties: { account: { type: 'string', description: 'A different account id.' } }
+    }
+  },
+  {
     name: 'save_session_context',
     description:
       'Save a session context snapshot — safeguards against context loss or window reset. ' +
@@ -853,12 +898,104 @@ function handleRequest(req) {
     if (toolName === 'list_sessions') return doListSessions(id, args);
     if (toolName === 'find_session') return doFindSession(id, args);
     if (toolName === 'link_sessions') return doLinkSessions(id, args);
+    if (toolName === 'list_cards') return doListCards(id, args);
+    if (toolName === 'create_room') return doCreateRoom(id, args);
+    if (toolName === 'list_rooms') return doListRooms(id, args);
   } catch (err) {
     logError(`${toolName}: ${err.stack || err.message}`);
     return fail(id, `${toolName} failed: ${err.message}`);
   }
 
   fail(id, `Tool not found: ${toolName}`);
+}
+
+// The room a message belongs to. An explicit one wins. Otherwise: the window
+// this session runs in, and the window it is writing to, are looked up among the
+// rooms; one room shared by both is the answer, none or several means silence.
+function resolveRoom(a, toSession) {
+  const named = String(a.room || '').trim();
+  if (named) return named;
+  try {
+    const mine = String(a.canonicalId || a.sessionId || '').trim();
+    const theirs = String(toSession || '').trim();
+    if (!mine || !theirs || theirs === 'all') return '';
+    const here = new Set(bridgeDb.roomsOfCard(mine));
+    if (!here.size) return '';
+    const shared = bridgeDb.roomsOfCard(theirs).filter(r => here.has(r));
+    return shared.length === 1 ? shared[0] : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+// ── cards and rooms ──────────────────────────────────────────────────────────────────────
+
+// Names the board knows for a window, so a card that the client left unnamed
+// still shows whatever the human or the agent called it here.
+function boardNames() {
+  const names = {};
+  try {
+    const sessions = bridgeDb.readSessions();
+    for (const s of Object.values(sessions || {})) {
+      if (!s) continue;
+      const label = s.customName || s.title || '';
+      if (!label) continue;
+      if (s.canonicalId) names[s.canonicalId] = label;
+      if (s.sessionId) names[s.sessionId] = label;
+    }
+  } catch (_) {}
+  return names;
+}
+
+function doListCards(id, a) {
+  const hours = typeof a.sinceHours === 'number' ? a.sinceHours : 48;
+  let list = cardsLib.allCards({ sinceHours: hours, account: a.account, names: boardNames() });
+  const want = normAgent(a.agent);
+  if (want && want !== 'all') list = list.filter(c => c.agent === want);
+
+  if (!list.length) {
+    return ok(id, `No window has been touched in the last ${hours}h. Try a larger sinceHours.`);
+  }
+  const lines = list.map(c => {
+    const project = String(c.project || '').split(/[\\/]/).filter(Boolean).pop() || '';
+    const busy = c.busy ? ' · busy' : '';
+    return `${c.agent === 'Claude' ? '🤖' : '✨'} ${c.name || '(unnamed)'}` +
+           `${project ? ` · ${project}` : ''}${busy}\n     ${c.id}`;
+  });
+  ok(id, `Windows touched in the last ${hours}h (account ${cardsLib.currentAccount() || '—'}):\n` +
+         lines.join('\n') +
+         '\n\nAddress by the id, show the name to the human.');
+}
+
+function doCreateRoom(id, a) {
+  const cards = (a.cards || []).map(c => String(c).trim()).filter(Boolean);
+  if (!cards.length) return fail(id, 'create_room: `cards` is empty — a room needs at least one window.');
+
+  const known = new Map(cardsLib.allCards({ names: boardNames() }).map(c => [c.id, c]));
+  const unknown = cards.filter(c => !known.has(c));
+  const members = cards.map(c => ({ card: c, agent: (known.get(c) || {}).agent || '' }));
+
+  const room = bridgeDb.createRoom(a.name, members, a.account || cardsLib.currentAccount() || '');
+  const who = room.members
+    .map(m => `${m.agent === 'Claude' ? '🤖' : '✨'} ${(known.get(m.card) || {}).name || m.card}`)
+    .join(' + ');
+  ok(id, `Room "${room.name}" [${room.id}] — ${who}` +
+         (unknown.length ? `\n⚠️ not among the open windows: ${unknown.join(', ')}` : '') +
+         `\n\nPost into it with room: "${room.id}", read it with get_messages({room: "${room.id}"}).`);
+}
+
+function doListRooms(id, a) {
+  const acct = a.account || cardsLib.currentAccount() || '';
+  const rooms = bridgeDb.readRooms(acct);
+  if (!rooms.length) return ok(id, 'No rooms yet. Make one with create_room.');
+  const known = new Map(cardsLib.allCards({ names: boardNames() }).map(c => [c.id, c]));
+  const lines = rooms.map(r => {
+    const who = r.members
+      .map(m => (known.get(m.card) || {}).name || m.card.slice(0, 12))
+      .join(' + ');
+    return `${r.name} [${r.id}] · ${r.messages} messages\n     ${who}`;
+  });
+  ok(id, `Rooms of account ${acct || '—'}:\n` + lines.join('\n'));
 }
 
 // ── bridge_setup ─────────────────────────────────────────────────────────────────────────
@@ -947,10 +1084,18 @@ function doPost(id, a) {
   }
   if (!toAgent) toAgent = 'all';
 
+  // Which room this belongs in. Named outright, it is taken as given. Left out,
+  // the bridge looks for one room that both the sender's window and the
+  // addressee are in — if there is exactly one, the message belongs there and
+  // nobody should have to say so. More than one is ambiguous and is left alone,
+  // because guessing wrong puts a conversation behind the wrong door.
+  const room = resolveRoom(a, toSession);
+
   const rec = {
     ts: new Date().toISOString(),
     from,
     fromSession: (a.sessionId || '').trim(),
+    room,
     to: toAgent,
     toSession: toSession,
     replyTo: replyTo,
@@ -974,6 +1119,7 @@ function doPost(id, a) {
     rec.file = file;
   }
 
+  bridgeDb.touchRoom(rec.room);
   noteSession(from, rec.fromSession, rec.topic, rec.to, rec.toSession, sessionIdentity(a));
   rememberAgent(from);
   if (priority === 'P0') {
@@ -1019,7 +1165,7 @@ function doPost(id, a) {
   if (rec.to === 'all') hints.push('ℹ️ addressed to all (`to: "all"`)');
   if (rec.file) hints.push(`📄 long text stored completely in ${rec.file}`);
 
-  ok(id, `✅ Recorded as #${nextId}${rec.to !== 'all' ? ` for ${rec.to}` : ''}` +
+  ok(id, `✅ Recorded as #${nextId}${rec.room ? ` in room ${rec.room}` : ''}${rec.to !== 'all' ? ` for ${rec.to}` : ''}` +
         `${rec.toSession ? ` [session: ${rec.toSession}]` : ''}` +
         `${priority === 'P0' ? ' 🚨 P0' : ''}${status !== 'info' ? ` [${status}]` : ''}.` +
         (hints.length ? `\n${hints.join('\n')}` : ''));
@@ -1098,6 +1244,7 @@ function doGet(id, a) {
   };
 
   let list = board.slice();
+  if (a.room) list = list.filter(m => String(m.room || '') === String(a.room));
   if (a.topic) list = list.filter(m => (m.topic || '').toLowerCase() === String(a.topic).toLowerCase());
   if (typeof a.since === 'number') list = list.filter(m => m.id > a.since);
   if (only === 'for_me') list = list.filter(m => isForMe(m));

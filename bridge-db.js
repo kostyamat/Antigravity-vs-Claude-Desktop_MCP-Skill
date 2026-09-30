@@ -270,6 +270,7 @@ function rowToMessage(r) {
     fromSession: r.from_session || '',
     to: r.to_agent,
     toSession: r.to_session || '',
+    room: r.room || '',
     replyTo: r.reply_to || null,
     topic: r.topic || '',
     priority: r.priority || 'normal',
@@ -481,8 +482,8 @@ function addMessage(msg) {
     INSERT INTO messages (
       ts, from_agent, from_session, to_agent, to_session,
       reply_to, topic, priority, status, progress, message,
-      file, read_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      file, read_by, room
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const res = stmt.run(
@@ -498,7 +499,8 @@ function addMessage(msg) {
     msg.progress || '',
     msg.message || '',
     msg.file || null,
-    readByStr
+    readByStr,
+    msg.room || ''
   );
 
   const newId = Number(res.lastInsertRowid);
