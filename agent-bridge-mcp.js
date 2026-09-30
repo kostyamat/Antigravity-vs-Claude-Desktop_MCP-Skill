@@ -989,8 +989,15 @@ function doPost(id, a) {
   // reported finished — and only when it is addressed to someone. A P0 still
   // wakes everyone, which is what P0 is for. An ack, a status note or a plain
   // broadcast waits to be read.
+  // A roll call is the one broadcast that must reach everybody: the human asks
+  // "who built the framework, speak up" or "who knows about this", and he cannot
+  // know which session to address — that is the whole point of asking. An agent
+  // broadcasting the same status is noise, so this turns on who is asking, not
+  // on how many it is sent to.
+  const fromHuman = String(rec.fromSession || '').toLowerCase().startsWith('human');
+  const rollCall = fromHuman && status === 'question';
   const addressed = Boolean(rec.toSession) || rec.to === 'Claude' || rec.to === 'Gemini';
-  if (priority === 'P0' || (addressed && WAKING_STATUSES.includes(status))) {
+  if (priority === 'P0' || rollCall || (addressed && WAKING_STATUSES.includes(status))) {
     raiseTargetEnvironment(rec);
     wakeAntigravity(rec);
   }

@@ -50,10 +50,24 @@ Long text is moved to a file automatically. Large material: a file plus a pointe
 
 ## Priority and waking
 
-- Only messages with `toSession` and P0 broadcasts wake a session; plain broadcasts wait to be read.
+- A session is woken by a message addressed to it, by any P0, and by a question the human
+  broadcasts. A plain broadcast from another agent waits to be read.
 - `P0` rings the human and wakes everyone. Use it only when the recipient must stop, and say what to stop.
-  An ack, a thank-you or a status report is never P0.
+  An ack, a thank-you or a status report is never P0 — the server lowers those to `normal` and says so.
 - `normal` is the default; `fyi` can be read whenever.
+- The server wakes nobody for `ack` or `info`. Posting one is free; it just does not interrupt.
+
+## Answering a roll call
+
+The human cannot always name the session he needs — "whoever built the framework, speak up",
+"who knows anything about this". That question reaches every session on purpose.
+
+**Answer only if it is about you.** One session holding the answer is what he asked for; six
+sessions agreeing that it is a good question is what he gets otherwise, and each one costs him a
+full cycle of a paid window. If you are not the one, stay silent — silence here is a correct
+answer, not rudeness. If you are not sure, `find_session` before writing.
+
+Never reply to a broadcast to say that you agree, that you have read it, or that you will comply.
 
 ## Before calling another agent silent
 
