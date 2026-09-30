@@ -163,6 +163,47 @@ function initSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_line_members_line ON line_members(line);
   `);
+  // A room: the windows one conversation is actually between.
+  //
+  // The board is one stream shared by every session on the machine, and the
+  // owner put it plainly — it became a square with hundreds of people on it,
+  // and he is new in town looking for somewhere to eat. A room is the door:
+  // he ticks a card on each side, names it, and from then on that thread is
+  // between those windows.
+  //
+  // Members are card ids, never labels. A label is picked by the agent itself
+  // and three windows of one project have already shared one, so a label
+  // cannot address anybody. A card id is issued by the client, is unique to
+  // the window and survives its restarts.
+  //
+  // A room belongs to a Claude account, because that is the axis that splits:
+  // each account keeps its own list of windows, so the rooms built from them
+  // follow the account the human is signed into. Antigravity needs no such
+  // column — it switches accounts without splitting its conversations.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rooms (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      account TEXT DEFAULT '',
+      created_at TEXT,
+      last_activity TEXT
+    );
+    CREATE TABLE IF NOT EXISTS room_members (
+      room TEXT NOT NULL,
+      card TEXT NOT NULL,
+      agent TEXT DEFAULT '',
+      PRIMARY KEY (room, card)
+    );
+    CREATE INDEX IF NOT EXISTS idx_room_members_card ON room_members(card);
+    CREATE INDEX IF NOT EXISTS idx_rooms_account ON rooms(account);
+  `);
+  try {
+    db.exec("ALTER TABLE messages ADD COLUMN room TEXT DEFAULT ''");
+  } catch (_) {}
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room)');
+  } catch (_) {}
+
   migrateLinesOnce(db);
 }
 
@@ -1050,6 +1091,123 @@ function unlinkSessions(line, members) {
   return { line: l, removed, members: lineMembers(l) };
 }
 
+// ── rooms ────────────────────────────────────────────────────────────────────
+
+// A short readable id derived from the name, so a room is recognisable in a log
+// or a url without carrying a uuid around. Collisions get a numeric tail.
+function roomSlug(db, name) {
+  const base = String(name || 'room').toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'room';
+  let id = base;
+  let n = 2;
+  while (db.prepare('SELECT 1 FROM rooms WHERE id = ?').get(id)) {
+    id = base + '-' + n++;
+  }
+  return id;
+}
+
+// Create a room from the cards the human ticked. `members` is a list of
+// { card, agent } — the card id is what everything else keys on.
+//
+// A room with exactly the same members is returned rather than duplicated:
+// ticking the same pair twice is the human looking for the room he already has,
+// not asking for a second one beside it.
+function createRoom(name, members, account) {
+  const db = getDb();
+  const cards = [...new Set((members || [])
+    .map(m => String((m && m.card) || m || '').trim())
+    .filter(Boolean))].sort();
+  if (!cards.length) throw new Error('a room needs at least one card');
+
+  const existing = findRoomByMembers(cards, account);
+  if (existing) return existing;
+
+  const id = roomSlug(db, name);
+  const now = new Date().toISOString();
+  db.prepare('INSERT INTO rooms (id, name, account, created_at, last_activity) VALUES (?, ?, ?, ?, ?)')
+    .run(id, String(name || id), String(account || ''), now, now);
+
+  const agentOf = {};
+  for (const m of members || []) {
+    if (m && m.card) agentOf[String(m.card).trim()] = String(m.agent || '');
+  }
+  const ins = db.prepare('INSERT OR IGNORE INTO room_members (room, card, agent) VALUES (?, ?, ?)');
+  for (const c of cards) ins.run(id, c, agentOf[c] || '');
+  return getRoom(id);
+}
+
+function findRoomByMembers(cards, account) {
+  const db = getDb();
+  const want = [...cards].sort().join('\u0000');
+  const rows = db.prepare(
+    account
+      ? 'SELECT id FROM rooms WHERE account = ? OR account = \'\''
+      : 'SELECT id FROM rooms'
+  ).all(...(account ? [String(account)] : []));
+  for (const r of rows) {
+    const have = db.prepare('SELECT card FROM room_members WHERE room = ? ORDER BY card')
+      .all(r.id).map(x => x.card).join('\u0000');
+    if (have === want) return getRoom(r.id);
+  }
+  return null;
+}
+
+function getRoom(id) {
+  const db = getDb();
+  const room = db.prepare('SELECT * FROM rooms WHERE id = ?').get(String(id));
+  if (!room) return null;
+  room.members = db.prepare('SELECT card, agent FROM room_members WHERE room = ? ORDER BY agent, card')
+    .all(room.id);
+  return room;
+}
+
+// Rooms of one account, busiest last used first. A room with no account set is
+// shown everywhere: it was made before accounts mattered, and hiding it would
+// look like it had been lost.
+function readRooms(account) {
+  const db = getDb();
+  const rows = account
+    ? db.prepare("SELECT * FROM rooms WHERE account = ? OR account = '' ORDER BY last_activity DESC").all(String(account))
+    : db.prepare('SELECT * FROM rooms ORDER BY last_activity DESC').all();
+  for (const r of rows) {
+    r.members = db.prepare('SELECT card, agent FROM room_members WHERE room = ? ORDER BY agent, card').all(r.id);
+    const c = db.prepare('SELECT COUNT(*) AS n FROM messages WHERE room = ?').get(r.id);
+    r.messages = (c && c.n) || 0;
+  }
+  return rows;
+}
+
+function renameRoom(id, name) {
+  getDb().prepare('UPDATE rooms SET name = ? WHERE id = ?').run(String(name || ''), String(id));
+  return getRoom(id);
+}
+
+// Removing a room leaves its messages alone: they stay on the board, they only
+// stop being gathered behind that door. Deleting a room must not delete work.
+function deleteRoom(id) {
+  const db = getDb();
+  db.prepare('DELETE FROM room_members WHERE room = ?').run(String(id));
+  db.prepare('DELETE FROM rooms WHERE id = ?').run(String(id));
+}
+
+function touchRoom(id) {
+  if (!id) return;
+  try {
+    getDb().prepare('UPDATE rooms SET last_activity = ? WHERE id = ?')
+      .run(new Date().toISOString(), String(id));
+  } catch (_) {}
+}
+
+// Which rooms a card belongs to — used to decide where an incoming message
+// belongs when the sender did not name a room.
+function roomsOfCard(card) {
+  if (!card) return [];
+  return getDb().prepare('SELECT room FROM room_members WHERE card = ?')
+    .all(String(card)).map(r => r.room);
+}
+
 module.exports = {
   DB_PATH,
   getDb,
@@ -1075,5 +1233,12 @@ module.exports = {
   linkSessions,
   unlinkSessions,
   readDocsIndex,
-  saveDocIndex
+  saveDocIndex,
+  createRoom,
+  getRoom,
+  readRooms,
+  renameRoom,
+  deleteRoom,
+  touchRoom,
+  roomsOfCard
 };
