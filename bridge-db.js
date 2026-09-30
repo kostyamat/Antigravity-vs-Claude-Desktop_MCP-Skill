@@ -1195,6 +1195,29 @@ function readRooms(account) {
   return rows;
 }
 
+// Bring a window into a conversation that is already running. It may belong to
+// the other Claude account: that window is not open now, but it reads the board
+// when it comes back, and the room is where it will find the thread.
+function addRoomMember(room, card, agent) {
+  const db = getDb();
+  if (!db.prepare('SELECT 1 FROM rooms WHERE id = ?').get(String(room))) {
+    throw new Error('no such room: ' + room);
+  }
+  db.prepare('INSERT OR IGNORE INTO room_members (room, card, agent) VALUES (?, ?, ?)')
+    .run(String(room), String(card).trim(), String(agent || ''));
+  return getRoom(room);
+}
+
+// Taking a window out leaves everything it said in place: the conversation
+// happened, and hiding it would rewrite the history rather than change the
+// membership.
+function removeRoomMember(room, card) {
+  const db = getDb();
+  db.prepare('DELETE FROM room_members WHERE room = ? AND card = ?')
+    .run(String(room), String(card).trim());
+  return getRoom(room);
+}
+
 function renameRoom(id, name) {
   getDb().prepare('UPDATE rooms SET name = ? WHERE id = ?').run(String(name || ''), String(id));
   return getRoom(id);
@@ -1252,6 +1275,8 @@ module.exports = {
   saveDocIndex,
   createRoom,
   getRoom,
+  addRoomMember,
+  removeRoomMember,
   readRooms,
   renameRoom,
   deleteRoom,

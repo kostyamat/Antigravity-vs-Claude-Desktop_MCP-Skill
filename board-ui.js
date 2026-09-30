@@ -293,12 +293,24 @@ function boardCardNames() {
   return names;
 }
 
-function apiCards(hours) {
-  const list = cardsLib.allCards({
-    sinceHours: hours || 48,
-    names: boardCardNames()
-  });
-  return { account: cardsLib.currentAccount() || '', cards: list };
+function apiCards(hours, allAccounts) {
+  const names = boardCardNames();
+  const here = cardsLib.currentAccount() || '';
+  const list = cardsLib.allCards({ sinceHours: hours || 48, names });
+
+  // Windows of the other Claude account are offered too, marked as elsewhere.
+  // One of them is not open now and will not answer today — but it reads the
+  // board when it comes back, and a room is exactly how a thread waits for it.
+  if (allAccounts) {
+    for (const acct of cardsLib.claudeAccounts()) {
+      if (acct === here) continue;
+      for (const c of cardsLib.claudeCards(acct)) {
+        if (c.archived) continue;
+        list.push(Object.assign({}, c, { name: names[c.id] || c.name || '', elsewhere: true }));
+      }
+    }
+  }
+  return { account: here, accounts: cardsLib.claudeAccounts(), cards: list };
 }
 
 function apiRooms() {
@@ -1348,20 +1360,45 @@ aside h2 {
   <button type="button" class="btn-new-task" onclick="newTask()" title="Start a fresh task or message">
     ➕ New Task
   </button>
-  <h2 style="display:flex;align-items:center;justify-content:space-between">
-    <span>Rooms (<span id="roomCount">0</span>)</span>
-    <button type="button" id="newRoom" title="Pick the windows this conversation is between"
-            style="padding:1px 7px;font-size:12px">＋</button>
-  </h2>
-  <div id="rlist"><div class="hint">no rooms yet</div></div>
-  <h2>Recent Sessions (<span id="sessCount">0</span>)</h2>
-  <div id="slist"><div class="hint">loading sessions…</div></div>
+  <div id="panelSwitch" style="display:flex;gap:2px;margin:6px 0 8px">
+    <button type="button" data-panel="rooms"    title="Conversations behind their own door">🚪 <span id="roomCount">0</span></button>
+    <button type="button" data-panel="cards"    title="Every window open on this machine">🪟 <span id="cardCount">0</span></button>
+    <button type="button" data-panel="sessions" title="Sessions as the board knows them">📋 <span id="sessCount">0</span></button>
+    <button type="button" data-panel="docs"     title="Documents">📄 <span id="docCount">0</span></button>
+  </div>
+
+  <div id="panel-rooms">
+    <button type="button" id="newRoom" style="width:100%;padding:4px;font-size:12px;margin-bottom:6px"
+            title="Pick the windows this conversation is between">＋ new room</button>
+    <div id="rlist"><div class="hint">no rooms yet</div></div>
+  </div>
+
+  <div id="panel-cards" style="display:none">
+    <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
+      <label class="hint" style="flex:1;display:flex;gap:4px;align-items:center;cursor:pointer">
+        <input type="checkbox" id="cardsAllAccounts"> other accounts
+      </label>
+      <button type="button" id="cardsRefresh" style="padding:1px 6px;font-size:11px" title="Re-read the windows">⟳</button>
+    </div>
+    <div id="clist"><div class="hint">loading windows…</div></div>
+    <div style="display:flex;gap:4px;margin-top:6px">
+      <button type="button" id="cardsNewRoom" style="flex:1;padding:4px;font-size:11px"
+              title="Make a room of the ticked windows">＋ room</button>
+      <button type="button" id="cardsAddHere" style="flex:1;padding:4px;font-size:11px"
+              title="Bring the ticked windows into the room you are in">→ add here</button>
+    </div>
+  </div>
+
+  <div id="panel-sessions" style="display:none">
+    <div id="slist"><div class="hint">loading sessions…</div></div>
+  </div>
+
+  <div id="panel-docs" style="display:none">
+    <div id="dlist"><div class="hint">loading docs…</div></div>
+  </div>
+
   <button id="pokeAll" class="sbtn-poke" style="width:100%;margin-top:auto;padding:6px;font-size:12px"
           title="Send a high-priority wake message to both agents at once">🚨 Wake everyone</button>
-  <details id="docDetails" style="margin-top:12px;font-size:12px">
-    <summary style="cursor:pointer;color:var(--ink-dim);font-weight:600;user-select:none">Documents (<span id="docCount">0</span>)</summary>
-    <div id="dlist" style="margin-top:8px"><div class="hint">loading docs…</div></div>
-  </details>
 </aside>
 <div id="roomPicker"
      style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;align-items:center;justify-content:center">
@@ -2062,6 +2099,94 @@ function cardLabel(id){
   return String(id||'').slice(0,12)+'…';
 }
 
+let PANEL='rooms';
+
+function showPanel(name){
+  PANEL=name;
+  for(const p of ['rooms','cards','sessions','docs']){
+    const el=$('#panel-'+p);
+    if(el)el.style.display=(p===name)?'':'none';
+  }
+  document.querySelectorAll('#panelSwitch button').forEach(b=>{
+    b.style.opacity=(b.getAttribute('data-panel')===name)?'1':'.5';
+  });
+  if(name==='cards')loadCardPanel();
+}
+
+// Every window on the machine, ticked into a room. This is the answer to "where
+// do I see the cards" — not inside a dialog that has to be opened, but in the
+// panel, beside the rooms they make.
+async function loadCardPanel(){
+  const box=$('#clist');if(!box)return;
+  const all=$('#cardsAllAccounts')&&$('#cardsAllAccounts').checked;
+  try{
+    const r=await fetch('/api/cards?hours=720'+(all?'&all=1':''));
+    const j=await r.json();
+    CARDS=j.cards||[];
+  }catch(_){CARDS=[];}
+  $('#cardCount').textContent=CARDS.length;
+  if(!CARDS.length){box.innerHTML='<div class="hint">no windows found</div>';return;}
+
+  const inRoom=new Set();
+  const r=ROOMS.find(x=>x.id===ROOM);
+  if(r)for(const m of r.members)inRoom.add(m.card);
+
+  const row=c=>{
+    const proj=(c.project||'').split(/[\\/]/).filter(Boolean).pop()||'';
+    const here=inRoom.has(c.id);
+    return '<label class="scard" style="display:flex;gap:6px;align-items:flex-start;'+
+      'padding:5px 6px;margin-bottom:2px;border-radius:var(--radius-sm);cursor:pointer'+
+      (here?';background:var(--surface-variant)':'')+'" title="'+esc(c.id)+'">'+
+      '<input type="checkbox" value="'+esc(c.id)+'" style="margin-top:2px">'+
+      '<span style="flex:1;min-width:0">'+
+        '<span style="font-size:12px;font-weight:600">'+(c.agent==='Claude'?'🤖':'✨')+' '+
+          esc(c.name||'(unnamed)')+'</span>'+
+        '<span class="hint" style="display:block;font-size:10px">'+
+          (proj?esc(proj)+' · ':'')+
+          (c.elsewhere?'other account · ':'')+
+          (c.busy?'busy · ':'')+
+          (c.activeAt?esc(ago(c.activeAt)):'')+
+          (here?' · in this room':'')+
+        '</span>'+
+      '</span></label>';
+  };
+  const claude=CARDS.filter(c=>c.agent==='Claude');
+  const gem=CARDS.filter(c=>c.agent!=='Claude');
+  box.innerHTML=
+    (claude.length?'<div class="hint" style="margin:4px 0 2px">Claude</div>'+claude.map(row).join(''):'')+
+    (gem.length?'<div class="hint" style="margin:6px 0 2px">Antigravity</div>'+gem.map(row).join(''):'');
+}
+
+function tickedCards(){
+  return [...document.querySelectorAll('#clist input:checked')].map(i=>i.value);
+}
+
+async function roomFromTicked(){
+  const cards=tickedCards();
+  if(!cards.length){alert('Tick at least one window.');return;}
+  const name=prompt('Room name:',cards.map(c=>cardLabel(c)).join(' + '));
+  if(name===null)return;
+  const r=await fetch('/api/room/create',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:name.trim()||cards.map(c=>cardLabel(c)).join(' + '),cards})});
+  const j=await r.json();
+  if(j.error){alert(j.error);return;}
+  await loadRooms();
+  showPanel('rooms');
+  enterRoom(j.id);
+}
+
+async function addTickedHere(){
+  if(!ROOM){alert('Open a room first — this adds windows to the room you are in.');return;}
+  const cards=tickedCards();
+  if(!cards.length){alert('Tick at least one window.');return;}
+  for(const card of cards){
+    await fetch('/api/room/add',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:ROOM,card})});
+  }
+  await loadRooms();
+  loadCardPanel();
+}
+
 async function loadRooms(){
   try{
     const r=await fetch('/api/rooms');const j=await r.json();
@@ -2541,10 +2666,21 @@ setInterval(loadRooms,45000);   // safety net; the delta poll reorders on arriva
 // the first paint and stay current as windows open and close.
 async function loadCards(){
   try{const r=await fetch('/api/cards?hours=720');const j=await r.json();CARDS=j.cards||[];}catch(_){}
+  // The counter on the switch should say how many windows there are before
+  // anyone opens that panel; otherwise it reads zero and looks broken.
+  const cc=$('#cardCount'); if(cc) cc.textContent=CARDS.length;
 }
 loadCards().then(()=>load(true));
 setInterval(loadCards,60000);
 const nrBtn=$('#newRoom'); if(nrBtn) nrBtn.onclick=openRoomPicker;
+document.querySelectorAll('#panelSwitch button').forEach(b=>{
+  b.onclick=()=>showPanel(b.getAttribute('data-panel'));
+});
+const caA=$('#cardsAllAccounts'); if(caA) caA.onchange=loadCardPanel;
+const caR=$('#cardsRefresh');     if(caR) caR.onclick=loadCardPanel;
+const caN=$('#cardsNewRoom');     if(caN) caN.onclick=roomFromTicked;
+const caH=$('#cardsAddHere');     if(caH) caH.onclick=addTickedHere;
+showPanel('rooms');
 const rcBtn=$('#roomCancel'); if(rcBtn) rcBtn.onclick=closeRoomPicker;
 const rpBox=$('#roomPicker'); if(rpBox) rpBox.onclick=e=>{ if(e.target===rpBox) closeRoomPicker(); };
 const rkBtn=$('#roomCreate'); if(rkBtn) rkBtn.onclick=createRoomFromPicker;
@@ -2577,7 +2713,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.startsWith('/api/cards')) {
     const q = new URL(req.url, 'http://x').searchParams;
     return send(res, 200, 'application/json; charset=utf-8',
-      JSON.stringify(apiCards(Number(q.get('hours')) || 48)));
+      JSON.stringify(apiCards(Number(q.get('hours')) || 48, q.get('all') === '1')));
   }
   if (req.method === 'GET' && req.url === '/api/rooms') {
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(apiRooms()));
@@ -2595,6 +2731,11 @@ const server = http.createServer((req, res) => {
           const known = new Map(cardsLib.allCards({}).map(c => [c.id, c]));
           const members = cards.map(c => ({ card: c, agent: (known.get(c) || {}).agent || '' }));
           out = bridgeDb.createRoom(d.name || 'room', members, cardsLib.currentAccount() || '');
+        } else if (what === 'add') {
+          const known = new Map(cardsLib.allCards({}).map(c => [c.id, c]));
+          out = bridgeDb.addRoomMember(d.id, d.card, (known.get(d.card) || {}).agent || d.agent || '');
+        } else if (what === 'remove') {
+          out = bridgeDb.removeRoomMember(d.id, d.card);
         } else if (what === 'rename') {
           out = bridgeDb.renameRoom(d.id, d.name);
         } else if (what === 'delete') {
