@@ -58,6 +58,7 @@ function dayOf(ts) {
 function windowName(id, agent) {
   const s = String(id || '').trim();
   if (!s || s === 'all') return '';
+  if (/^human/i.test(s)) return ME || 'You';
   const c = CARDS.find(x => x.id === s);
   if (c && c.name) return c.name;
   const r = SESSIONS.find(x => x.sessionId === s || x.canonicalId === s ||

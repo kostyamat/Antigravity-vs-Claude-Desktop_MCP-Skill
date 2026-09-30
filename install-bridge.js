@@ -201,6 +201,29 @@ try {
   console.error(`  ❌ Database initialization error: ${e.message}`);
 }
 
+// Boards from releases before rooms hold one undivided feed. Sort it into rooms
+// once — by the pairs of windows that talked — and remember that it was done,
+// so a later run never rebuilds rooms the owner has since removed.
+let roomsFromHistoryDone = previousConfig.roomsFromHistory || null;
+if (!roomsFromHistoryDone) {
+  try {
+    const { roomsFromHistory } = require('./history-rooms');
+    const r = roomsFromHistory(require('./bridge-db'), require('./cards'));
+    roomsFromHistoryDone = Object.assign({ at: new Date().toISOString() }, r);
+    if (r.skipped) {
+      console.log(`  ✅ Rooms: nothing to sort (${r.skipped}).`);
+    } else if (r.rooms) {
+      console.log(`  ✅ Rooms: history sorted into ${r.rooms} room(s) — ${r.messages} messages and ` +
+        `${r.docs} document(s) moved in, ${r.leftOnSquare} message(s) stay on the Square.`);
+    } else {
+      console.log('  ✅ Rooms: no conversation in the history is long enough for a room; all of it stays on the Square.');
+    }
+  } catch (e) {
+    roomsFromHistoryDone = null;   // try again on the next run
+    console.warn(`  ⚠️ Rooms were not built from history (${e.message}); the board works, everything is on the Square.`);
+  }
+}
+
 // 4. Configure Claude Desktop
 console.log('\n[4/8] Configuring MCP for Claude Desktop...');
 const claudeConfigPath = path.join(APPDATA, 'Claude', 'claude_desktop_config.json');
@@ -623,27 +646,10 @@ try {
     }
   }
 
-  // Synchronize tool schemas in ~/.gemini/antigravity/mcp/agent-bridge/
-  const targetSchemaDir = path.join(USER_PROFILE, '.gemini', 'antigravity', 'mcp', 'agent-bridge');
-  if (!fs.existsSync(targetSchemaDir)) fs.mkdirSync(targetSchemaDir, { recursive: true });
-
-  const TOOLS = [
-    { name: 'post_message', desc: 'Post a message to the shared board (Claude <-> Gemini <-> Human). Rule: upon receiving a task, post an ACK (working).' },
-    { name: 'get_messages', desc: 'Read new messages from the SQLite board.' },
-    { name: 'board_status', desc: 'Quick board status, message counters, latest agent states.' },
-    { name: 'mark_read', desc: 'Mark messages as read for an agent.' },
-    { name: 'bridge_setup', desc: 'Configure administrator name and bridge parameters.' },
-    { name: 'put_doc', desc: 'Create or update a shared document in docs/.' },
-    { name: 'list_docs', desc: 'List active or archived shared documents.' },
-    { name: 'read_doc', desc: 'Read a shared document from docs/.' },
-    { name: 'ack_doc', desc: 'Acknowledge a document (move to archive).' },
-    { name: 'save_session_context', desc: 'Save a snapshot of current session context.' },
-    { name: 'load_session_context', desc: 'Load a saved session context.' },
-    { name: 'find_session', desc: 'Find previous sessions by topic or agent.' },
-    { name: 'list_sessions', desc: 'List active registered sessions.' },
-    { name: 'clear_messages', desc: 'Archive and reset board messages.' }
-  ];
-  console.log(`  ✅ MCP tool schemas active in ${targetSchemaDir}`);
+  // Tool schemas are not written here. Antigravity asks the server for them and
+  // caches what it gets in ~/.gemini/antigravity/mcp/agent-bridge/, so they are
+  // always the server's own. A hand-kept list here once drifted from the server
+  // and still told agents to acknowledge every task.
 } catch (e) {
   errorCount++;
   console.error(`  ❌ Failed to configure Antigravity MCP: ${e.message}`);
@@ -739,6 +745,7 @@ try {
   cfg.installedVersion = VERSION || cfg.installedVersion || '';
   cfg.installedAt = new Date().toISOString();
   cfg.installedFingerprints = fingerprints;
+  if (roomsFromHistoryDone) cfg.roomsFromHistory = roomsFromHistoryDone;
   fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf8');
   console.log(`  ✅ Config saved (Administrator: ${cfg.adminName || 'Not configured'}, Port: ${cfg.uiPort}` +
     (cfg.installedVersion ? `, version ${cfg.installedVersion}` : '') + ')');
