@@ -113,17 +113,37 @@ function writeIfChanged(file, text) {
 
 function installGeminiPlugin(geminiConfigDir, bridgeDir, nodePath, sandboxDir) {
   const dir = path.join(geminiConfigDir, 'plugins', 'agent-bridge');
-  const guard = path.join(bridgeDir, 'command-guard.js').split(path.sep).join('/');
+  const guard = path.join(bridgeDir, 'command-guard.js');
+  // Antigravity runs a hook as `cmd /c <command>` and escapes every quote in it
+  // with a backslash, so a quoted path — and node usually lives under "Program
+  // Files" — reaches cmd as \"C:\Program Files\…\" and is not found. The first
+  // release did exactly that and blocked every command Gemini ran. The command
+  // therefore carries no quotes and no path at all: a launcher beside
+  // hooks.json, which is where a hook's working directory is, holds them.
+  const launcher = '@echo off\r\n"' + nodePath + '" "' + guard + '"\r\n';
   const hooks = {
     'agent-bridge-guard': {
       PreToolUse: [{
         matcher: 'run_command',
-        hooks: [{ type: 'command', command: `"${nodePath}" "${guard}"`, timeout: 10 }]
+        // A full path when it has no spaces (no quotes needed), so the hook
+        // does not depend on the working directory; otherwise .\guard.cmd —
+        // explicitly relative, because cmd may be told not to search the
+        // current directory (NoDefaultCurrentDirectoryInExePath).
+        hooks: [{ type: 'command', command: /\s/.test(dir) ? '.\\guard.cmd' : path.join(dir, 'guard.cmd'), timeout: 10 }]
       }]
     }
   };
+  // Someone who switched the guard off by hand keeps it off: a re-install must
+  // not quietly turn back on what was disabled because it broke.
+  try {
+    const prev = JSON.parse(fs.readFileSync(path.join(dir, 'hooks.json'), 'utf8'));
+    if (prev && prev['agent-bridge-guard'] && prev['agent-bridge-guard'].enabled === false) {
+      hooks['agent-bridge-guard'].enabled = false;
+    }
+  } catch (_) {}
   let changed = false;
   changed = writeIfChanged(path.join(dir, 'plugin.json'), JSON.stringify({ name: 'agent-bridge' }, null, 2) + '\n') || changed;
+  changed = writeIfChanged(path.join(dir, 'guard.cmd'), launcher) || changed;
   changed = writeIfChanged(path.join(dir, 'hooks.json'), JSON.stringify(hooks, null, 2) + '\n') || changed;
   changed = writeIfChanged(path.join(dir, 'rules', 'AGENTS.md'), guardRulesText(sandboxDir)) || changed;
 
