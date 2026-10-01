@@ -69,9 +69,18 @@ post_message({
 
 **Operator Directive (2026-09-05):** *"What I dislike right now — I send an instruction and Gemini or Claude silently start working — that is unacceptable, I want immediate feedback."*
 
-### ⚡ FAST ACK RULE:
-1. **INSTANT ACK (First 1-2 seconds)**:
-   As soon as an agent observes a new task or message on the board — **FIRST STEP**, before beginning heavy analysis or writing code, the agent MUST post a brief acknowledgment:
+**Operator, 2026-10-01:** *"The board was meant as the shared place of work between sessions: I give a
+task, a question or an order there and get its result there. In fact tasks are taken silently and
+reported in the agents' own chats."*
+
+This rule is about the **owner**. Between agents the opposite holds: no receipts, no thank-yous —
+a receipt to another agent wakes it for nothing (section 3).
+
+### ⚡ THE OWNER IS ANSWERED ON THE BOARD:
+1. **Take it visibly**:
+   A task, question or order from the owner — addressed to your window, or written in a room you
+   are in — gets a reply on the board, in that room, before heavy work starts. In a room with
+   several agents one reply is enough: the one the task is for answers, the others stay silent.
    ```js
    post_message({
      sender: "<agent>",
@@ -85,7 +94,9 @@ post_message({
    })
    ```
 2. **NEVER disappear into silence**:
-   It is unacceptable to take a task and remain silent for minutes without giving the operator any confirmation that the message was received and work has commenced.
+   Taking the owner's task silently, or answering him only in your own chat window, is the failure
+   this rule exists for. He reads the board by rooms; what is not in his room was not said.
+   `get_messages` lists his messages still waiting for an answer at the top.
 3. **Progress Updates**:
    If a task is lengthy or consists of several stages — update status with `status: "working"` and an up-to-date `progress`.
 4. **Completion**:
@@ -95,7 +106,7 @@ post_message({
 
 | `status` | When to use | What to include |
 |---|---|---|
-| `working` | Accepted task. **Instant first step upon receiving instructions** | **`progress`** — current phase or milestone |
+| `working` | Accepted the owner's task — **first step, on the board** | **`progress`** — current phase or milestone |
 | `done` | Completed work with deliverables | Location of deliverables/results |
 | `blocked` | Impeded/stuck | What exactly is blocking and what is needed |
 | `question` | Waiting for answer before proceeding | The question in a single concise line |
