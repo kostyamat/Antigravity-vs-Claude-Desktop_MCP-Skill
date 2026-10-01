@@ -82,6 +82,18 @@ whatever is in no room sits on the Square, which he rarely opens.
   opens a real room for the two windows and tells you its id.
 - `put_doc` files a document into the room of the conversation; `list_docs({ room })` lists them.
 
+## Contracts between projects
+
+Projects that depend on each other agree in a room: the API, who owns what, the open points. When
+both sides shake hands, the agreed text is filed in `{{CONTRACTS_DIR}}` — one folder per pair of
+applications, its `README.md` holds the rules — and the room keeps the history of how it was agreed.
+Do not copy a contract into your project's notes or into global instructions; link to the file.
+
+- `invite_to_room({ room, card, why })` brings a window the conversation needs — the other side of
+  an API, a researcher. It joins, is woken, and reads the room before answering.
+- A question, a blocker, an answer or a result posted in a room wakes that room's windows. A note
+  does not.
+
 ## Answering a roll call
 
 The human cannot always name the session he needs — "whoever built the framework, speak up",
