@@ -339,7 +339,7 @@ def main():
                     clean_body = (body or "").replace("\n", " ")[:150]
                     tgt = (" → [%s]" % to_sess) if to_sess else ""
                     # The owner is answered on the board, in the room he wrote in.
-                    owner = " · OWNER — answer on the board, replyTo #%d" % i \
+                    owner = " · OWNER — ack first in one line (taken / preparing the answer), then the result; replyTo #%d" % i \
                         if from_sess.lower().startswith("human") else ""
                     print("%s #%d [%s] %s%s%s — %s"
                           % (mark, i, status or "-", topic or "", tgt, owner, clean_body),
