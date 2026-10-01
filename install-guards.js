@@ -87,6 +87,16 @@ function guardRulesText(sandboxDir) {
       'to do the same thing is not allowed. If one is really needed, stop and ask the owner to run it.',
     '- A damaged file is restored on its own: `git restore <file>` — never the whole repository.',
     '',
+    '# Commands that do not end (agent-bridge)',
+    '',
+    '- **Never lock the conversation on a command.** The owner must get an answer while a tool runs.',
+    '- A snapshot instead of a stream: `adb logcat -d` (or `-t 500`, with a filter), `tail -n 200`, ' +
+      '`timeout 30 <cmd>`. Most "let me watch the log" needs are a dump after the event.',
+    '- Servers, watchers, `logcat` without `-d`, `tail -f`: `WaitMsBeforeAsync: 500`, so they go to the background; ' +
+      'read the output as it comes, stop them with `manage_task` (`kill`) when done. The guard sends the ones it ' +
+      'recognises to the background itself.',
+    '- A command that is taking longer than expected is a reason to tell the owner, not to wait silently.',
+    '',
     '# Where files go (agent-bridge)',
     '',
     '- **Before a task that makes files, ask the owner** (unless it is already decided): where to work — the project, ' +

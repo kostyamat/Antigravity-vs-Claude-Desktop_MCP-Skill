@@ -5,7 +5,7 @@
 // One script serves both clients. It reads the hook payload on stdin and answers
 // in the dialect of whoever called it:
 //   Antigravity  {"toolCall":{"name":"run_command","args":{"CommandLine":"…"}}}
-//                → {"decision":"deny","reason":"…"}; no opinion → {}
+//                → {"decision":"deny","reason":"…"}; endless → {decision, overwrite}
 //   Claude Code  {"tool_name":"Bash"|"PowerShell","tool_input":{"command":"…"}}
 //                → {"hookSpecificOutput":{…,"permissionDecision":"deny"}}; no opinion → nothing
 //
@@ -129,6 +129,39 @@ function judge(line) {
   return null;
 }
 
+// Commands that never end on their own. Antigravity runs a command in the
+// foreground for WaitMsBeforeAsync milliseconds, up to ten seconds, and an agent
+// that asks for the maximum on `adb logcat` sits locked with it: it answers
+// nobody until the owner kills the process. Such a command is let through, but
+// sent to the background at once (WaitMsBeforeAsync 500, through the hook's
+// `overwrite`), so the conversation stays free and the task can be stopped.
+// A command wrapped in `timeout` is bounded already.
+const STREAMING = [
+  { label: 'adb logcat without -d / -t', test: c => {
+      const a = c.args.map(x => x.toLowerCase());
+      const at = c.cmd === 'logcat' ? 0 : (c.cmd === 'adb' ? a.indexOf('logcat') + 1 : 0);
+      if (c.cmd !== 'logcat' && !(c.cmd === 'adb' && at > 0)) return false;
+      const rest = a.slice(at);
+      return !rest.some(x => /^-(d|c|g|t|-dump|-clear)$/.test(x) || /^-[a-z]*d[a-z]*$/.test(x) || /^-t\d*$/i.test(x));
+    } },
+  { label: 'tail -f', test: c => c.cmd === 'tail' && c.args.some(a => /^-[a-z]*[fF]/.test(a) || a === '--follow') },
+  { label: 'Get-Content -Wait', test: c => ['get-content', 'gc', 'cat', 'type'].includes(c.cmd) && c.args.some(a => /^-wait$/i.test(a)) },
+  { label: 'ping -t', test: c => c.cmd === 'ping' && c.args.some(a => /^[-/]t$/i.test(a)) },
+  { label: 'a watch mode', test: c => c.args.some(a => a === '--watch' || a === '--continuous') || c.cmd === 'watch' },
+  { label: 'a dev server', test: c => (['npm', 'pnpm', 'yarn'].includes(c.cmd) && /^(dev|start|serve)$/.test((c.args[0] === 'run' ? c.args[1] : c.args[0]) || '')) ||
+      (['python', 'python3', 'py'].includes(c.cmd) && c.args.join(' ').includes('-m http.server')) }
+];
+
+function streaming(line) {
+  for (const c of commands(String(line || ''), 0)) {
+    if (c.cmd === 'timeout') return null;
+    for (const r of STREAMING) {
+      try { if (r.test(c)) return r.label; } catch (_) {}
+    }
+  }
+  return null;
+}
+
 function reasonFor(label) {
   return `Blocked by the agent-bridge guard: ${label} destroys work or history. ` +
     'Do not look for another way to do the same. If it really is needed, stop and ask the owner to run it. ' +
@@ -148,7 +181,17 @@ function main(input) {
     // install time: "ask" (Antigravity asks, honouring "Always Allow") or
     // "allow" (it runs, as with auto-execution on). "ask" unless told otherwise:
     // a guard must never quietly loosen someone's review setting.
-    return JSON.stringify({ decision: process.env.AGENT_BRIDGE_SAFE_COMMANDS === 'allow' ? 'allow' : 'ask' });
+    const decision = process.env.AGENT_BRIDGE_SAFE_COMMANDS === 'allow' ? 'allow' : 'ask';
+    const endless = streaming(line);
+    if (endless) {
+      // The whole argument set goes back, changed in one field, whether
+      // Antigravity merges `overwrite` into the call or replaces it.
+      return JSON.stringify({ decision,
+        reason: `agent-bridge guard: ${endless} never ends on its own, so it runs in the background. ` +
+                'Read its output as it arrives and stop it with manage_task when done; answer the owner meanwhile.',
+        overwrite: Object.assign({}, p.toolCall.args, { WaitMsBeforeAsync: 500 }) });
+    }
+    return JSON.stringify({ decision });
   }
   if (p.tool_input) {                                 // Claude Code
     const hit = judge(p.tool_input.command || '');
@@ -170,4 +213,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { judge, main, RULES };
+module.exports = { judge, streaming, main, RULES };
