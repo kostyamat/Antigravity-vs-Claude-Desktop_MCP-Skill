@@ -333,8 +333,11 @@ def main():
                     mark = "🚨 P0" if pri == "P0" else ("· " + pri)
                     clean_body = (body or "").replace("\n", " ")[:150]
                     tgt = (" → [%s]" % to_sess) if to_sess else ""
-                    print("%s #%d [%s] %s%s — %s"
-                          % (mark, i, status or "-", topic or "", tgt, clean_body),
+                    # The owner is answered on the board, in the room he wrote in.
+                    owner = " · OWNER — answer on the board, replyTo #%d" % i \
+                        if from_sess.lower().startswith("human") else ""
+                    print("%s #%d [%s] %s%s%s — %s"
+                          % (mark, i, status or "-", topic or "", tgt, owner, clean_body),
                           flush=True)
                 last = top
             misses = 0

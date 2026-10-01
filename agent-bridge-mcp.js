@@ -21,6 +21,7 @@ const readline = require('readline');
 const { spawn } = require('child_process');
 const bridgeDb = require('./bridge-db');
 const cardsLib = require('./cards');
+const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
 const { wakeAntigravity } = require('./wake-antigravity');
 
 const SCRIPTS_DIR  = path.resolve(__dirname);
@@ -911,20 +912,10 @@ function handleRequest(req) {
 // The room a message belongs to. An explicit one wins. Otherwise: the window
 // this session runs in, and the window it is writing to, are looked up among the
 // rooms; one room shared by both is the answer, none or several means silence.
-function resolveRoom(a, toSession) {
-  const named = String(a.room || '').trim();
-  if (named) return named;
-  try {
-    const mine = String(a.canonicalId || a.sessionId || '').trim();
-    const theirs = String(toSession || '').trim();
-    if (!mine || !theirs || theirs === 'all') return '';
-    const here = new Set(bridgeDb.roomsOfCard(mine));
-    if (!here.size) return '';
-    const shared = bridgeDb.roomsOfCard(theirs).filter(r => here.has(r));
-    return shared.length === 1 ? shared[0] : '';
-  } catch (_) {
-    return '';
-  }
+// The rules live in room-routing.js, the one place that decides which room a
+// message or a document belongs in.
+function resolveRoom(a, toSession, toAgent, replyTo) {
+  return router.resolve(a, toAgent || '', toSession, replyTo || null);
 }
 
 // ── cards and rooms ──────────────────────────────────────────────────────────────────────
@@ -1083,12 +1074,8 @@ function doPost(id, a) {
   }
   if (!toAgent) toAgent = 'all';
 
-  // Which room this belongs in. Named outright, it is taken as given. Left out,
-  // the bridge looks for one room that both the sender's window and the
-  // addressee are in — if there is exactly one, the message belongs there and
-  // nobody should have to say so. More than one is ambiguous and is left alone,
-  // because guessing wrong puts a conversation behind the wrong door.
-  const room = resolveRoom(a, toSession);
+  const routed = resolveRoom(a, toSession, toAgent, replyTo);
+  const room = routed.room;
 
   const rec = {
     ts: new Date().toISOString(),
@@ -1159,6 +1146,7 @@ function doPost(id, a) {
   }
 
   const hints = [];
+  if (routed.opened) hints.push(`🚪 opened room "${routed.opened.name}" (${routed.opened.id}) for this conversation — the human reads the board by rooms`);
   if (demoted) hints.push(`ℹ️ P0 lowered to normal — a \`${status}\` is not an emergency, so nobody was woken`);
   if (!rec.fromSession) hints.push('⚠️ `sessionId` not specified — recipient will not know which session to reply to');
   if (rec.to === 'all') hints.push('ℹ️ addressed to all (`to: "all"`)');
@@ -1259,6 +1247,17 @@ function doGet(id, a) {
     header.push(`📬 ${reader}${sessTag}: ${unread.length} new` +
       (p0.length ? ` · 🚨 P0: ${p0.map(m => '#' + m.id).join(', ')}` : '') +
       (asks.length ? ` · ❓ awaiting reply: ${asks.map(m => '#' + m.id).join(', ')}` : ''));
+    // The owner works through the board: a task given there is answered there.
+    // Silence from every window, while they talk among themselves, is what he
+    // reads as being ignored.
+    if (sessionId) {
+      const owed = router.ownerWaiting(board, myWindow, isMyOwn);
+      if (owed.length) {
+        header.push(`👤 The owner is waiting for an answer on the board: ` +
+          owed.map(m => '#' + m.id + (m.room ? ` (room ${m.room})` : '')).join(', ') +
+          ` — reply with replyTo, in that room: take the task (working), then report the result (done) there, not only in your own chat.`);
+      }
+    }
   }
 
   if (!list.length) {
@@ -1477,7 +1476,7 @@ ${a.context && String(a.context).trim() ? a.context : '⚠️ AUTHOR DID NOT PRO
 
   const rec = {
     name, file, from, fromSession, to, toSession, topic,
-    room: resolveRoom(a, toSession),
+    room: resolveRoom(a, toSession, to).room,
     title: a.title || topic,
     created: now,
     priority: PRIORITIES.includes(a.priority) ? a.priority : 'normal',

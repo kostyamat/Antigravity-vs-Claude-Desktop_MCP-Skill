@@ -134,11 +134,18 @@ function wakeAntigravity(rec) {
     // reply" — so every woken session dutifully posted a receipt, and one
     // remark from the human drew seven of them in a couple of minutes. The
     // waker was ordering the very noise the board was drowning in.
+    // The owner is the exception to "no receipts": he gives tasks on the board
+    // and reads the results there, and silence from every window reads as being
+    // ignored.
+    const fromOwner = /^human/i.test(String(rec.fromSession || ''));
     const prompt = `🔔 Board message #${rec.id} from ${rec.from}` +
-      `${rec.topic ? ' (topic: ' + rec.topic + ')' : ''}\n` +
+      `${rec.topic ? ' (topic: ' + rec.topic + ')' : ''}${rec.room ? ' in room ' + rec.room : ''}\n` +
       `"${bodyText.slice(0, 300)}"\n` +
       `Read it with get_messages. Act on it if it is yours. ` +
-      `Do not reply to acknowledge - a receipt wakes the sender for nothing.`;
+      (fromOwner
+        ? `This is from the owner: if it is for you, answer him on the board with replyTo #${rec.id} - ` +
+          `say you are on it, then report the result there, not only in this chat.`
+        : `Do not reply to acknowledge - a receipt wakes the sender for nothing.`);
     const lsExe = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'antigravity', 'resources', 'bin', 'language_server.exe');
 
     const env = Object.assign({}, process.env, {
