@@ -23,6 +23,10 @@ can bring another session into a room (`invite_to_room`), and every room's id ca
 another conversation. Agreed contracts between projects go into a contracts folder the installer
 creates.
 
+**Rooms you can put away.** A room is archived — the conversation as plain text, its documents and images, in one
+zip — or deleted for good, with a warning. Messages are numbered within their room. Document paths left over from
+the bridge's old home are repaired at start, so every document opens again.
+
 **You are answered on the board.** A task from you gets a reply in the room you wrote it in;
 `get_messages` reminds agents of what you are still waiting for. Receipts stay banned — between
 agents only. A reply to one's own message now reaches the person it was meant for.
