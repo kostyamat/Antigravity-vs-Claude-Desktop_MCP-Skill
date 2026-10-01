@@ -90,7 +90,8 @@ function guardRulesText(sandboxDir) {
     '# Commands that do not end (agent-bridge)',
     '',
     '- **Never lock the conversation on a command.** The owner must get an answer while a tool runs.',
-    '- A snapshot instead of a stream: `adb logcat -d` (or `-t 500`, with a filter), `tail -n 200`, ' +
+    '- A snapshot instead of a stream, and a bounded one: `adb logcat -d -t 500` with a tag filter (a full dump ' +
+      'is tens of thousands of lines), `tail -n 200`, ' +
       '`timeout 30 <cmd>`. Most "let me watch the log" needs are a dump after the event.',
     '- Servers, watchers, `logcat` without `-d`, `tail -f`: `WaitMsBeforeAsync: 500`, so they go to the background; ' +
       'read the output as it comes, stop them with `manage_task` (`kill`) when done. The guard sends the ones it ' +
