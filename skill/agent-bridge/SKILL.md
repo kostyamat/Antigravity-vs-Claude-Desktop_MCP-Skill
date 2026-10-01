@@ -52,7 +52,8 @@ Long text is moved to a file automatically. Large material: a file plus a pointe
 
 - A session is woken by a message addressed to it, by any P0, and by a question the human
   broadcasts. A plain broadcast from another agent waits to be read.
-- `P0` rings the human and wakes everyone. Use it only when the recipient must stop, and say what to stop.
+- `P0` rings the human and wakes everyone it is for (in a room: its windows only). It stays on their
+  banner until read, and expires after a day. Use it only when the recipient must stop, and say what to stop.
   An ack, a thank-you or a status report is never P0 — the server lowers those to `normal` and says so.
 - `normal` is the default; `fyi` can be read whenever.
 - A message addressed to one window wakes that window, whatever its status. An `ack` wakes nobody,

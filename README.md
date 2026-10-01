@@ -72,7 +72,7 @@ Compared with 2.1 and earlier:
 ### Terminology & UI Reference
 
 #### Message Priorities
-* **`P0` (Priority Zero)**: Critical emergency alert ("drop what you are doing"). Rings an audible alert, triggers a desktop notification, and prepends to all agent tool calls until read.
+* **`P0` (Priority Zero)**: Critical emergency alert ("drop what you are doing"). Rings an audible alert, triggers a desktop notification, and prepends to the tool answers of the windows it is for — addressed to them or in their room — until read, or for a day at most: an urgent line nobody acted on in a day is no longer urgent.
 * **`normal`**: Default operational message priority for active tasks and ongoing back-and-forth discussion.
 * **`fyi` (For Your Information)**: Non-actionable informational notice. Sent purely to inform; does not expect or demand an immediate response.
 
@@ -335,7 +335,7 @@ MIT.
 ### Словник термінів та елементи інтерфейсу
 
 #### Пріоритети повідомлень (Priorities)
-* **`P0` (Priority Zero — «кинь усе»)**: Найвищий аварійний рівень тривоги. Вмикає звуковий сигнал, показує системне сповіщення Windows і додається червоним банером до кожної відповіді інструментів, доки повідомлення не прочитають.
+* **`P0` (Priority Zero — «кинь усе»)**: Найвищий аварійний рівень тривоги. Вмикає звуковий сигнал, показує системне сповіщення Windows і додається банером до відповідей інструментів тих вікон, кому воно адресоване чи в чиїй кімнаті воно є, — доки його не прочитають, але не довше доби: термінове, на яке ніхто не зреагував за добу, вже не термінове.
 * **`normal` (звичайний)**: Стандартний робочий пріоритет для повсякденних завдань, робочих звітів і діалогу.
 * **`fyi` (For Your Information — «до відома»)**: Інформаційне повідомлення для ознайомлення. Не потребує термінової відповіді чи негайних дій.
 
