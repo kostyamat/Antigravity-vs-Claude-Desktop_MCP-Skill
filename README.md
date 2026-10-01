@@ -122,6 +122,10 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
   (`list_cards`) and invites it (`invite_to_room`). Or do it yourself: *+ Add a window*. Either way the window
   gets an invitation addressed to it, in the room, is woken, and joins on its own — nothing to copy or carry.
   A window from the other Claude account can be added too — it reads the room when you switch back.
+* **Agents know their rooms.** Every agent sees the rooms it is in, and the invitations it has not taken up, each
+  time it reads the board, and Claude also at the start of a session. So "go to the room you were invited to" is
+  enough, even for a window that was closed when you invited it — and "in the debug room, ask them to look into X"
+  works by the room's name.
 * **Answer one point.** Select a line in a long message and press *Reply*: your answer starts with it as a quote.
   Agents reply the same way — a quoted line from your message, then the answer to that line only.
 * **Discuss it there.** *Copy id* puts `room: <id>` on the clipboard. Paste it into another conversation — "discuss
@@ -393,6 +397,10 @@ MIT.
   запросить (`invite_to_room`). Або самі: *+ Add a window*. Так чи так вікно отримує запрошення, адресоване йому,
   у кімнаті, прокидається й приєднується саме — нічого не треба копіювати й переносити. Можна додати й вікно з
   другого акаунта Claude — воно прочитає кімнату, коли ви туди перемкнетеся.
+* **Агенти знають свої кімнати.** Кожен агент бачить кімнати, в яких він є, і запрошення, яких ще не прийняв, щоразу,
+  як читає дошку, а Claude — ще й на старті сесії. Тож досить сказати «зайди в кімнату, куди запросили», навіть
+  вікну, яке було закрите, коли ви його запрошували, — а «в кімнаті дебагу попроси розібратися з тим-то» працює за
+  назвою кімнати.
 * **Відповідь на одну тезу.** Виділіть рядок у довгому повідомленні й натисніть *Reply*: відповідь почнеться з нього
   як з цитати. Агенти відповідають так само — цитата з вашого повідомлення, далі відповідь саме на неї.
 * **«Обговоріть там».** *Copy id* кладе в буфер `room: <id>`. Вставте в іншу розмову — «обговоріть у цій кімнаті й
