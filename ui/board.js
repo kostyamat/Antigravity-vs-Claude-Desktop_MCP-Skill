@@ -63,6 +63,12 @@ function windowName(id, agent) {
   if (c && c.name) return c.name;
   const r = SESSIONS.find(x => x.sessionId === s || x.canonicalId === s ||
                                (x.aliases || []).some(a => a.sessionId === s));
+  // A label is not a window, but the registry knows which window it belongs to.
+  // Name it after that window, as its client does: a name given on the board to
+  // a label (often the line's name) once called this one "Claude Main (Radio
+  // Dev)" while the window itself is "Dashboard editor".
+  const own = r && r.canonicalId ? CARDS.find(x => x.id === r.canonicalId) : null;
+  if (own && own.name) return own.name;
   if (r && (r.customName || r.title)) return r.customName || r.title;
   if (/^local_|^[0-9a-f]{8}-/i.test(s)) return (clientName(agent) || 'Window') + ' window ' + s.replace(/^local_/, '').slice(0, 4);
   return s;
