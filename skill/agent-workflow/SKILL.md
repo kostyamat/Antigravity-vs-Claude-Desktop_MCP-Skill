@@ -69,13 +69,63 @@ A rejected commit means fixing the message or the content — never bypassing a 
 - Memory files hold facts that outlive the current task (who the user is, what was learned the hard
   way). Never the state of the work: that is the slice's job.
 
-## One source of truth
+## The program is a living organism
 
-- **Island logic first.** Two places holding or handling the same state — a file and a database
-  mirroring each other, the same decision coded twice — drift apart, always. Finding one, stop the
-  feature, make one of them the source, commit, then return to the feature.
-- **No god files.** Pull complete, reusable blocks out into their own modules before a file grows
-  past what one reader can hold; keep responsibilities apart.
+A change in one place is felt everywhere that place is used. Code is changed like surgery, not
+like a rewrite.
+
+**Before a change**
+- **Read the real file**, not your memory of it: parallel sessions may have changed it, and its
+  comments and measurements are someone's paid-for work.
+- **Find every use** of what you are about to change — every caller of the function, every reader
+  and writer of the flag or field, across the whole project (code, manifests, resources, configs,
+  build and obfuscation rules). Decide how the change affects each of them **before** making it.
+  Trace a bug through the whole chain of state, from the source of the data to what the user sees.
+
+**Making it**
+- **Point changes only.** Change the lines the task needs. Never regenerate a whole class or file
+  from memory: it silently drops half the code — the edge cases, the fixes, the comments nobody
+  remembers.
+- **One source of truth.** Every state, rule or decision has exactly one canonical function, class
+  or method; everyone else calls it. Never a second copy "just here".
+- **No island logic, no crutches.** No local patches, hardcoded values, stubs or one-off database
+  writes that fix a symptom while bending the shared state machine. Change the source of truth, not
+  the place where the symptom shows.
+- **Island logic first.** Finding two places that hold or handle the same state — a file and a
+  database mirroring each other, the same decision coded twice — stop the feature, merge them into
+  one source, commit, then return to the feature. They drift apart, always.
+- **Preserve prior work.** Never disable, simplify or replace with a stub something another session
+  built and that works, just to get past your problem.
+- **No god files.** Pull complete, reusable blocks into their own modules, helpers or managers before
+  a file grows past what one reader can hold; keep responsibilities apart.
+
+**After it**
+- **Verify, including the neighbours.** Build, run, check on the real target — and check that what
+  sits next to the change still works. Say plainly what you could not verify.
+- **The environment you test in behaves like the user's.** Do not fake what the user would have to
+  grant or have (permissions forced from a shell, root slipped in, test-only shortcuts): it hides the
+  very defects the user will hit.
+- **Clean up after yourself.** Deleting something, grep the whole tree for its traces and list every
+  candidate before removing any. Update the documentation in the same step. Stage only your own
+  work. Your report names everything that changed and matches `git status`.
+- **Never destructive git.** No `reset --hard`, `clean`, `checkout -- .`, `stash` to "get back to a
+  clean state", no force-push. A damaged file is restored on its own: `git restore <file>`.
+- **Do not delete the user's data** to make room or tidy up: rename or move it, and say where.
+
+**Findings**
+- **Write a finding down the moment you have it**, even if that interrupts the task, and come back
+  to the task after. An unwritten finding lives only until the next compaction; writing costs a
+  minute, finding it again costs days.
+- **Mark how each fact is known**: 🔬 read in code or firmware, 📻 measured, 🧩 inferred, ❓ unverified.
+  An honest ❓ beats a confident sentence that turns out wrong.
+
+**Working with tools and other sessions**
+- **Hand research to another session** (a room on the board) instead of filling your own context
+  with it; keep your context on the task.
+- **Write a non-trivial patch to a file and run it**, rather than inlining it in a shell command:
+  every layer of quoting eats its own share of backslashes. Check the result's syntax after.
+- **A syntax check is not a check of behaviour.** A page is checked by looking at it, a device
+  feature on the device.
 
 ## Between projects
 
