@@ -88,7 +88,8 @@ whatever is in no room sits on the Square, which he rarely opens.
   addresses each. Address windows by that id, never by a label you guessed.
 - `list_rooms()` — the rooms of the signed-in account, their members and message counts.
 - Your own rooms, and invitations you have not acted on, head every `get_messages` (🚪, 📨) and the
-  session-start brief. A `room` argument takes the id, the name or a part of it ("debug"); of several
+  session-start brief; in Claude Code a 📨 also arrives with the owner's next prompt. Join first: read
+  the room, post one line there that you have joined, then do what he asked. A `room` argument takes the id, the name or a part of it ("debug"); of several
   matches, the one you are in is used.
 - You rarely need `create_room` or `room`: the server puts a reply where its question is, a
   message to the owner where he last wrote to you, and a message to a window into the room you
