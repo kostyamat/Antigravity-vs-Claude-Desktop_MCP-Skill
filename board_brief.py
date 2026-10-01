@@ -197,7 +197,41 @@ def rooms_of_window(sid, win):
         return []
 
 
+def prompt_invites():
+    """UserPromptSubmit: an invitation reaches a window that was asleep.
+
+    A Claude window cannot be woken from outside; the owner wakes it by writing to
+    it, whatever he writes. From that first word it must know where it was invited,
+    without being told the room. This runs on every prompt, so it stays silent and
+    quick unless an invitation for this session exists: one indexed query first,
+    the window lookup and the canonical rule (room-invite.js) only after a hit."""
+    sid = _client_session_id()
+    if not sid or not os.path.exists(DB):
+        return 0
+    win = _find_window(sid)
+    ids = [x for x in (sid, win and win["window"]) if x]
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % DB.replace("\\", "/"), uri=True, timeout=2.0)
+        hit = con.execute("SELECT 1 FROM messages WHERE message LIKE 'Room invitation%%' AND to_session IN (%s) LIMIT 1"
+                          % ",".join("?" * len(ids)), ids).fetchone()
+        con.close()
+    except Exception:
+        return 0
+    if not hit:
+        return 0
+    invited = [l for l in rooms_of_window(sid, win and win["window"]) if l.startswith("\U0001F4E8")]
+    if not invited:
+        return 0
+    text = invited[0] + "\nJoin it now, before anything else: read the room and its documents, post one line there " \
+        "that you have joined, then do what the owner asked."
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": text}},
+                     ensure_ascii=False))
+    return 0
+
+
 def main():
+    if "--prompt" in sys.argv:
+        return prompt_invites()
     if not os.path.exists(DB):
         return 0                       # no bridge on this machine — stay silent
 

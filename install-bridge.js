@@ -332,25 +332,30 @@ try {
     console.warn(`  ⚠️ settings.json cannot be read (invalid JSON) — NOT modifying.`);
     console.warn('     Add the hooks by hand: the commands are printed above.');
   } else {
-    // Two SessionStart hooks, one way of installing them. A hook is found by a
-    // word in its command, so an earlier copy at another path is moved here
-    // rather than added twice.
-    //   board_brief    — every session start: who you are on the board, what is new.
-    //   after_compact  — after a compaction only: the slice, last commits, dirty files.
+    // Three hooks, one way of installing them. A hook is found by a word in its
+    // command, so an earlier copy at another path is moved here rather than
+    // added twice.
+    //   board_brief         — every session start: who you are on the board, what is new.
+    //   after_compact       — after a compaction only: the slice, last commits, dirty files.
+    //   board_brief --prompt — every prompt, silent unless this window was invited into
+    //                          a room: a Claude window cannot be woken from outside, so
+    //                          the owner's next word, whatever it is, carries the invitation.
     const posix = p => p.replace(/\\/g, '/');
     const wanted = [
-      { needle: 'board_brief', matcher: null,
+      { event: 'SessionStart', needle: 'board_brief', matcher: null,
         hook: { type: 'command', command: briefCmd } },
-      { needle: 'after_compact', matcher: 'compact',
+      { event: 'SessionStart', needle: 'after_compact', matcher: 'compact',
         hook: { type: 'command', command: `${pyCmd} "${posix(path.join(SCRIPTS_DIR, 'after_compact.py'))}"`,
-                timeout: 30, statusMessage: 'Context guard: the session slice after compaction' } }
+                timeout: 30, statusMessage: 'Context guard: the session slice after compaction' } },
+      { event: 'UserPromptSubmit', needle: 'board_brief', matcher: null,
+        hook: { type: 'command', command: briefCmd + ' --prompt', timeout: 10 } }
     ];
     if (!settings.hooks) settings.hooks = {};
-    if (!Array.isArray(settings.hooks.SessionStart)) settings.hooks.SessionStart = [];
     let changed = false;
     for (const w of wanted) {
+      if (!Array.isArray(settings.hooks[w.event])) settings.hooks[w.event] = [];
       let found = null;
-      for (const entry of settings.hooks.SessionStart) {
+      for (const entry of settings.hooks[w.event]) {
         const h = entry && Array.isArray(entry.hooks)
           ? entry.hooks.find(x => x && typeof x.command === 'string' && x.command.includes(w.needle)) : null;
         if (h) { found = { entry, h }; break; }
@@ -358,17 +363,17 @@ try {
       if (!found) {
         const entry = { hooks: [Object.assign({}, w.hook)] };
         if (w.matcher) entry.matcher = w.matcher;
-        settings.hooks.SessionStart.push(entry);
-        console.log(`  ✅ Claude Code hook installed: ${w.needle} — ${w.hook.command}`);
+        settings.hooks[w.event].push(entry);
+        console.log(`  ✅ Claude Code hook installed: ${w.event} ${w.needle} — ${w.hook.command}`);
         changed = true;
       } else if (JSON.stringify(Object.assign({}, found.h, w.hook)) !== JSON.stringify(found.h) ||
                  (w.matcher && found.entry.matcher !== w.matcher)) {
         Object.assign(found.h, w.hook);
         if (w.matcher) found.entry.matcher = w.matcher;
-        console.log(`  ✅ Claude Code hook updated: ${w.needle} — ${w.hook.command}`);
+        console.log(`  ✅ Claude Code hook updated: ${w.event} ${w.needle} — ${w.hook.command}`);
         changed = true;
       } else {
-        console.log(`  ✅ Claude Code hook up to date: ${w.needle}`);
+        console.log(`  ✅ Claude Code hook up to date: ${w.event} ${w.needle}`);
       }
     }
     if (changed) {
