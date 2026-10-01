@@ -214,11 +214,14 @@ And it puts **guards** around every agent:
   must say what changed, why, and how it was verified; no junk files, no `--amend`, no force-push,
   no deleting branches on the server. Gemini gets a reminder on every commit, one kind of change per
   commit, and a repository can forbid it git altogether (`git config hooks.geminiReadOnly true`).
-* **Destructive commands** are denied to Claude Code (`permissions.deny` in `~/.claude/settings.json`):
-  `rm -rf`, `git reset --hard`, `git clean`, force-push, `Remove-Item -Recurse` and the like. An agent
-  that needs one asks you to run it.
-  Antigravity has no deny list, so the same commands go into `~/.gemini/config/AGENTS.md`, which it
-  reads at the start of every session, inside a block the installer owns; the rest of that file is yours.
+* **Destructive commands are blocked by a hook, not just forbidden in words.** A rule in text gets argued
+  with — an agent that decides a reset is "simpler" writes it another way. `command-guard.js` runs before
+  every shell command of Claude Code and of Antigravity and refuses `git reset --hard`, `git clean -f`,
+  force-push, deleting branches, `--amend`, `--no-verify`, recursive delete (`rm -r`, `Remove-Item -Recurse`,
+  `rmdir /s`) and the like — however they are spelled: with options before the subcommand, flags in any
+  order, chained after `&&`, or wrapped in `powershell -Command "…"`. The agent is told to ask you instead.
+  For Claude Code it is a `PreToolUse` hook (plus a `permissions.deny` list as a second line); for
+  Antigravity, a plugin of its own in `~/.gemini/config/plugins/agent-bridge/` — your own rules are not edited.
 * In a project without `.agents/`, an agent **offers to set it up** by the agent-workflow skill — once.
   Say no and it leaves `.no-agent-workflow` in the project, and nobody asks again.
 
@@ -459,11 +462,14 @@ MIT.
   змінено, чому й як перевірено; без сміття, без `--amend`, без force-push, без видалення гілок на
   сервері. Gemini отримує нагадування на кожен коміт, один вид змін на коміт, а репозиторій може
   заборонити йому git зовсім (`git config hooks.geminiReadOnly true`).
-* **Руйнівні команди** заборонені для Claude Code (`permissions.deny` у `~/.claude/settings.json`):
-  `rm -rf`, `git reset --hard`, `git clean`, force-push, `Remove-Item -Recurse` тощо. Агент, якому
-  така потрібна, просить запустити її вас.
-  В Antigravity списку заборон немає, тож ті самі команди лягають у `~/.gemini/config/AGENTS.md`, який
-  він читає на старті кожної сесії, — у блок, що належить інсталятору; решта файла ваша.
+* **Руйнівні команди блокує хук, а не лише заборона словами.** Правило в тексті агент обходить — вирішив, що
+  скинути «простіше», і написав інакше. `command-guard.js` спрацьовує перед кожною командою терміналу Claude
+  Code й Antigravity і не пропускає `git reset --hard`, `git clean -f`, force-push, видалення гілок, `--amend`,
+  `--no-verify`, рекурсивне видалення (`rm -r`, `Remove-Item -Recurse`, `rmdir /s`) тощо — хоч як їх написано:
+  з опціями перед підкомандою, з прапорцями в будь-якому порядку, після `&&` чи всередині
+  `powershell -Command "…"`. Агентові кажуть попросити вас.
+  Для Claude Code це хук `PreToolUse` (плюс список `permissions.deny` другою лінією); для Antigravity — власний
+  плагін у `~/.gemini/config/plugins/agent-bridge/`, ваші правила не редагуються.
 * У проєкті без `.agents/` агент **пропонує навести лад** за скілом agent-workflow — один раз.
   Скажете «ні» — він лишить у проєкті `.no-agent-workflow`, і більше ніхто не питатиме.
 
