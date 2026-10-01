@@ -65,7 +65,7 @@ const fingerprints = {
   server: fingerprintFile('agent-bridge-mcp.js'),
   db: fingerprintFile('bridge-db.js'),
   ui: fingerprintFile('board-ui.js'),
-  skill: fingerprintTree(path.join('skill', 'agent-bridge'))
+  skill: fingerprintTree('skill')
 };
 const lastTime = previousConfig.installedFingerprints || {};
 
@@ -95,7 +95,7 @@ let errorCount = 0;
 let warnCount = 0;
 // Claude Desktop takes its Skill only by hand. Remember where the bundle was
 // written so the closing summary can name the one step left to the human.
-let desktopBundlePath = null;
+const desktopBundlePaths = [];
 
 console.log('════════════════════════════════════════════════════════════════');
 console.log('🚀 Agent-Bridge' + (VERSION ? ' v' + VERSION : '') + ': Deployment & Setup');
@@ -371,7 +371,7 @@ try {
 
 // 4c. Install the Skill into every agent's skill directory
 console.log('');
-console.log('[4c/8] Installing the Skill for Claude Code and Antigravity...');
+console.log('[4c/8] Installing the Skills for Claude Code and Antigravity...');
 
 // Documentation in this repository refers to the bridge home through the
 // {{BRIDGE_HOME}} placeholders, so no machine's absolute path is ever
@@ -503,7 +503,7 @@ function pruneSkillTree(srcDir, dstDir) {
   const root = path.resolve(dstDir);
   // Only ever the agent-bridge skill folder itself, never a parent of it and
   // never a drive root.
-  if (path.basename(root).toLowerCase() !== 'agent-bridge') return 0;
+  if (!['agent-bridge', 'agent-workflow'].includes(path.basename(root).toLowerCase())) return 0;
   if (path.dirname(root) === root) return 0;
   // An empty or unreadable source is a broken checkout, not an instruction to
   // delete the installed skill.
@@ -514,108 +514,112 @@ function pruneSkillTree(srcDir, dstDir) {
   return pruneOrphans(srcDir, root, root);
 }
 
-const skillSourceDir = path.join(SCRIPTS_DIR, 'skill', 'agent-bridge');
-const skillTargets = [
-  { name: 'Claude Code', dir: path.join(USER_PROFILE, '.claude', 'skills', 'agent-bridge') },
-  { name: 'Antigravity', dir: path.join(USER_PROFILE, '.gemini', 'config', 'skills', 'agent-bridge') }
-];
+// Every folder under skill/ is one skill: agent-bridge (the board) and
+// agent-workflow (how to work on a project without losing state or wasting
+// tokens). Each goes to the same places and gets its own Claude Desktop archive.
+const SKILL_ROOT = path.join(SCRIPTS_DIR, 'skill');
+const SKILL_BUNDLE_NAMES = { 'agent-bridge': 'Claude_skill_bridge.zip', 'agent-workflow': 'Claude_skill_workflow.zip' };
+const skillNames = (() => {
+  try {
+    return fs.readdirSync(SKILL_ROOT).filter(n => fs.existsSync(path.join(SKILL_ROOT, n, 'SKILL.md'))).sort();
+  } catch (_) { return []; }
+})();
 
-try {
-  if (!fs.existsSync(path.join(skillSourceDir, 'SKILL.md'))) {
-    warnCount++;
-    console.warn('  Not found: ' + skillSourceDir + ' — skill not installed.');
-  } else {
-    for (const target of skillTargets) {
-      try {
-        const n = copySkillTree(skillSourceDir, target.dir);
-        const stale = pruneSkillTree(skillSourceDir, target.dir);
-        console.log('  + ' + target.name + ': ' + n + ' files -> ' + target.dir +
-          (stale ? ' (' + stale + ' stale removed)' : ''));
-      } catch (e) {
-        warnCount++;
-        console.warn('  ' + target.dir + ': ' + e.message);
-      }
-    }
-
-    // Claude Desktop (the chat app) has no skills folder on disk: skills are
-    // uploaded through Settings -> Capabilities -> Skills. Build the archive
-    // here (Claude_skill_bridge.zip with SKILL.md at the root) and copy it
-    // directly to the user's real Desktop.
+// Claude Desktop (the chat app) has no skills folder on disk: skills are
+// uploaded through Settings -> Capabilities -> Skills. Build the archive here
+// (SKILL.md at the root) and copy it to the user's real Desktop.
+function buildDesktopBundle(skillSourceDir, zipName) {
+  const shareDir = path.join(SCRIPTS_DIR, 'sharing');
+  const stageDir = path.join(shareDir, path.basename(skillSourceDir));
+  const zipPath = path.join(shareDir, zipName);
+  fs.mkdirSync(shareDir, { recursive: true });
+  fs.rmSync(stageDir, { recursive: true, force: true });
+  copySkillTree(skillSourceDir, stageDir);
+  fs.rmSync(zipPath, { force: true });
+  // Compress-Archive writes entry names with backslashes on Windows
+  // PowerShell. The ZIP format specifies forward slashes; most unpackers
+  // forgive it, but Claude Desktop refuses the archive outright with
+  // "Zip file contains path with invalid characters". Build the entries
+  // by hand so the separator is right.
+    const q = function (v) { return String.fromCharCode(39) + v + String.fromCharCode(39); };
+    const psLines = [
+      'param([string]$Source, [string]$Zip)',
+      '$ErrorActionPreference = ' + q('Stop'),
+      'Add-Type -AssemblyName System.IO.Compression',
+      'Add-Type -AssemblyName System.IO.Compression.FileSystem',
+      'if (Test-Path $Zip) { Remove-Item $Zip -Force }',
+      '$root = (Resolve-Path $Source).Path.TrimEnd(' + q(BS) + ')',
+      '$fs = [System.IO.File]::Open($Zip, ' + q('Create') + ')',
+      // $Zip is declared [string]; PowerShell variables are case
+      // insensitive, so naming the archive $zip would coerce it back
+      // into a string and every method call on it would fail.
+      '$archive = New-Object System.IO.Compression.ZipArchive($fs, ' + q('Create') + ')',
+      'foreach ($f in Get-ChildItem -LiteralPath $root -Recurse -File) {',
+      '  $rel = $f.FullName.Substring($root.Length + 1).Replace(' + q(BS) + ', ' + q('/') + ')',
+      '  $e = $archive.CreateEntry($rel, [System.IO.Compression.CompressionLevel]::Optimal)',
+      '  $s = $e.Open()',
+      '  $b = [System.IO.File]::ReadAllBytes($f.FullName)',
+      '  $s.Write($b, 0, $b.Length)',
+      '  $s.Dispose()',
+      '}',
+      '$archive.Dispose()',
+      '$fs.Dispose()'
+    ];
+    const zipPs = path.join(SCRIPTS_DIR, '_tmp_skillzip.ps1');
+    fs.writeFileSync(zipPs, psLines.join(String.fromCharCode(13, 10)), 'utf8');
     try {
-      const shareDir = path.join(SCRIPTS_DIR, 'sharing');
-      const stageDir = path.join(shareDir, 'agent-bridge');
-      const zipName = 'Claude_skill_bridge.zip';
-      const zipPath = path.join(shareDir, zipName);
-      fs.mkdirSync(shareDir, { recursive: true });
-      fs.rmSync(stageDir, { recursive: true, force: true });
-      copySkillTree(skillSourceDir, stageDir);
-      fs.rmSync(zipPath, { force: true });
-      // Compress-Archive writes entry names with backslashes on Windows
-      // PowerShell. The ZIP format specifies forward slashes; most unpackers
-      // forgive it, but Claude Desktop refuses the archive outright with
-      // "Zip file contains path with invalid characters". Build the entries
-      // by hand so the separator is right.
-      const q = function (v) { return String.fromCharCode(39) + v + String.fromCharCode(39); };
-      const psLines = [
-        'param([string]$Source, [string]$Zip)',
-        '$ErrorActionPreference = ' + q('Stop'),
-        'Add-Type -AssemblyName System.IO.Compression',
-        'Add-Type -AssemblyName System.IO.Compression.FileSystem',
-        'if (Test-Path $Zip) { Remove-Item $Zip -Force }',
-        '$root = (Resolve-Path $Source).Path.TrimEnd(' + q(BS) + ')',
-        '$fs = [System.IO.File]::Open($Zip, ' + q('Create') + ')',
-        // $Zip is declared [string]; PowerShell variables are case
-        // insensitive, so naming the archive $zip would coerce it back
-        // into a string and every method call on it would fail.
-        '$archive = New-Object System.IO.Compression.ZipArchive($fs, ' + q('Create') + ')',
-        'foreach ($f in Get-ChildItem -LiteralPath $root -Recurse -File) {',
-        '  $rel = $f.FullName.Substring($root.Length + 1).Replace(' + q(BS) + ', ' + q('/') + ')',
-        '  $e = $archive.CreateEntry($rel, [System.IO.Compression.CompressionLevel]::Optimal)',
-        '  $s = $e.Open()',
-        '  $b = [System.IO.File]::ReadAllBytes($f.FullName)',
-        '  $s.Write($b, 0, $b.Length)',
-        '  $s.Dispose()',
-        '}',
-        '$archive.Dispose()',
-        '$fs.Dispose()'
-      ];
-      const zipPs = path.join(SCRIPTS_DIR, '_tmp_skillzip.ps1');
-      fs.writeFileSync(zipPs, psLines.join(String.fromCharCode(13, 10)), 'utf8');
-      try {
-        execSync('powershell -NoProfile -ExecutionPolicy Bypass -File "' + zipPs + '" -Source "' + stageDir + '" -Zip "' + zipPath + '"', { stdio: 'ignore' });
-      } finally {
-        try { fs.unlinkSync(zipPs); } catch (_) {}
-      }
-      fs.rmSync(stageDir, { recursive: true, force: true });
+      execSync('powershell -NoProfile -ExecutionPolicy Bypass -File "' + zipPs + '" -Source "' + stageDir + '" -Zip "' + zipPath + '"', { stdio: 'ignore' });
+    } finally {
+      try { fs.unlinkSync(zipPs); } catch (_) {}
+    }
+  fs.rmSync(stageDir, { recursive: true, force: true });
 
-      const realDesktop = resolveSpecialFolder('Desktop');
-      if (realDesktop && fs.existsSync(realDesktop)) {
-        const desktopZip = path.join(realDesktop, zipName);
-        fs.copyFileSync(zipPath, desktopZip);
-        desktopBundlePath = desktopZip;
-        console.log('  + Claude Desktop: bundle ready on Desktop -> ' + desktopZip);
-        console.log('    (Upload via Settings > Capabilities > Skills)');
-
-        // Clean up stale bundles from unredirected USER_PROFILE/Desktop if different
-        const guessedDesktop = path.join(USER_PROFILE, 'Desktop');
-        if (path.resolve(guessedDesktop) !== path.resolve(realDesktop) && fs.existsSync(guessedDesktop)) {
-          try { fs.unlinkSync(path.join(guessedDesktop, zipName)); } catch (_) {}
-          try { fs.unlinkSync(path.join(guessedDesktop, 'agent-bridge-skill.zip')); } catch (_) {}
-          try { fs.unlinkSync(path.join(guessedDesktop, 'skill_bridge.zip')); } catch (_) {}
-        }
-      } else {
-        desktopBundlePath = zipPath;
-        console.log('  + Claude Desktop: upload ' + zipPath + ' via Settings > Capabilities > Skills');
-      }
-    } catch (e) {
-      warnCount++;
-      console.warn('  Could not build the Claude Desktop skill archive: ' + e.message);
+  const realDesktop = resolveSpecialFolder('Desktop');
+  if (!realDesktop || !fs.existsSync(realDesktop)) return zipPath;
+  const desktopZip = path.join(realDesktop, zipName);
+  fs.copyFileSync(zipPath, desktopZip);
+  // Clean up stale bundles from an unredirected USER_PROFILE/Desktop.
+  const guessedDesktop = path.join(USER_PROFILE, 'Desktop');
+  if (path.resolve(guessedDesktop) !== path.resolve(realDesktop) && fs.existsSync(guessedDesktop)) {
+    for (const old of [zipName, 'agent-bridge-skill.zip', 'skill_bridge.zip']) {
+      try { fs.unlinkSync(path.join(guessedDesktop, old)); } catch (_) {}
     }
   }
-} catch (e) {
-  warnCount++;
-  console.error('  Failed to install the skill: ' + e.message);
+  return desktopZip;
 }
+
+if (!skillNames.length) {
+  warnCount++;
+  console.warn('  Not found: ' + SKILL_ROOT + ' holds no skill — nothing installed.');
+}
+for (const skillName of skillNames) {
+  const skillSourceDir = path.join(SKILL_ROOT, skillName);
+  const skillTargets = [
+    { name: 'Claude Code', dir: path.join(USER_PROFILE, '.claude', 'skills', skillName) },
+    { name: 'Antigravity', dir: path.join(USER_PROFILE, '.gemini', 'config', 'skills', skillName) }
+  ];
+  console.log('  ' + skillName + ':');
+  for (const target of skillTargets) {
+    try {
+      const n = copySkillTree(skillSourceDir, target.dir);
+      const stale = pruneSkillTree(skillSourceDir, target.dir);
+      console.log('  + ' + target.name + ': ' + n + ' files -> ' + target.dir +
+        (stale ? ' (' + stale + ' stale removed)' : ''));
+    } catch (e) {
+      warnCount++;
+      console.warn('  ' + target.dir + ': ' + e.message);
+    }
+  }
+  try {
+    const zip = buildDesktopBundle(skillSourceDir, SKILL_BUNDLE_NAMES[skillName] || ('Claude_skill_' + skillName + '.zip'));
+    desktopBundlePaths.push(zip);
+    console.log('  + Claude Desktop: bundle ready -> ' + zip);
+  } catch (e) {
+    warnCount++;
+    console.warn('  Could not build the Claude Desktop archive for ' + skillName + ': ' + e.message);
+  }
+}
+if (desktopBundlePaths.length) console.log('    (Upload each via Settings > Capabilities > Skills)');
 
 // 5. Configure Antigravity IDE
 console.log('\n[5/8] Configuring MCP for Antigravity IDE...');
@@ -771,9 +775,9 @@ try {
 // Claude Desktop keeps no skills folder on disk, so the installer can build the
 // bundle but cannot upload it. Say so in the closing summary, where it is read.
 function printManualStep() {
-  if (!desktopBundlePath) return;
-  console.log('  One manual step left - Claude Desktop Skill:');
-  console.log('    upload ' + desktopBundlePath);
+  if (!desktopBundlePaths.length) return;
+  console.log('  One manual step left - Claude Desktop Skills:');
+  for (const p of desktopBundlePaths) console.log('    upload ' + p);
   console.log('    via Settings > Capabilities > Skills');
 }
 
@@ -783,12 +787,9 @@ function printManualStep() {
 function printNextSteps() {
   const steps = [];
   if (isFirstInstall || skillChanged) {
-    if (desktopBundlePath) {
-      steps.push([
-        'Upload the Claude Desktop Skill — this is the one thing no installer can do:',
-        '   ' + desktopBundlePath,
-        '   Settings > Capabilities > Skills'
-      ]);
+    if (desktopBundlePaths.length) {
+      steps.push(['Upload the Claude Desktop Skills — this is the one thing no installer can do:']
+        .concat(desktopBundlePaths.map(p => '   ' + p), ['   Settings > Capabilities > Skills']));
     }
   }
   if (isFirstInstall || serverChanged) {
