@@ -208,6 +208,13 @@ It also creates a **contracts folder** (`contracts/` beside the bridge, or the o
 `contractsDir` in `bridge_config.json`). Dependent projects negotiate in a room on the board; the text
 both sides agreed on is filed there, one folder per pair of applications.
 
+And a **sandbox** (`sandbox/` beside the bridge, or `sandboxDir`): where agents work on anything that is not a
+project — patching an APK, a one-off script, unpacking a firmware. One folder per task with a copy of the input,
+a work folder and `out/` holding only the result. The original is never touched, nothing lands next to it, on
+the device or on another drive, there are no `_v2`/`_final` copies, and the agent always tells you the full path
+of the result and what exactly it changed. Asked to make a call skip its confirmation, it patches the one
+condition — it does not decompile the app into a project.
+
 And it puts **guards** around every agent:
 
 * **Git hooks** (`git-hooks/`, enabled globally unless you already have your own): a commit message
@@ -455,6 +462,12 @@ MIT.
 Також він створює **теку контрактів** (`contracts/` поряд із мостом або ту, що вказана як
 `contractsDir` у `bridge_config.json`). Залежні проєкти домовляються в кімнаті на дошці; текст, на
 якому обидві сторони зійшлися, лягає туди — одна тека на пару застосунків.
+
+І **пісочницю** (`sandbox/` поряд із мостом або `sandboxDir`): там агенти працюють над усім, що не є проєктом, —
+латка APK, разовий скрипт, розпакування прошивки. Тека на задачу з копією вхідного файла, робочою текою й
+`out/`, де лише результат. Оригінал не чіпається, поряд із ним, на апараті чи на іншому диску нічого не
+лягає, копій `_v2`/`_final` немає, і агент завжди каже повний шлях до результату й що саме змінив. Попросите,
+щоб виклик ішов без підтвердження, — він змінить одну умову, а не декомпілює застосунок у проєкт.
 
 І ставить **запобіжники** довкола кожного агента:
 
