@@ -11,6 +11,7 @@ One folder per task, named by date and task: `2026-10-01-dialer-autocall/`.
 ```
 input/   a copy of what the agent was given — the original is never touched
 work/    whatever it unpacks, decompiles, tries
+tools/   what it brought or built for the job — kept if the owner wants them for next time
 out/     the result, and nothing else
 NOTES.md what the task was, what changed (the exact lines), how it was built and verified
 ```
@@ -20,5 +21,6 @@ NOTES.md what the task was, what changed (the exact lines), how it was built and
 - The smallest change that does the job: one condition, not a decompiled project.
 - One working copy: no `_v2`, `_final`, `_new` siblings. More than a step or two — `git init` the task folder.
 - Clean up inside the task folder before reporting; never touch anything outside it.
-- The report names the full path of the result in `out/`, what changed, and how to install or check it.
+- The report names the full path of the result in `out/`, what changed, how to install or check it, and where the
+  tools and intermediate files are and how big — then they are kept or cleaned up as the owner chose.
 - A finished task folder can be deleted by its owner whenever they like; nothing else depends on it.

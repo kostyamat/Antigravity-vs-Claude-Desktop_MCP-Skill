@@ -89,13 +89,15 @@ function guardRulesText(sandboxDir) {
     '',
     '# Where files go (agent-bridge)',
     '',
+    '- **Before a task that makes files, ask the owner** (unless it is already decided): where to work — the project, ' +
+      'a folder he names, or the sandbox' + (sandboxDir ? ' `' + sandboxDir + '`' : '') + '; where the result goes; ' +
+      'whether to keep the tools and intermediate files afterwards. "Here and now, in this folder" is a valid answer.',
     '- **A project is its folder.** Nothing you make goes next to where an input lay, onto the device under ' +
-      'test, into a package, Downloads, the Desktop or another drive.',
-    '- **Work that is not a project goes to the sandbox' + (sandboxDir ? ' `' + sandboxDir + '`' : '') + '**: one folder ' +
-      'per task (`input/` a copy of the original, `work/`, `out/` the result only, `NOTES.md`). No sandbox, or unsure — ask.',
+      'test, into a package, Downloads or another drive.',
     '- **The smallest change**: one condition patched, not a whole app decompiled into a project. One working copy, ' +
-      'no `_v2`/`_final` siblings. Clean up inside the task folder.',
-    '- **Always say where the result is**: the full path, what changed (lines before and after), how to install or check it.',
+      'no `_v2`/`_final` siblings.',
+    '- **When done, say where everything is**: the result (full path, what changed, how to check it), the tools and ' +
+      'intermediate files (where, roughly how big), what you cleaned up. Then keep or clean them as the owner chose.',
     '- How to work on a project (the `.agents/` files, the session slice, point changes, one source of truth): ' +
       'the `agent-workflow` skill. The shared board: the `agent-bridge` skill.',
     ''

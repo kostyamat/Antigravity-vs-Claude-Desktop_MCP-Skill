@@ -51,34 +51,41 @@ the user or a lesson learned the hard way goes into memory; the state of the wor
 
 ## Where files go
 
-**A project is its folder.** Everything you create for it lives inside it — never next to where an
-input happened to lie, never on the device under test, inside a package, in Downloads, on the
-Desktop or on another drive.
+The point is not a particular folder. It is that **before a task that makes files, you ask where**,
+and **after it, you say where everything is.** Tools you brought, a firmware tree you unpacked,
+intermediate builds can take gigabytes and sit where nobody would think to look — and a tool built
+for one job may be needed again.
 
-**Work that is not a project goes to the sandbox:** `{{SANDBOX_DIR}}`. One folder per task,
-named by date and task (`2026-10-01-dialer-autocall`), laid out as:
+**Before you start**, unless the user or the project has already answered it, ask in one short
+message:
+- where to work — the project's folder, a folder the user names, or the sandbox `{{SANDBOX_DIR}}`;
+- where the result goes;
+- whether to keep the tools and intermediate files afterwards, or clean them up.
+If the user wants it done right here and now in a folder that already exists, that is the answer —
+work there.
 
-```
-input/   a copy of what you were given — the original is never touched
-work/    whatever you unpack, decompile, try
-out/     the result, and nothing else
-NOTES.md what the task was, what changed (the exact lines), how it was built and verified
-```
+**A project is its folder.** What you make for it stays inside it — never next to where an input
+happened to lie, on the device under test, inside a package, in Downloads or on another drive.
 
-If there is no sandbox yet, or the task belongs elsewhere, ask the user where — do not pick a spot.
+**The sandbox, when that is the answer**: one folder per task, named by date and task
+(`2026-10-01-dialer-autocall`) — `input/` a copy of what you were given (the original is never
+touched), `work/` what you unpack and try, `tools/` what you brought or built, `out/` the result
+only, `NOTES.md` what changed and how it was built.
 
 **The smallest change that does the job.** To make a call skip its confirmation in someone else's
-APK you do not decompile it into a project and rework it: unpack once into `work/`, find the one
-condition, make it true, rebuild, sign. Change one line, not the app.
+APK you do not decompile it into a project and rework it: unpack once, find the one condition, make
+it true, rebuild, sign. Change one line, not the app.
 
 **One working copy.** No `_v2`, `_final`, `_new`, `_fixed` siblings: when an attempt fails, fix it
-in place or delete it. For more than a step or two, `git init` the task folder — commits are the
+in place or delete it. For more than a step or two, `git init` the work folder — commits are the
 versions.
 
-**Clean up before you report:** failed builds, temporary files, stray copies — inside the task
-folder, never anyone else's files. Then **say where the result is**: the full path of the file in
-`out/`, what changed (the lines before and after), and how to install or check it. A result the
-user has to search for was not delivered.
+**When you finish, report where everything is:**
+- the result — its full path, what changed (the lines before and after), how to install or check it;
+- the tools and intermediate files — where they are and roughly how big;
+- what you cleaned up, and what you left on purpose.
+Then do what the user chose for tools and intermediates; if they did not say, ask. A result the user
+has to search for was not delivered; gigabytes left in a place nobody knows are a mess, not a cache.
 
 ## `.agents/` — one purpose per file
 
