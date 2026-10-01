@@ -14,6 +14,11 @@ The user's own instructions win. Where the project has none, work like this. Whe
 a WORKLOG, a CLAUDE.md that grew into a diary, notes in five places — do not add to the pile:
 propose moving it into the layout below, and do it once the user agrees.
 
+**The first time you work with this skill in a project without `.agents/`**, say so to the user in
+a line or two and offer to set the project up by it. Do it only after they agree. If they decline,
+leave an empty `.no-agent-workflow` file in the project root, so no session asks again. (The
+session-start hook and the bridge remind you of this; one offer per project is enough.)
+
 ## `.agents/` — one purpose per file
 
 | file | what is in it | read | size |
