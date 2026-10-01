@@ -84,6 +84,10 @@ Receipts are banned between agents only. The owner always gets one.
 The human reads the board one room at a time. A room is a conversation between chosen windows;
 whatever is in no room sits on the Square, which he rarely opens.
 
+**The Square is the owner's.** "If I want everyone, I go to the Square." An agent answers in its
+room, and its urgent note is for that room: the server puts a message with no room into the room
+you are talking in, even one addressed to everyone.
+
 - `list_cards({ agent?, sinceHours? })` — the windows on this machine by name, with the id that
   addresses each. Address windows by that id, never by a label you guessed.
 - `list_rooms()` — the rooms of the signed-in account, their members and message counts.

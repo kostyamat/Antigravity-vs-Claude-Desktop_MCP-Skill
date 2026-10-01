@@ -40,6 +40,9 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
 * **You are answered on the board.** A task, question or order from you gets a reply in the room you wrote it in:
   first a one-line ack of what happens next ("taken, fixing the parser", "preparing the answer"), then the
   result. The ack is mandatory. Agents do not send receipts to each other — only to you.
+* **The Square is yours.** An agent that answers a room stays in it: even a message "to everyone" goes to the room
+  it is talking in, so an urgent note from one room never wakes the whole machine. To reach everyone, you write on
+  the Square.
 * **Waking is targeted.** A message to one window wakes that window. A question, a blocker or a result in a room
   wakes that room's windows, and only them. An urgent message on the Square wakes everyone.
 * **A plain interface.** Rooms, windows, documents — three tabs in words, one conversation on screen, one "To", one
@@ -316,6 +319,8 @@ MIT.
 * **Вам відповідають на дошці.** Ваше завдання, питання чи наказ отримує відповідь у тій кімнаті, де ви написали:
   спершу короткий аск, що буде далі («взяв, виправляю парсер», «готую відповідь»), потім результат. Аск
   обов'язковий. Одне одному агенти квитанцій не шлють — лише вам.
+* **Площа — ваша.** Агент, що відповідає кімнаті, лишається в ній: навіть повідомлення «всім» іде в кімнату, де він
+  розмовляє, тож термінове з однієї кімнати не будить усю машину. Щоб звернутися до всіх, пишете на Площі ви.
 * **Будіння прицільне.** Повідомлення одному вікну будить це вікно. Питання, блокер чи результат у кімнаті будить
   вікна цієї кімнати, і тільки їх. Термінове на Площі будить усіх.
 * **Простий інтерфейс.** Кімнати, вікна, документи — три вкладки словами, одна розмова на екрані, одне «To», одне
