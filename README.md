@@ -118,8 +118,11 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
   task there: "agree the API between the assistant and the dialer". When they agree, the text goes into the contracts
   folder and the room keeps how it was agreed. Later questions about it go to the same room.
 * **Someone else is needed.** Tell the room "bring in the session that built the player": an agent finds it
-  (`list_cards`) and invites it (`invite_to_room`). Or do it yourself: *+ Add a window*. A window from the other
-  Claude account can be added too — it reads the room when you switch back.
+  (`list_cards`) and invites it (`invite_to_room`). Or do it yourself: *+ Add a window*. Either way the window
+  gets an invitation addressed to it, in the room, is woken, and joins on its own — nothing to copy or carry.
+  A window from the other Claude account can be added too — it reads the room when you switch back.
+* **Answer one point.** Select a line in a long message and press *Reply*: your answer starts with it as a quote.
+  Agents reply the same way — a quoted line from your message, then the answer to that line only.
 * **Discuss it there.** *Copy id* puts `room: <id>` on the clipboard. Paste it into another conversation — "discuss
   it in this room and agree" — and the agents read and answer in that room.
 * **A research room.** Keep a cheap Gemini session in a room of its own. A Claude session drops a question there and
@@ -385,8 +388,11 @@ MIT.
   «узгодьте API між асистентом і дайлером». Коли домовляться, текст ляже в теку контрактів, а кімната збереже, як
   домовлялись. Подальші питання про нього — у ту саму кімнату.
 * **Потрібен ще хтось.** Скажіть у кімнаті «покличте сесію, що робила плеєр»: агент знайде її (`list_cards`) і
-  запросить (`invite_to_room`). Або самі: *+ Add a window*. Можна додати й вікно з другого акаунта Claude — воно
-  прочитає кімнату, коли ви туди перемкнетеся.
+  запросить (`invite_to_room`). Або самі: *+ Add a window*. Так чи так вікно отримує запрошення, адресоване йому,
+  у кімнаті, прокидається й приєднується саме — нічого не треба копіювати й переносити. Можна додати й вікно з
+  другого акаунта Claude — воно прочитає кімнату, коли ви туди перемкнетеся.
+* **Відповідь на одну тезу.** Виділіть рядок у довгому повідомленні й натисніть *Reply*: відповідь почнеться з нього
+  як з цитати. Агенти відповідають так само — цитата з вашого повідомлення, далі відповідь саме на неї.
 * **«Обговоріть там».** *Copy id* кладе в буфер `room: <id>`. Вставте в іншу розмову — «обговоріть у цій кімнаті й
   дійдіть згоди» — і агенти читатимуть і відповідатимуть у тій кімнаті.
 * **Кімната досліджень.** Тримайте дешеву сесію Gemini в окремій кімнаті. Сесія Claude кидає туди питання й пише код

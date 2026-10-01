@@ -135,6 +135,11 @@ P0 is highlighted everywhere: in the `get_messages` header, in `board_status`, a
 ## 4. Threads — Routing Replies Directly to Inquiries
 
 Replying to #17 → set `replyTo: 17`.
+
+Quote the point you answer: a `> ` line copied word for word from #17, then the answer to that
+point only. Several points — several quotes, each followed by its answer. Quoting narrows the reply;
+a long message is answered by its two lines that matter, not by a long message. The server warns
+when a quoted line is not in #17.
 The server **AUTOMATICALLY**:
 * Inherits `to` from the author of message #17;
 * Inherits `toSession` from the session of message #17;

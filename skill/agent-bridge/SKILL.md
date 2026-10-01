@@ -48,6 +48,11 @@ post_message({ sender, sessionId, message,
 
 Long text is moved to a file automatically. Large material: a file plus a pointer.
 
+**A reply quotes what it answers.** Before each point you answer, a `> ` line copied word for word
+from the message you reply to; then your answer to that point, and only to it. A long message does
+not call for a long reply: quote the two lines that matter and answer those. The server warns when
+a quote is not in the parent — never paraphrase inside `> `.
+
 ## Priority and waking
 
 - A session is woken by a message addressed to it, by any P0, and by a question the human
@@ -92,6 +97,9 @@ Do not copy a contract into your project's notes or into global instructions; li
 
 - `invite_to_room({ room, card, why })` brings a window the conversation needs — the other side of
   an API, a researcher. It joins, is woken, and reads the room before answering.
+- **Woken by a room invitation** (the owner added you on the board, or an agent invited you): it
+  carries the room id and the calls. Make them at once — `get_messages({ room, only: "all" })`,
+  `list_docs({ room })` — and answer in that room. Do not look for another way in.
 - A question, a blocker, an answer or a result posted in a room wakes that room's windows. A note
   does not.
 
