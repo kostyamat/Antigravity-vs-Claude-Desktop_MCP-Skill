@@ -85,6 +85,8 @@ function createRouter(bridgeDb, cardsLib) {
       if (replyTo) {
         const parent = bridgeDb.getMessageById(replyTo);
         if (parent && parent.room && bridgeDb.getRoom(parent.room)) return { room: parent.room };
+        // The owner wrote on the Square: the answer is read there, next to it.
+        if (parent && !parent.room && isHuman(parent.fromSession)) return { room: '' };
       }
 
       const named = String(a.room || '').trim();
