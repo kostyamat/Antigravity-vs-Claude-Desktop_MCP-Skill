@@ -66,40 +66,99 @@ function installGitHooks(hooksDir) {
   return { ok: true, state: current ? 'moved from ' + current : 'enabled', path: want };
 }
 
-// Antigravity has no deny list: it reads ~/.gemini/config/AGENTS.md as its
-// standing instructions at the start of every session (its own administrator,
-// board #991). So the same commands go there as text, inside a marked block the
-// installer owns and replaces; everything outside the block is the user's.
-const BEGIN = '<!-- agent-bridge:guards — written by the bridge installer; edit outside this block -->';
+// Antigravity has no deny list, but it has hooks and plugins (its own docs, built
+// into the language server). The bridge installs itself there as a plugin it
+// owns entirely: ~/.gemini/config/plugins/agent-bridge/ with
+//   hooks.json      PreToolUse on run_command -> command-guard.js, which refuses
+//                   destructive commands however they are spelled;
+//   rules/AGENTS.md the same rules in words, merged into Gemini's rule set.
+// Nothing of the user's is edited. An earlier release wrote the rules as a block
+// into ~/.gemini/config/AGENTS.md; that block is removed here.
+const BEGIN = '<!-- agent-bridge:guards';
 const END = '<!-- /agent-bridge:guards -->';
 
-function geminiGuardBlock() {
-  const commands = [...new Set(DENY.map(r => r.replace(/^\w+\(/, '').replace(/:\*\)$/, '')))];
+function guardRulesText() {
+  const { RULES } = require('./command-guard');
   return [
-    BEGIN,
-    '## Guards (agent-bridge)',
+    '# Guards (agent-bridge)',
     '',
-    '- **Never run destructive commands.** Not one of these, whatever the reason: ' +
-      commands.map(c => '`' + c + '`').join(', ') + '. If one seems necessary, stop and ask the owner to run it.',
+    '- **Never run destructive commands**, however they are spelled: ' +
+      RULES.map(r => '`' + r.label + '`').join(', ') + '. A hook blocks them anyway; looking for another way ' +
+      'to do the same thing is not allowed. If one is really needed, stop and ask the owner to run it.',
     '- A damaged file is restored on its own: `git restore <file>` — never the whole repository.',
     '- How to work on a project (the `.agents/` files, the session slice, point changes, one source of truth): ' +
       'the `agent-workflow` skill. The shared board: the `agent-bridge` skill.',
-    END
+    ''
   ].join('\n');
 }
 
-function installGeminiRules(agentsMdPath) {
-  const block = geminiGuardBlock();
-  let text = fs.existsSync(agentsMdPath) ? fs.readFileSync(agentsMdPath, 'utf8') : '';
-  const a = text.indexOf(BEGIN), b = text.indexOf(END);
-  const next = (a >= 0 && b > a)
-    ? text.slice(0, a) + block + text.slice(b + END.length)
-    : (text.replace(/\s*$/, '') + (text.trim() ? '\n\n' : '') + block + '\n');
-  if (next === text) return { ok: true, changed: false };
-  if (text) fs.copyFileSync(agentsMdPath, `${agentsMdPath}.bak-${stamp()}`);
-  fs.mkdirSync(path.dirname(agentsMdPath), { recursive: true });
-  fs.writeFileSync(agentsMdPath, next, 'utf8');
+function writeIfChanged(file, text) {
+  if (fs.existsSync(file) && fs.readFileSync(file, 'utf8') === text) return false;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, text, 'utf8');
+  return true;
+}
+
+function installGeminiPlugin(geminiConfigDir, bridgeDir, nodePath) {
+  const dir = path.join(geminiConfigDir, 'plugins', 'agent-bridge');
+  const guard = path.join(bridgeDir, 'command-guard.js').split(path.sep).join('/');
+  const hooks = {
+    'agent-bridge-guard': {
+      PreToolUse: [{
+        matcher: 'run_command',
+        hooks: [{ type: 'command', command: `"${nodePath}" "${guard}"`, timeout: 10 }]
+      }]
+    }
+  };
+  let changed = false;
+  changed = writeIfChanged(path.join(dir, 'plugin.json'), JSON.stringify({ name: 'agent-bridge' }, null, 2) + '\n') || changed;
+  changed = writeIfChanged(path.join(dir, 'hooks.json'), JSON.stringify(hooks, null, 2) + '\n') || changed;
+  changed = writeIfChanged(path.join(dir, 'rules', 'AGENTS.md'), guardRulesText()) || changed;
+
+  // The block an earlier release put into the user's own AGENTS.md.
+  const userRules = path.join(geminiConfigDir, 'AGENTS.md');
+  if (fs.existsSync(userRules)) {
+    // Every copy of it: an edit by hand once duplicated the block.
+    const text = fs.readFileSync(userRules, 'utf8');
+    let next = text;
+    for (;;) {
+      const a = next.indexOf(BEGIN), b = next.indexOf(END, a);
+      if (a < 0 || b < 0) break;
+      next = next.slice(0, a).replace(/\s*$/, '') + '\n\n' + next.slice(b + END.length).replace(/^\s*/, '');
+    }
+    next = next.replace(/\s*$/, '\n');
+    if (next !== text) {
+      fs.copyFileSync(userRules, `${userRules}.bak-${stamp()}`);
+      fs.writeFileSync(userRules, next, 'utf8');
+      changed = true;
+    }
+  }
+  return { ok: true, changed, dir };
+}
+
+// The same guard for Claude Code, as a PreToolUse hook on Bash and PowerShell.
+// The deny list above stays as a second line: it costs nothing, and a hook that
+// fails to start must not leave the door open.
+function installClaudeGuardHook(settingsPath, nodePath, bridgeDir) {
+  let settings = {};
+  if (fs.existsSync(settingsPath)) {
+    try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) || {}; }
+    catch (e) { return { ok: false, why: 'settings.json is not valid JSON — not modified' }; }
+  }
+  const command = `"${nodePath}" "${path.join(bridgeDir, 'command-guard.js').split(path.sep).join('/')}"`;
+  settings.hooks = settings.hooks || {};
+  const list = Array.isArray(settings.hooks.PreToolUse) ? settings.hooks.PreToolUse : (settings.hooks.PreToolUse = []);
+  let found = null;
+  for (const e of list) {
+    const h = e && Array.isArray(e.hooks) ? e.hooks.find(x => x && typeof x.command === 'string' && x.command.includes('command-guard')) : null;
+    if (h) { found = { e, h }; break; }
+  }
+  if (found && found.h.command === command && found.e.matcher === 'Bash|PowerShell') return { ok: true, changed: false };
+  if (fs.existsSync(settingsPath)) fs.copyFileSync(settingsPath, `${settingsPath}.bak-${stamp()}`);
+  if (found) { found.h.command = command; found.e.matcher = 'Bash|PowerShell'; }
+  else list.push({ matcher: 'Bash|PowerShell', hooks: [{ type: 'command', command, timeout: 10 }] });
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
   return { ok: true, changed: true };
 }
 
-module.exports = { installDenyList, installGitHooks, installGeminiRules, DENY };
+module.exports = { installDenyList, installGitHooks, installGeminiPlugin, installClaudeGuardHook, DENY };

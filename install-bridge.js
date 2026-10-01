@@ -645,8 +645,11 @@ try {
   } else {
     console.log('  ✅ Claude Code: destructive commands denied' + (d.added ? ' (' + d.added + ' rules added)' : ' (up to date)'));
   }
-  const g = guards.installGeminiRules(path.join(USER_PROFILE, '.gemini', 'config', 'AGENTS.md'));
-  console.log('  ✅ Antigravity: guard rules ' + (g.changed ? 'written to' : 'already in') + ' ~/.gemini/config/AGENTS.md');
+  const ch = guards.installClaudeGuardHook(path.join(USER_PROFILE, '.claude', 'settings.json'), process.execPath, SCRIPTS_DIR);
+  if (!ch.ok) { warnCount++; console.warn('  ⚠️ Claude Code guard hook not installed: ' + ch.why); }
+  else console.log('  ✅ Claude Code: command guard hook ' + (ch.changed ? 'installed' : 'up to date') + ' (PreToolUse on Bash and PowerShell)');
+  const g = guards.installGeminiPlugin(path.join(USER_PROFILE, '.gemini', 'config'), SCRIPTS_DIR, process.execPath);
+  console.log('  ✅ Antigravity: plugin with the command guard ' + (g.changed ? 'installed' : 'up to date') + ' -> ' + g.dir);
 } catch (e) {
   warnCount++;
   console.warn('  ⚠️ Guards not installed: ' + e.message);
