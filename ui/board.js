@@ -5,9 +5,11 @@
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// A failed request answers like a refused one, with an error the page shows.
+// Left to reject, it was swallowed: Send did nothing, and said nothing.
 const post = (url, body) => fetch(url, {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {})
-}).then(r => r.json());
+}).then(r => r.json()).catch(e => ({ error: 'The board did not answer (' + e.message + '). Is it running?' }));
 const store = {
   get(k, d) { try { const v = localStorage.getItem('bridge:' + k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } },
   set(k, v) { try { localStorage.setItem('bridge:' + k, JSON.stringify(v)); } catch (_) {} }
@@ -603,7 +605,7 @@ $('#text').addEventListener('keydown', e => {
 $('#compose').addEventListener('submit', async e => {
   e.preventDefault();
   const text = $('#text').value.trim();
-  if (FILE && FILE.uploading) return;
+  if (FILE && FILE.uploading) { alert('The image is still uploading — send again in a moment, or remove it (✕).'); return; }
   if (!text && !FILE) return;
   let j;
   if (EDIT) {
@@ -648,8 +650,12 @@ function upload(file) {
 }
 $('#attach').onclick = () => $('#fileInput').click();
 $('#fileInput').onchange = e => upload(e.target.files[0]);
+// Office apps and some browsers put a picture of the copied text on the clipboard
+// beside the text itself. Pasting text must paste text, not attach that picture.
 document.addEventListener('paste', e => {
-  for (const it of (e.clipboardData && e.clipboardData.items) || []) {
+  const cd = e.clipboardData;
+  if (cd && cd.types && [...cd.types].includes('text/plain') && (cd.getData('text/plain') || '').trim()) return;
+  for (const it of (cd && cd.items) || []) {
     if (it.kind === 'file' && it.type.startsWith('image/')) { upload(it.getAsFile()); break; }
   }
 });
