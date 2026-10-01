@@ -137,7 +137,23 @@ function createRouter(bridgeDb, cardsLib) {
     return out;
   }
 
-  return { resolve, ownerWaiting, windowOf };
+  // Is a message for this window, as far as rooms go? A message in a room that
+  // is not addressed to one window is for the room's members and nobody else —
+  // urgent or not. One answer for every place that asks: the P0 banner and the
+  // "for me" filter here; the Antigravity waker and the Claude watchman apply the
+  // same rule in their own process.
+  function roomAdmits(m, myWindow) {
+    const room = String((m && m.room) || '');
+    if (!room) return true;
+    if (m.toSession && m.toSession !== 'all') return true;   // addressed: the address decides
+    let r = null;
+    try { r = bridgeDb.getRoom(room); } catch (_) { return true; }
+    if (!r) return true;                                     // a room that no longer exists hides nothing
+    const mine = new Set([...(myWindow || [])].map(x => String(x).toLowerCase()));
+    return (r.members || []).some(x => mine.has(String(x.card).toLowerCase()));
+  }
+
+  return { resolve, ownerWaiting, windowOf, roomAdmits };
 }
 
 module.exports = { createRouter, isHuman, isWindowId };

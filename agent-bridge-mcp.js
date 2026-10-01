@@ -111,9 +111,11 @@ function setupBanner() {
 
 let myAgent = null;
 let mySession = null;
-function rememberAgent(who, session) {
+let myCanonical = null;   // the window id the client issued, when the agent passes it
+function rememberAgent(who, session, canonical) {
   if (who && !myAgent) myAgent = who;
   if (session && !mySession) mySession = String(session).trim();
+  if (canonical && !myCanonical) myCanonical = String(canonical).trim();
 }
 
 function ringBell(rec) {
@@ -490,6 +492,7 @@ function pendingP0Banner() {
     // same line is somebody else talking.
     const myLine = mySession ? bridgeDb.resolveSessionAliases(mySession, { agent: myAgent }) : new Set();
     const myWindow = mySession ? bridgeDb.resolveSessionAliases(mySession, { agent: myAgent, lines: false }) : new Set();
+    const myWindowCards = new Set([...myWindow, myCanonical].filter(Boolean));
     const mine = board.filter(m => {
       if ((m.id || 0) <= cursor) return false;
       if (m.priority !== 'P0') return false;
@@ -508,6 +511,7 @@ function pendingP0Banner() {
       }
 
       if (m.to !== myAgent && m.to !== 'all' && m.to) return false;
+      if (!router.roomAdmits(m, myWindowCards)) return false;
       if (m.toSession && m.toSession !== 'all') {
         if (!mySession) return false;
         const toLower = String(m.toSession).trim().toLowerCase();
@@ -900,7 +904,7 @@ function handleRequest(req) {
   const toolName = params && params.name;
   const args = (params && params.arguments) || {};
 
-  rememberAgent(normAgent(args.reader || args.sender), args.sessionId);
+  rememberAgent(normAgent(args.reader || args.sender), args.sessionId, args.canonicalId);
 
   try {
     if (toolName === 'bridge_setup') return doSetup(id, args);
@@ -1269,6 +1273,7 @@ function doGet(id, a) {
     if (reader) {
       if (m.to !== reader && m.to !== 'all') return false;
     }
+    if (sessionId && !router.roomAdmits(m, new Set([...myWindow, a.canonicalId].filter(Boolean)))) return false;
     return true;
   };
 
