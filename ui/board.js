@@ -178,14 +178,26 @@ $('#roomRename').onclick = async () => {
   await post('/api/room/rename', { id: r.id, name: name.trim() });
   loadRooms();
 };
-$('#roomDelete').onclick = async () => {
-  const r = roomById(ROOM); if (!r) return;
-  if (!confirm('Delete the room "' + r.name + '"?\n\nIts ' + r.messages + ' messages are kept and move to the Square.')) return;
-  await post('/api/room/delete', { id: r.id });
+async function leaveRoomAfter(action, r) {
+  const what = await post('/api/room/describe', { id: r.id });
+  if (what.error) { alert(what.error); return; }
+  const docs = what.docs ? ' and ' + what.docs + (what.docs === 1 ? ' document' : ' documents') : '';
+  const ask = action === 'archive'
+    ? 'Archive the room "' + r.name + '"?\n\nIts ' + what.messages + ' messages' + docs +
+      ' go into one zip in the archive folder, and the room leaves the board.'
+    : 'Delete the room "' + r.name + '" FOR GOOD?\n\n' + what.messages + ' messages' + docs +
+      ' will be deleted. Nothing is kept and this cannot be undone.\n\nTo keep a copy, choose Archive instead.';
+  if (!confirm(ask)) return;
+  const j = await post('/api/room/' + action, { id: r.id });
+  if (j.error) { alert(j.error); return; }
+  if (action === 'archive') alert('Archived to:\n' + j.file);
   await loadRooms();
+  await loadDocs();
   ROOM = null; enterRoom(SQUARE);
   await load(true);
-};
+}
+$('#roomArchive').onclick = () => { const r = roomById(ROOM); if (r) leaveRoomAfter('archive', r); };
+$('#roomDelete').onclick = () => { const r = roomById(ROOM); if (r) leaveRoomAfter('delete', r); };
 $('#roomDocs').onclick = () => { DOC_ROOM = ROOM; showPanel('docs'); };
 // The id is what an agent reads a room by. Pasted into another conversation it
 // says "discuss it there".
@@ -335,6 +347,14 @@ function showsAddressee() {
 // prev: the message above when it belongs to the same run (same day), for
 // grouping. prevShown: the message directly above regardless, so a reply to it
 // does not quote what the reader has just read.
+// Messages are numbered within their room, from 1. The board-wide number is
+// what agents reply by, so it stays — in the tooltip.
+let seq = {};
+function renumber() {
+  seq = {};
+  messagesHere().forEach((m, i) => { seq[m.id] = i + 1; });
+}
+
 function messageHTML(m, prev, prevShown) {
   const k = isHuman(m) ? 'human' : kind(m.from);
   const who = senderName(m);
@@ -350,12 +370,14 @@ function messageHTML(m, prev, prevShown) {
       (cont ? '' : '<div class="msg-head">' +
         '<span class="msg-from" title="' + esc(who + (m.fromSession ? '\n' + m.fromSession : '')) + '">' + esc(who) + '</span>' +
         (showsAddressee() ? '<span class="msg-to" title="' + esc(m.toSession || m.to) + '">to ' + esc(addresseeName(m)) + '</span>' : '') +
-        '<span class="msg-time" title="' + esc(fullDate(m.ts) + ' · message ' + m.id) + '">' + clock(m.ts) + '</span>' +
+        '<span class="msg-time" title="' + esc(fullDate(m.ts) + ' · board #' + m.id) + '">' + clock(m.ts) + '</span>' +
+        (seq[m.id] ? '<span class="msg-time">#' + seq[m.id] + '</span>' : '') +
         (m.priority === 'P0' ? '<span class="tag urgent">urgent</span>' : '') +
         statusTag(m) +
         (m.editedAt ? '<span class="msg-time" title="' + esc('Edited ' + fullDate(m.editedAt) + (m.editedBy ? ' by ' + m.editedBy : '')) + '">edited</span>' : '') +
       '</div>') +
       (m.replyTo && !(prevShown && prevShown.id === m.replyTo) ? '<div class="msg-reply" data-jump="' + m.replyTo + '">↳ ' +
+        (seq[m.replyTo] ? '#' + seq[m.replyTo] + ' ' : '') +
         (parent ? esc(senderName(parent)) + ': ' + esc(short(parent.text.replace(/\s+/g, ' '), 90)) : 'reply to message ' + m.replyTo) + '</div>' : '') +
       '<div class="msg-text' + (long ? ' clip' : '') + '">' + richText(m.text) + '</div>' +
       ((m.text || '').length > 900 ? '<button type="button" class="more" data-more="' + m.id + '">' + (long ? 'Show more' : 'Show less') + '</button>' : '') +
@@ -375,6 +397,7 @@ function renderFeed(full) {
   if (ROOM == null) return;
   const feed = $('#feed');
   const items = messagesHere();
+  renumber();
   const nearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 120;
   if (full) {
     SHOWN_LAST = null;

@@ -22,6 +22,7 @@ const os = require('os');
 const { spawn } = require('child_process');
 const bridgeDb = require('./bridge-db');
 const cardsLib = require('./cards');
+const archiver = require('./room-archive').createArchiver(bridgeDb, path.resolve(__dirname));
 const { wakeAntigravity } = require('./wake-antigravity');
 
 const SCRIPTS_DIR = path.resolve(__dirname);
@@ -498,9 +499,15 @@ const server = http.createServer((req, res) => {
           out = bridgeDb.removeRoomMember(d.id, d.card);
         } else if (what === 'rename') {
           out = bridgeDb.renameRoom(d.id, d.name);
+        } else if (what === 'describe') {
+          out = archiver.describe(d.id);
+        } else if (what === 'archive') {
+          // The conversation, documents and images go into one zip; the room
+          // leaves the board. Nothing is removed unless the zip was written.
+          out = Object.assign({ ok: true }, archiver.archiveRoom(d.id));
         } else if (what === 'delete') {
-          bridgeDb.deleteRoom(d.id);
-          out = { ok: true };
+          // For good: messages, documents and files. The page asked first.
+          out = Object.assign({ ok: true }, archiver.deleteRoomForever(d.id));
         } else {
           out = { error: 'unknown room action: ' + what };
         }

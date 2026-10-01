@@ -40,6 +40,7 @@ function getDb() {
   migrateFromJsonIfEmpty(_db);
   adoptDocsIndexJson(_db);
   adoptSessionsJson(_db);
+  repairDocPaths(_db);
 
   return _db;
 }
@@ -293,6 +294,26 @@ function rowToMessage(r) {
   };
 }
 
+// Document paths written before the bridge moved home still point at the old
+// home's docs folder, and some were stored relative. The files are
+// here, in docs/ or docs/archive/; a document whose file cannot be opened can
+// be neither read on the board nor archived with its room. Find each missing
+// file by name and store where it really is. Cheap, and a no-op once fixed.
+function repairDocPaths(db) {
+  let rows;
+  try { rows = db.prepare('SELECT name, file FROM docs_index').all(); } catch (_) { return; }
+  const upd = db.prepare('UPDATE docs_index SET file = ? WHERE name = ?');
+  for (const r of rows) {
+    const f = String(r.file || '');
+    if (f && path.isAbsolute(f) && fs.existsSync(f)) continue;
+    const base = path.win32.basename(f) || r.name;
+    for (const dir of [path.join(SCRIPTS_DIR, 'docs'), path.join(SCRIPTS_DIR, 'docs', 'archive')]) {
+      const p = path.join(dir, base);
+      if (fs.existsSync(p)) { if (p !== f) upd.run(p, r.name); break; }
+    }
+  }
+}
+
 // Releases up to 2.1 kept the document index in docs/_index.json and wrote the
 // database only as a mirror — and not a faithful one: the upsert never updated a
 // document's path, so every archived document still pointed at a file that had
@@ -302,30 +323,6 @@ function rowToMessage(r) {
 //
 // Rooms are not in the JSON file and are kept: the upsert leaves a room alone
 // when the incoming record has none.
-// The session registry had the same split as the document index: MCP kept
-// docs/_sessions.json and mirrored it here. The mirror was rewritten on every
-// save, so the database is already current; the file is taken in one last time
-// and renamed. Names given on the board were only ever here and are kept: the
-// upsert never blanks a name.
-function adoptSessionsJson(db) {
-  if (!fs.existsSync(SESSIONS_JSON)) return;
-  let reg;
-  try { reg = JSON.parse(fs.readFileSync(SESSIONS_JSON, 'utf8')); }
-  catch (e) { console.error(`[bridge-db] docs/_sessions.json unreadable, left in place: ${e.message}`); return; }
-  if (!reg || typeof reg !== 'object') return;
-  db.exec('BEGIN');
-  try {
-    for (const s of Object.values(reg)) if (s && s.sessionId) saveSession(s);
-    db.exec('COMMIT');
-  } catch (e) {
-    db.exec('ROLLBACK');
-    console.error(`[bridge-db] docs/_sessions.json not adopted, left in place: ${e.message}`);
-    return;
-  }
-  try { fs.renameSync(SESSIONS_JSON, SESSIONS_JSON + '.migrated'); }
-  catch (e) { console.error(`[bridge-db] docs/_sessions.json adopted but not renamed: ${e.message}`); }
-}
-
 function adoptDocsIndexJson(db) {
   if (!fs.existsSync(DOCS_INDEX_JSON)) return;
   let list;
@@ -351,6 +348,30 @@ function adoptDocsIndexJson(db) {
     // Adopting it again next time is harmless: the same records, the same result.
     console.error(`[bridge-db] docs/_index.json adopted but not renamed: ${e.message}`);
   }
+}
+
+// The session registry had the same split as the document index: MCP kept
+// docs/_sessions.json and mirrored it here. The mirror was rewritten on every
+// save, so the database is already current; the file is taken in one last time
+// and renamed. Names given on the board were only ever here and are kept: the
+// upsert never blanks a name.
+function adoptSessionsJson(db) {
+  if (!fs.existsSync(SESSIONS_JSON)) return;
+  let reg;
+  try { reg = JSON.parse(fs.readFileSync(SESSIONS_JSON, 'utf8')); }
+  catch (e) { console.error(`[bridge-db] docs/_sessions.json unreadable, left in place: ${e.message}`); return; }
+  if (!reg || typeof reg !== 'object') return;
+  db.exec('BEGIN');
+  try {
+    for (const s of Object.values(reg)) if (s && s.sessionId) saveSession(s);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    console.error(`[bridge-db] docs/_sessions.json not adopted, left in place: ${e.message}`);
+    return;
+  }
+  try { fs.renameSync(SESSIONS_JSON, SESSIONS_JSON + '.migrated'); }
+  catch (e) { console.error(`[bridge-db] docs/_sessions.json adopted but not renamed: ${e.message}`); }
 }
 
 function migrateFromJsonIfEmpty(db) {
@@ -1283,12 +1304,6 @@ function renameRoom(id, name) {
 
 // Removing a room leaves its messages alone: they stay on the board, they only
 // stop being gathered behind that door. Deleting a room must not delete work.
-function deleteRoom(id) {
-  const db = getDb();
-  db.prepare('DELETE FROM room_members WHERE room = ?').run(String(id));
-  db.prepare('DELETE FROM rooms WHERE id = ?').run(String(id));
-}
-
 function touchRoom(id) {
   if (!id) return;
   try {
@@ -1337,7 +1352,6 @@ module.exports = {
   removeRoomMember,
   readRooms,
   renameRoom,
-  deleteRoom,
   touchRoom,
   roomsOfCard
 };
