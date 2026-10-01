@@ -1106,8 +1106,19 @@ function doPost(id, a) {
   if (replyTo) {
     const parent = bridgeDb.getMessageById(replyTo);
     if (parent) {
-      if (!toAgent || toAgent === 'all') toAgent = parent.from;
-      if (!toSession) toSession = parent.fromSession || '';
+      // A reply goes back to whoever wrote the parent — unless the sender wrote
+      // it. Following up one's own message continues the same conversation, so
+      // it goes where that message went; otherwise the follow-up is addressed to
+      // its own author and the person it was meant for never sees it.
+      const mine = new Set([a.sessionId, a.canonicalId].filter(Boolean).map(String));
+      try {
+        for (const x of [...mine]) {
+          for (const al of bridgeDb.resolveSessionAliases(x, { agent: from, lines: false })) mine.add(String(al));
+        }
+      } catch (_) {}
+      const ownParent = parent.from === from && mine.has(String(parent.fromSession || ''));
+      if (!toAgent || toAgent === 'all') toAgent = ownParent ? (parent.to || 'all') : parent.from;
+      if (!toSession) toSession = ownParent ? (parent.toSession || '') : (parent.fromSession || '');
       if (!topic && parent.topic) topic = parent.topic;
     }
   }
