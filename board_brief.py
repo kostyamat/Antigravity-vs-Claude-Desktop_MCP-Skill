@@ -183,6 +183,20 @@ def window_state():
         return 0, None
 
 
+def rooms_of_window(sid, win):
+    """The rooms this window is in and the invitations it has not acted on, by the
+    one rule in room-invite.js. A window that was closed when the owner invited it
+    finds the invitation here, so "go to the room you were invited to" is enough."""
+    try:
+        args = ["node", os.path.join(_bridge_home(), "room-invite.js"), ME, sid or ""]
+        if win:
+            args.append(win)
+        out = subprocess.run(args, capture_output=True, timeout=15)
+        return [l for l in out.stdout.decode("utf-8", "replace").splitlines() if l.strip()]
+    except Exception:
+        return []
+
+
 def main():
     if not os.path.exists(DB):
         return 0                       # no bridge on this machine — stay silent
@@ -320,6 +334,8 @@ def main():
                      " keep signing with your own sessionId." % (line, len(line_members), line))
     extra = (', canonicalId:"%s", client:"claude-code"' % window["window"]) if window else ""
     lines.append('Then: get_messages({reader:"%s", sessionId:"%s"%s})' % (ME, sid, extra))
+
+    lines += rooms_of_window(hook_session, window and window["window"])
 
     hint = workflow_hint(os.getcwd())
     if hint:

@@ -25,7 +25,7 @@ const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
 const { workflowHint } = require('./workflow-hint');
 const { pendingP0 } = require('./p0');
 const { wakeAntigravity } = require('./wake-antigravity');
-const { inviteText } = require('./room-invite');
+const { inviteText, roomsOfWindow, describeRooms } = require('./room-invite');
 const { checkQuotes } = require('./reply-quotes');
 
 const SCRIPTS_DIR  = path.resolve(__dirname);
@@ -543,7 +543,7 @@ const TOOLS = [
         toSession: { type: 'string', description: 'Target session of recipient (if replyTo is not specified).' },
         replyTo: { type: 'number', description: 'Message ID (#N) being replied to. Automatically links thread and routes to parent author.' },
         topic: { type: 'string', description: 'Short topic/category (e.g. "auth", "refactoring") for filtering.' },
-        room: { type: 'string', description: 'Room id: keeps this message inside that conversation. Left out, the bridge attaches the room when sender and recipient share exactly one.' },
+        room: { type: 'string', description: 'Room id, name or part of the name: keeps this message inside that conversation. Left out, the bridge attaches the room when sender and recipient share exactly one.' },
         priority: { type: 'string', enum: PRIORITIES, description: 'P0 = immediate attention/stop; normal; fyi = for information only.' },
         status: { type: 'string', enum: STATUSES, description: 'info | question | answer | working | done | blocked | ack' },
         progress: { type: 'string', description: 'Current progress description, e.g. "step 3 of 5" or "awaiting build".' }
@@ -794,7 +794,8 @@ const TOOLS = [
     name: 'list_rooms',
     description:
       'The rooms of the signed-in Claude account, most recently used first, with their members and message counts. ' +
-      'Rooms follow the account, because each account keeps its own windows.',
+      'Rooms follow the account, because each account keeps its own windows. When the owner names a room ' +
+      '("in the debug room, ask…"), find it here; every tool that takes `room` accepts its id, its name or a part of it.',
     inputSchema: {
       type: 'object',
       properties: { account: { type: 'string', description: 'A different account id.' } }
@@ -954,8 +955,8 @@ function doListCards(id, a) {
 // the room and is woken by a message addressed to it, in the room, so it reads
 // the history and the room's documents instead of being briefed from scratch.
 function doInviteToRoom(id, a) {
-  const room = bridgeDb.getRoom(String(a.room || '').trim());
-  if (!room) return fail(id, `invite_to_room: no room "${a.room}" — see list_rooms.`);
+  const room = router.findRoom(a.room, [a.canonicalId, a.sessionId, router.windowOf(a.sessionId)]);
+  if (!room) return fail(id, `invite_to_room: no single room matches "${a.room}" — see list_rooms.`);
   const card = String(a.card || '').trim();
   if (!card) return fail(id, 'invite_to_room: `card` is required — see list_cards.');
   const known = cardsLib.allCards({ names: boardNames() }).find(c => c.id === card);
@@ -1271,7 +1272,11 @@ function doGet(id, a) {
   };
 
   let list = board.slice();
-  if (a.room) list = list.filter(m => String(m.room || '') === String(a.room));
+  if (a.room) {
+    const r = router.findRoom(a.room, new Set([...myWindow, a.canonicalId].filter(Boolean)));
+    if (!r) return fail(id, `get_messages: no single room matches "${a.room}" — see list_rooms.`);
+    list = list.filter(m => String(m.room || '') === r.id);
+  }
   if (a.topic) list = list.filter(m => (m.topic || '').toLowerCase() === String(a.topic).toLowerCase());
   if (typeof a.since === 'number') list = list.filter(m => m.id > a.since);
   if (only === 'for_me') list = list.filter(m => isForMe(m));
@@ -1290,6 +1295,9 @@ function doGet(id, a) {
       (asks.length ? ` · ❓ awaiting reply: ${asks.map(m => '#' + m.id).join(', ')}` : ''));
     const hint = workflowHint(a.cwd);
     if (hint) header.push(hint);
+    if (sessionId) {
+      try { header.push(...describeRooms(roomsOfWindow(bridgeDb, new Set([...myWindow, a.canonicalId].filter(Boolean)), board))); } catch (_) {}
+    }
     // The owner works through the board: a task given there is answered there.
     // Silence from every window, while they talk among themselves, is what he
     // reads as being ignored.
@@ -1586,8 +1594,10 @@ function doListDocs(id, a) {
   const wantArchived = !!a.archived;
   let list = index.filter(r => !!r.archived === wantArchived);
   if (a.topic) list = list.filter(r => r.topic.toLowerCase() === String(a.topic).toLowerCase());
-  if (a.room) list = list.filter(r => r.room === String(a.room));
-  else if (reader && a.mine !== false) list = list.filter(r => r.to === reader);
+  if (a.room) {
+    const room = router.findRoom(a.room);
+    list = list.filter(r => r.room === (room ? room.id : String(a.room)));
+  } else if (reader && a.mine !== false) list = list.filter(r => r.to === reader);
 
   if (!list.length) {
     return ok(id, wantArchived ? 'Document archive is empty (for this filter).'

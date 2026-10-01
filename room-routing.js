@@ -8,7 +8,8 @@
 // room at all. So the server decides, in this order:
 //
 //   1. a reply goes where the message it answers is;
-//   2. a room named outright is used if it exists — a name that is not a room is
+//   2. a room named outright — by id, name or a part of the name — is used if it
+//      exists; a name that is not a room is
 //      the agent's idea of a topic, and becomes a real room between the two
 //      windows, called by that name;
 //   3. a message to the human goes to the room where he last wrote to this
@@ -86,7 +87,8 @@ function createRouter(bridgeDb, cardsLib) {
 
       const named = String(a.room || '').trim();
       if (named) {
-        if (bridgeDb.getRoom(named)) return { room: named };
+        const found = findRoom(named, [mine]);
+        if (found) return { room: found.id };
         const made = roomOfPair(mine, theirs, named);
         return made ? { room: made.room.id, opened: made.isNew ? made.room : null } : { room: '' };
       }
@@ -153,7 +155,34 @@ function createRouter(bridgeDb, cardsLib) {
     return (r.members || []).some(x => mine.has(String(x.card).toLowerCase()));
   }
 
-  return { resolve, ownerWaiting, windowOf, roomAdmits };
+  // A room as the owner says it: "in the debug room, ask…". The agent passes the
+  // id, the name, or a part of the name; the one room that matches is used. Of
+  // several, the one the asking window is in; still several is no match —
+  // guessing would post into the wrong conversation.
+  function findRoom(text, myWindow) {
+    const q = String(text || '').trim();
+    if (!q) return null;
+    try {
+      const exact = bridgeDb.getRoom(q);
+      if (exact) return exact;
+      const norm = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+      const want = norm(q);
+      if (!want) return null;
+      const rooms = bridgeDb.readRooms(account());
+      const named = rooms.filter(r => norm(r.name) === want);
+      if (named.length === 1) return bridgeDb.getRoom(named[0].id);
+      const words = want.split(' ');
+      let close = rooms.filter(r => { const n = norm(r.name) + ' ' + norm(r.id); return words.every(w => n.includes(w)); });
+      // Several match: the one the asking window is in is the one it means.
+      if (close.length > 1 && myWindow) {
+        const mine = new Set([...myWindow].filter(Boolean).map(String));
+        close = close.filter(r => (r.members || []).some(m => mine.has(String(m.card))));
+      }
+      return close.length === 1 ? bridgeDb.getRoom(close[0].id) : null;
+    } catch (_) { return null; }
+  }
+
+  return { resolve, ownerWaiting, windowOf, roomAdmits, findRoom };
 }
 
 module.exports = { createRouter, isHuman, isWindowId };
