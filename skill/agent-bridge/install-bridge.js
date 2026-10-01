@@ -284,7 +284,7 @@ try {
 }
 
 // 4b. Configure SessionStart hook for Claude Code
-console.log('\n[4b/8] Configuring SessionStart hook for Claude Code...');
+console.log('\n[4b/8] Configuring SessionStart hooks for Claude Code...');
 try {
   const briefSource = path.join(SCRIPTS_DIR, 'skill', 'agent-bridge', 'board_brief.py');
   const briefTarget = path.join(SCRIPTS_DIR, 'board_brief.py');
@@ -318,50 +318,53 @@ try {
   if (!parsed) {
     warnCount++;
     console.warn(`  ⚠️ settings.json cannot be read (invalid JSON) — NOT modifying.`);
-    console.warn('     Add the hook manually, JSON is in SKILL.md §5.');
+    console.warn('     Add the hooks by hand: the commands are printed above.');
   } else {
+    // Two SessionStart hooks, one way of installing them. A hook is found by a
+    // word in its command, so an earlier copy at another path is moved here
+    // rather than added twice.
+    //   board_brief    — every session start: who you are on the board, what is new.
+    //   after_compact  — after a compaction only: the slice, last commits, dirty files.
+    const posix = p => p.replace(/\\/g, '/');
+    const wanted = [
+      { needle: 'board_brief', matcher: null,
+        hook: { type: 'command', command: briefCmd } },
+      { needle: 'after_compact', matcher: 'compact',
+        hook: { type: 'command', command: `${pyCmd} "${posix(path.join(SCRIPTS_DIR, 'after_compact.py'))}"`,
+                timeout: 30, statusMessage: 'Context guard: the session slice after compaction' } }
+    ];
     if (!settings.hooks) settings.hooks = {};
     if (!Array.isArray(settings.hooks.SessionStart)) settings.hooks.SessionStart = [];
-
-    // Search for existing board_brief hook
-    let existingEntry = null;
-    let existingHook = null;
-    for (const entry of settings.hooks.SessionStart) {
-      if (entry && Array.isArray(entry.hooks)) {
-        const found = entry.hooks.find(h => h && typeof h.command === 'string' && h.command.includes('board_brief'));
-        if (found) {
-          existingEntry = entry;
-          existingHook = found;
-          break;
-        }
+    let changed = false;
+    for (const w of wanted) {
+      let found = null;
+      for (const entry of settings.hooks.SessionStart) {
+        const h = entry && Array.isArray(entry.hooks)
+          ? entry.hooks.find(x => x && typeof x.command === 'string' && x.command.includes(w.needle)) : null;
+        if (h) { found = { entry, h }; break; }
+      }
+      if (!found) {
+        const entry = { hooks: [Object.assign({}, w.hook)] };
+        if (w.matcher) entry.matcher = w.matcher;
+        settings.hooks.SessionStart.push(entry);
+        console.log(`  ✅ Claude Code hook installed: ${w.needle} — ${w.hook.command}`);
+        changed = true;
+      } else if (JSON.stringify(Object.assign({}, found.h, w.hook)) !== JSON.stringify(found.h) ||
+                 (w.matcher && found.entry.matcher !== w.matcher)) {
+        Object.assign(found.h, w.hook);
+        if (w.matcher) found.entry.matcher = w.matcher;
+        console.log(`  ✅ Claude Code hook updated: ${w.needle} — ${w.hook.command}`);
+        changed = true;
+      } else {
+        console.log(`  ✅ Claude Code hook up to date: ${w.needle}`);
       }
     }
-
-    if (!existingHook) {
+    if (changed) {
       if (fs.existsSync(claudeSettingsPath)) {
         const stamp = new Date().toISOString().replace(/[:.]/g, '-');
         fs.copyFileSync(claudeSettingsPath, `${claudeSettingsPath}.bak-${stamp}`);
       }
-      settings.hooks.SessionStart.push({
-        hooks: [
-          {
-            type: 'command',
-            command: briefCmd
-          }
-        ]
-      });
       fs.writeFileSync(claudeSettingsPath, JSON.stringify(settings, null, 2), 'utf8');
-      console.log(`  ✅ Claude Code SessionStart hook installed (${claudeSettingsPath})`);
-      console.log(`     Hook command: ${briefCmd}`);
-    } else if (existingHook.command !== briefCmd) {
-      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      fs.copyFileSync(claudeSettingsPath, `${claudeSettingsPath}.bak-${stamp}`);
-      existingHook.command = briefCmd;
-      fs.writeFileSync(claudeSettingsPath, JSON.stringify(settings, null, 2), 'utf8');
-      console.log(`  ✅ Claude Code SessionStart hook updated (${claudeSettingsPath})`);
-      console.log(`     New hook command: ${briefCmd}`);
-    } else {
-      console.log(`  ✅ Claude Code SessionStart hook is up to date (${claudeSettingsPath})`);
     }
   }
 } catch (e) {
