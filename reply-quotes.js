@@ -6,7 +6,9 @@
 // A quote must be the parent's own words. One that is not — paraphrased or made
 // up — is worse than none, because it looks authoritative, so the sender is told.
 
-const norm = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+// Markdown marks are left out of the comparison: the board shows bold and code
+// as plain words, and a quote copied from the page has no stars or backticks.
+const norm = s => String(s || '').replace(/[*_`~]+/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 
 function quotedLines(text) {
   return String(text || '').split(/\r?\n/)
