@@ -52,12 +52,28 @@ def get_messages_since(last_id):
     try:
         cur = con.cursor()
         cur.execute("""
-            SELECT id, from_agent, from_session, to_agent, to_session, priority, status, topic, message
+            SELECT id, from_agent, from_session, to_agent, to_session, priority, status, topic, message,
+                   COALESCE(room, '')
             FROM messages
             WHERE id > ?
             ORDER BY id ASC
         """, (last_id,))
         return cur.fetchall()
+    finally:
+        con.close()
+
+
+def room_members(room):
+    # The windows of one room. A message in a room is for them alone, P0 or not:
+    # waking every window for an urgent line in one conversation is the bug this
+    # exists to prevent.
+    con = sqlite3.connect(DB_PATH, timeout=5.0)
+    try:
+        cur = con.cursor()
+        cur.execute("SELECT card FROM room_members WHERE room = ?", (room,))
+        return {r[0] for r in cur.fetchall()}
+    except sqlite3.Error:
+        return None   # no rooms table yet: behave as before rooms
     finally:
         con.close()
 
@@ -269,7 +285,7 @@ def main():
             elif top > last:
                 rows = get_messages_since(last)
                 for r in rows:
-                    i, who, from_sess, to_agent, to_sess, pri, status, topic, body = r
+                    i, who, from_sess, to_agent, to_sess, pri, status, topic, body, room = r
                     who = who or "?"
                     from_sess = (from_sess or "").strip()
                     to_sess = (to_sess or "").strip()
@@ -300,7 +316,13 @@ def main():
                         # let every one of them through.
                         broadcast = (not to_sess) or to_sess == "all"
                         from_human = from_sess.lower().startswith("human")
-                        if broadcast and not from_human and pri != "P0":
+                        # In a room, the room is the audience. A window outside
+                        # it is not woken, whoever wrote and however urgent.
+                        if broadcast and room:
+                            members = room_members(room)
+                            if members is not None and not (members & set(my_window)):
+                                continue
+                        elif broadcast and not from_human and pri != "P0":
                             continue
                     # Session unknown: show everything, directed messages
                     # included. Filtering here would hide exactly the orders

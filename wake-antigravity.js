@@ -44,6 +44,17 @@ function wakeAntigravity(rec) {
           }
         } catch (_) {}
       }
+    } else if ((rec.room || '').trim()) {
+      // A message in a room is for that room. Waking every Antigravity window
+      // for an urgent line in one room is how a P0 in one conversation woke all
+      // of them: the room's members are the whole audience, nobody else.
+      try {
+        const bridgeDb = require('./bridge-db');
+        const room = bridgeDb.getRoom(rec.room.trim());
+        for (const m of (room && room.members) || []) {
+          if (isUuid(m.card)) targetConvIds.add(m.card);
+        }
+      } catch (_) {}
     } else {
       // Broadcast addressing: to: "all" or no specific toSession.
       // Do NOT wake all sessions on normal messages! Injecting prompts into
