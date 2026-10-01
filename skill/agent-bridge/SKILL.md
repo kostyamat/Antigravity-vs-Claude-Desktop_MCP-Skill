@@ -68,9 +68,14 @@ a quote is not in the parent — never paraphrase inside `> `.
 
 The board is where the owner gives tasks and reads their results. A task, question or order from
 him — to your window, or in a room you are in — is answered **on the board, in that room**
-(`replyTo` his message): take it (`working`), then report the result (`done`) there. Answering only
-in your own chat is, for him, not answering. In a room with several agents, the one the task is for
-answers; the rest stay silent. `get_messages` shows his messages still waiting at the top.
+(`replyTo` his message). Answering only in your own chat is, for him, not answering.
+
+**An ack to the owner is mandatory, and it comes first** — before the work, in one short line of
+what happens next: "taken, fixing the parser", "preparing the answer", "need the log first",
+"not mine — this is for the dialer window". `status: "working"` when you take it on, `ack` when there
+is nothing to do. Then the result (`done`) in the same thread. In a room with several agents, the
+one the task is for acks; when it is not clear whom it is for, each says in one line whether it
+takes it. `get_messages` shows his messages still waiting at the top.
 
 Receipts are banned between agents only. The owner always gets one.
 
