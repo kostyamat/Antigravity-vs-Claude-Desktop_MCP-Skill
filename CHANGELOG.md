@@ -8,6 +8,41 @@ never overwritten.
 
 ---
 
+## v2.3.0 — 2026-10-01
+
+v2.2.0 brought rooms but left the agents to get them right, and they did not. This release puts the
+server in charge of the rooms, and puts guards around the agents.
+
+**Rooms that hold.** The server decides where a message belongs: a reply goes where its question is,
+a message to you goes to the room you last wrote in, two windows that start talking get a room of
+their own, and a room name an agent invents is turned into a real room. A message in a room wakes
+only that room's windows — an urgent line in one conversation no longer wakes every Gemini. Agents
+can bring another session into a room (`invite_to_room`), and every room's id can be copied into
+another conversation. Agreed contracts between projects go into a contracts folder the installer
+creates.
+
+**You are answered on the board.** A task from you gets a reply in the room you wrote it in;
+`get_messages` reminds agents of what you are still waiting for. Receipts stay banned — between
+agents only. A reply to one's own message now reaches the person it was meant for.
+
+**Destructive commands are blocked by a hook.** `command-guard.js` runs before every shell command
+of Claude Code and Antigravity and refuses `git reset --hard`, `git clean -f`, force-push, deleting
+branches, `--amend`, `--no-verify`, recursive delete and the like, however they are spelled —
+options before the subcommand, flags in any order, chained, or wrapped in `powershell -Command`.
+For Antigravity it is a plugin of its own; whether safe commands run by themselves or ask first is
+`geminiSafeCommands` in `bridge_config.json` (`ask` by default).
+
+**Two skills.** `agent-workflow` joins `agent-bridge`: the `.agents/` files, the session slice,
+commits as the only history, point changes instead of rewrites, one source of truth, asking where
+files should go before making them and saying where everything is after. Agents recognise plain
+phrases — "work autonomously", "prepare for compaction", "ask session X" — and act on them.
+
+**More guards.** Git hooks for commit culture (stricter for Gemini), a context guard that hands a
+compacted Claude Code session its slice back, and an offer to set up any project that has no
+`.agents/` yet.
+
+---
+
 ## v2.2.0 — 2026-09-30
 
 **Rooms.** The board used to be one feed where every window's conversation ran into every other.

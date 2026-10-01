@@ -231,6 +231,9 @@ And it puts **guards** around every agent:
   order, chained after `&&`, or wrapped in `powershell -Command "…"`. The agent is told to ask you instead.
   For Claude Code it is a `PreToolUse` hook (plus a `permissions.deny` list as a second line); for
   Antigravity, a plugin of its own in `~/.gemini/config/plugins/agent-bridge/` — your own rules are not edited.
+  Antigravity needs an answer for every command, so for the safe ones you choose: `geminiSafeCommands` in
+  `bridge_config.json` — `ask` (the default: Antigravity asks, honouring "Always Allow") or `allow` (they run by
+  themselves, as with auto-execution). Re-run the installer after changing it.
 * In a project without `.agents/`, an agent **offers to set it up** by the agent-workflow skill — once.
   Say no and it leaves `.no-agent-workflow` in the project, and nobody asks again.
 
@@ -488,6 +491,9 @@ MIT.
   `powershell -Command "…"`. Агентові кажуть попросити вас.
   Для Claude Code це хук `PreToolUse` (плюс список `permissions.deny` другою лінією); для Antigravity — власний
   плагін у `~/.gemini/config/plugins/agent-bridge/`, ваші правила не редагуються.
+  Antigravity потребує відповіді на кожну команду, тож для безпечних вибираєте ви: `geminiSafeCommands` у
+  `bridge_config.json` — `ask` (за замовчуванням: Antigravity питає, з урахуванням «Always Allow») або `allow`
+  (виконуються самі, як з автовиконанням). Після зміни запустіть інсталятор ще раз.
 * У проєкті без `.agents/` агент **пропонує навести лад** за скілом agent-workflow — один раз.
   Скажете «ні» — він лишить у проєкті `.no-agent-workflow`, і більше ніхто не питатиме.
 
