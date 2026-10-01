@@ -124,6 +124,27 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
 * **Keeping things apart.** A contract between the player and wDSP lives in their room; sessions of another room
   never load it.
 
+#### What to say to your agents
+
+Plain words are enough — in any language; agents recognise the intent, these are only examples.
+
+| say | the agent |
+|---|---|
+| "work autonomously", "I'm stepping away", "finish it yourself" | rewrites the session slice with the plan and the next step, commits, arms the board watchman, then works through the plan — committing and refreshing the slice after every step, collecting questions instead of waiting, leaving pushes, releases and deletions to you |
+| "prepare for compaction", "save the state", "I'm switching accounts" | rewrites the slice, commits, re-arms the watchman, and says it is ready |
+| "refresh the slice" | rewrites `.agents/HANDOFF.md` |
+| "set up the project", "tidy up the notes" | builds the `.agents/` layout and moves scattered notes into it |
+| "remember this", "this is a rule" | a project rule into `AGENTS.md`, a lasting fact into memory, the state into the slice |
+| "read the board" | reads what is addressed to it and answers you there |
+| "ask session X", "bring in whoever built Y" | finds that window and invites it into the room |
+| "discuss it in room: …", "agree there" | reads that room and answers in it |
+| "agree a contract", "shake hands" | negotiates in the room and files the agreed text in the contracts folder |
+
+**The context guard.** When Claude Code compacts a session, the session forgets what it was doing. A hook
+installed with the bridge (`after_compact.py`) hands it back at once: the project's slice, the last commits and the
+uncommitted files, and what to do next. That is why "work autonomously" starts with rewriting the slice — after a
+compaction it is the only thing the session wakes up to.
+
 ### Installation
 
 Requires **Node.js 22.5+** (built-in SQLite) and **Python 3** in PATH.
@@ -349,6 +370,26 @@ MIT.
   далі; дослідник відповідає з документів кімнати, якщо відповідь там уже є, або досліджує й відповідає, і кладе
   знахідку в документи на наступний раз.
 * **Чуже окремо.** Контракт плеєра з wDSP живе в їхній кімнаті; сесії іншої кімнати його не завантажують.
+
+#### Що казати агентам
+
+Досить звичайних слів, будь-якою мовою; агенти розпізнають намір, це лише приклади.
+
+| скажіть | агент |
+|---|---|
+| «працюй автономно», «я відійшов», «доробиш сам» | переписує зріз сесії з планом і наступним кроком, комітить, піднімає вартового дошки, далі йде за планом — коміт і оновлений зріз після кожного кроку, питання збирає, а не чекає, пуші, релізи й видалення лишає вам |
+| «готуй компакт», «збережи стан», «перемикаю акаунт» | переписує зріз, комітить, перепідіймає вартового й каже, що готово |
+| «онови зріз» | переписує `.agents/HANDOFF.md` |
+| «наведи лад у проєкті», «розклади нотатки» | будує `.agents/` і переносить туди розкидані нотатки |
+| «запам'ятай», «це правило» | правило проєкту — в `AGENTS.md`, стійкий факт — у пам'ять, стан — у зріз |
+| «читай дошку» | читає адресоване йому й відповідає вам там |
+| «спитай сесію X», «поклич того, хто робив Y» | знаходить це вікно й запрошує його в кімнату |
+| «обговоріть у кімнаті room: …», «дійдіть згоди там» | читає ту кімнату й відповідає в ній |
+| «узгодьте контракт», «потисніть руки» | домовляється в кімнаті й кладе узгоджений текст у теку контрактів |
+
+**Сторож контексту.** Коли Claude Code стискає сесію, вона забуває, що робила. Хук, що ставиться з мостом
+(`after_compact.py`), одразу повертає їй зріз проєкту, останні коміти, незакомічені файли й що робити далі. Тому
+«працюй автономно» починається з переписаного зрізу: після стиснення це єдине, з чим сесія прокидається.
 
 ### Встановлення
 
