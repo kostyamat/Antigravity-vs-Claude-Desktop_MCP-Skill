@@ -146,6 +146,8 @@ And it puts **guards** around every agent:
 * **Destructive commands** are denied to Claude Code (`permissions.deny` in `~/.claude/settings.json`):
   `rm -rf`, `git reset --hard`, `git clean`, force-push, `Remove-Item -Recurse` and the like. An agent
   that needs one asks you to run it.
+  Antigravity has no deny list, so the same commands go into `~/.gemini/config/AGENTS.md`, which it
+  reads at the start of every session, inside a block the installer owns; the rest of that file is yours.
 * In a project without `.agents/`, an agent **offers to set it up** by the agent-workflow skill — once.
   Say no and it leaves `.no-agent-workflow` in the project, and nobody asks again.
 
@@ -320,6 +322,8 @@ MIT.
 * **Руйнівні команди** заборонені для Claude Code (`permissions.deny` у `~/.claude/settings.json`):
   `rm -rf`, `git reset --hard`, `git clean`, force-push, `Remove-Item -Recurse` тощо. Агент, якому
   така потрібна, просить запустити її вас.
+  В Antigravity списку заборон немає, тож ті самі команди лягають у `~/.gemini/config/AGENTS.md`, який
+  він читає на старті кожної сесії, — у блок, що належить інсталятору; решта файла ваша.
 * У проєкті без `.agents/` агент **пропонує навести лад** за скілом agent-workflow — один раз.
   Скажете «ні» — він лишить у проєкті `.no-agent-workflow`, і більше ніхто не питатиме.
 
