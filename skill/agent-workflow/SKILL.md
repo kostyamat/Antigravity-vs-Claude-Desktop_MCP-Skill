@@ -49,6 +49,37 @@ into it, do not copy them.
 **"Remember this" · "this is a rule"** — a rule of the project goes into `AGENTS.md`; a fact about
 the user or a lesson learned the hard way goes into memory; the state of the work goes into the slice.
 
+## Where files go
+
+**A project is its folder.** Everything you create for it lives inside it — never next to where an
+input happened to lie, never on the device under test, inside a package, in Downloads, on the
+Desktop or on another drive.
+
+**Work that is not a project goes to the sandbox:** `{{SANDBOX_DIR}}`. One folder per task,
+named by date and task (`2026-10-01-dialer-autocall`), laid out as:
+
+```
+input/   a copy of what you were given — the original is never touched
+work/    whatever you unpack, decompile, try
+out/     the result, and nothing else
+NOTES.md what the task was, what changed (the exact lines), how it was built and verified
+```
+
+If there is no sandbox yet, or the task belongs elsewhere, ask the user where — do not pick a spot.
+
+**The smallest change that does the job.** To make a call skip its confirmation in someone else's
+APK you do not decompile it into a project and rework it: unpack once into `work/`, find the one
+condition, make it true, rebuild, sign. Change one line, not the app.
+
+**One working copy.** No `_v2`, `_final`, `_new`, `_fixed` siblings: when an attempt fails, fix it
+in place or delete it. For more than a step or two, `git init` the task folder — commits are the
+versions.
+
+**Clean up before you report:** failed builds, temporary files, stray copies — inside the task
+folder, never anyone else's files. Then **say where the result is**: the full path of the file in
+`out/`, what changed (the lines before and after), and how to install or check it. A result the
+user has to search for was not delivered.
+
 ## `.agents/` — one purpose per file
 
 | file | what is in it | read | size |
