@@ -621,6 +621,32 @@ for (const skillName of skillNames) {
 }
 if (desktopBundlePaths.length) console.log('    (Upload each via Settings > Capabilities > Skills)');
 
+// 4d. Guards: git hooks that keep history clean, and commands agents may not run.
+console.log('\n[4d/8] Installing guards (git hooks, destructive commands)...');
+try {
+  const guards = require('./install-guards');
+  const h = guards.installGitHooks(path.join(SCRIPTS_DIR, 'git-hooks'));
+  if (!h.ok) {
+    warnCount++;
+    console.warn('  ⚠️ Git hooks not installed: ' + h.why);
+  } else if (h.state === 'kept yours') {
+    console.log('  ✅ Git hooks: your own global hooks stay (' + h.path + ').');
+    console.log('     The bridge hooks are in ' + h.ours + ' if you want to call them from yours.');
+  } else {
+    console.log('  ✅ Git hooks ' + h.state + ': ' + h.path);
+  }
+  const d = guards.installDenyList(path.join(USER_PROFILE, '.claude', 'settings.json'));
+  if (!d.ok) {
+    warnCount++;
+    console.warn('  ⚠️ Claude Code deny list not installed: ' + d.why);
+  } else {
+    console.log('  ✅ Claude Code: destructive commands denied' + (d.added ? ' (' + d.added + ' rules added)' : ' (up to date)'));
+  }
+} catch (e) {
+  warnCount++;
+  console.warn('  ⚠️ Guards not installed: ' + e.message);
+}
+
 // 5. Configure Antigravity IDE
 console.log('\n[5/8] Configuring MCP for Antigravity IDE...');
 const antiMcpConfigPath = path.join(USER_PROFILE, '.gemini', 'config', 'mcp_config.json');

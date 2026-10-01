@@ -1,0 +1,13 @@
+#!/bin/sh
+# prepare-commit-msg: no --amend. Every step is its own return point; rewriting the
+# previous commit destroys one. (git passes "commit" as $2 for --amend, -c and -C.)
+. "$(dirname "$0")/_agent.sh"
+run_local_hook prepare-commit-msg "$@" || exit 1
+
+# With -m, --amend arrives as "message", so the git command line is checked too.
+# This hook also runs under --no-verify, which is why the check lives here.
+if [ "$2" = "commit" ] || git_cmdline | grep -qE '(^|\s)--amend(\s|=|$)'; then
+    echo "✖ --amend (and -c/-C) is not allowed: the previous commit is a return point. Make a new commit with the correction." >&2
+    exit 1
+fi
+exit 0

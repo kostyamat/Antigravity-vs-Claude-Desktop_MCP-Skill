@@ -131,6 +131,34 @@ def _find_window(cli_id):
     return None
 
 
+def workflow_hint(start):
+    """A line asking the agent to offer the agent-workflow layout, or None.
+
+    The project is the nearest folder above the working directory that holds a
+    .git. It follows the layout when it has .agents/AGENTS.md or .agents/HANDOFF.md.
+    An owner who said no leaves .no-agent-workflow in the project root, and is not
+    asked again.
+    """
+    d = os.path.abspath(start or os.getcwd())
+    while True:
+        if os.path.exists(os.path.join(d, ".git")):
+            break
+        parent = os.path.dirname(d)
+        if parent == d:
+            return None
+        d = parent
+    if os.path.exists(os.path.join(d, ".no-agent-workflow")):
+        return None
+    for name in ("AGENTS.md", "HANDOFF.md"):
+        if os.path.exists(os.path.join(d, ".agents", name)):
+            return None
+    return ("This project (%s) does not follow the agent-workflow skill yet: there is no .agents/. "
+            "Tell the owner, in one or two lines, that you have the agent-workflow skill and offer to set "
+            "the project up by it (.agents/AGENTS.md, HANDOFF.md, TODO.md, DEBT.md; move scattered notes "
+            "there). Do it only after he agrees. If he declines, create an empty .no-agent-workflow file "
+            "in the project root so the offer is not repeated." % d)
+
+
 def main():
     if not os.path.exists(DB):
         return 0                       # no bridge on this machine — stay silent
@@ -265,6 +293,10 @@ def main():
                      " keep signing with your own sessionId." % (line, len(line_members), line))
     extra = (', canonicalId:"%s", client:"claude-code"' % window["window"]) if window else ""
     lines.append('Then: get_messages({reader:"%s", sessionId:"%s"%s})' % (ME, sid, extra))
+
+    hint = workflow_hint(os.getcwd())
+    if hint:
+        lines.append(hint)
 
     text = "\n".join(lines)
 

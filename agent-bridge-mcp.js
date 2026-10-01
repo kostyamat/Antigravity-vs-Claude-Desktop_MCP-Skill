@@ -22,6 +22,7 @@ const { spawn } = require('child_process');
 const bridgeDb = require('./bridge-db');
 const cardsLib = require('./cards');
 const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
+const { workflowHint } = require('./workflow-hint');
 const { wakeAntigravity } = require('./wake-antigravity');
 
 const SCRIPTS_DIR  = path.resolve(__dirname);
@@ -1290,6 +1291,8 @@ function doGet(id, a) {
     header.push(`📬 ${reader}${sessTag}: ${unread.length} new` +
       (p0.length ? ` · 🚨 P0: ${p0.map(m => '#' + m.id).join(', ')}` : '') +
       (asks.length ? ` · ❓ awaiting reply: ${asks.map(m => '#' + m.id).join(', ')}` : ''));
+    const hint = workflowHint(a.cwd);
+    if (hint) header.push(hint);
     // The owner works through the board: a task given there is answered there.
     // Silence from every window, while they talk among themselves, is what he
     // reads as being ignored.

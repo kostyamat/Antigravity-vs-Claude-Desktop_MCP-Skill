@@ -1,0 +1,61 @@
+#!/bin/sh
+# commit-msg: a commit is both a return point and the note the next session reads,
+# so its message must say what changed, why, and how it was verified.
+# Installed globally by the bridge installer (git config --global core.hooksPath).
+
+. "$(dirname "$0")/_agent.sh"
+run_local_hook commit-msg "$@" || exit 1
+
+msg_file="$1"
+# Drop comment lines and trailing whitespace; keep the rest in order.
+clean=$(sed -e '/^#/d' -e 's/[[:space:]]*$//' "$msg_file")
+subject=$(printf '%s\n' "$clean" | sed -n '/./{p;q;}')
+
+# Commits git writes itself are not ours to judge.
+case "$subject" in
+    Merge\ *|Revert\ *|fixup!*|squash!*|amend!*) exit 0 ;;
+esac
+
+problems=""
+add() { problems="$problems
+  - $1"; }
+
+# Length in bytes: non-Latin scripts count double, which only makes the check more lenient.
+[ ${#subject} -lt 15 ] && add "subject too short (${#subject} bytes): use \"area: what was done\""
+printf '%s' "$subject" | grep -qiE '^(fix|fixes|fixed|wip|update|updates|test|tmp|minor|changes?)[.!]?$' \
+    && add "junk subject \"$subject\""
+
+# Everything after the first non-empty line (the subject).
+body=$(printf '%s\n' "$clean" | awk 'f{print} /./&&!f{f=1}' | sed '/^$/d')
+lines=$(printf '%s\n' "$body" | sed '/^$/d' | wc -l | tr -d ' ')
+[ -z "$body" ] && lines=0
+[ "$lines" -lt 3 ] && add "body has $lines line(s), at least 3 are needed"
+# The words are matched in English and in Ukrainian, the language the owner
+# writes in. The Ukrainian ones are built from octal bytes: tracked files here
+# stay ASCII, and POSIX printf (unlike dash's) handles octal but not hex.
+why_uk=$(printf '\320\247\320\276\320\274\321\203|\321\207\320\276\320\274\321\203|\320\247\320\236\320\234\320\243|\321\200\320\270\321\207\320\270\320\275|\321\200\320\276\320\261\320\273\320\265\320\274|\320\240\320\230\320\247\320\230\320\235|\320\240\320\236\320\221\320\233\320\225\320\234')
+ver_uk=$(printf '\320\265\321\200\320\265\320\262\321\226\321\200\320\265\320\275|\320\225\320\240\320\225\320\222\320\206\320\240\320\225\320\235')
+printf '%s' "$body" | grep -qiE "why|because|problem|$why_uk" \
+    || add "no \"Why:\" — which problem this solves"
+printf '%s' "$body" | grep -qiE "verified|tested|test plan|checked|$ver_uk" \
+    || add "no \"Verified:\" — build, device, test (for docs: \"Verified: not needed, docs only\")"
+
+[ -z "$problems" ] && exit 0
+
+cat >&2 <<EOF
+
+✖ Commit rejected: the message does not explain the change.$problems
+
+A commit is a return point and the note the next session reads. Format:
+
+  area: what was done (one line)
+
+  What: which files or classes changed, and how.
+  Why: which problem or mismatch this removes.
+  Touches: which subsystems, other projects, contracts.
+  Verified: build / installed on the device / test — and the result.
+  Related: TODO or DEBT items, and what stays open.
+
+Rewrite it: git commit -F <file>  (or git commit -e to open an editor).
+EOF
+exit 1

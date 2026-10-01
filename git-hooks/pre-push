@@ -1,0 +1,21 @@
+#!/bin/sh
+# pre-push: never rewrite or delete published history — it is everyone's return points.
+. "$(dirname "$0")/_agent.sh"
+input=$(cat)
+printf '%s\n' "$input" | run_local_hook pre-push "$@" || exit 1
+
+zero=0000000000000000000000000000000000000000
+fail=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "$local_ref" ] && continue
+    if [ "$local_sha" = "$zero" ]; then
+        echo "✖ Deleting a branch on the server ($remote_ref) is not allowed." >&2; fail=1; continue
+    fi
+    [ "$remote_sha" = "$zero" ] && continue          # a new branch is fine
+    if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+        echo "✖ A force-push to $remote_ref rewrites history. Not allowed: git pull / merge first." >&2; fail=1
+    fi
+done <<EOF
+$input
+EOF
+exit $fail

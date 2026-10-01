@@ -1,0 +1,49 @@
+#!/bin/sh
+# pre-commit: keep the history clean. Everyone: no junk files. Gemini also: a reminder
+# every time, one kind of change per commit, and a repository may forbid it git entirely.
+. "$(dirname "$0")/_agent.sh"
+run_local_hook pre-commit "$@" || exit 1
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+fail=0
+
+# Junk that must never be a return point: logs, dumps, backups, build output.
+junk=$(printf '%s\n' "$staged" | grep -iE '(\.log|\.tmp|\.hprof|\.bak[^/]*|\.orig|\.rej)$|(^|/)logcat[^/]*$|(^|/)(build|\.gradle|captures)/|(^|/)local\.properties$')
+if [ -n "$junk" ]; then
+    echo "✖ Junk in the commit — unstage it (git restore --staged <file>) and add it to .gitignore:" >&2
+    printf '%s\n' "$junk" | sed 's/^/    /' >&2
+    fail=1
+fi
+
+agent=$(detect_agent)
+if [ "$agent" = "gemini" ]; then
+    cat >&2 <<'EOF'
+
+┌─ Gemini: a commit is a return point and the next session's note ─┐
+│  • commit after EVERY verified step, not once an hour             │
+│  • a full message: What / Why / Touches / Verified / Related      │
+│  • code, resources and documentation in separate commits          │
+│  • no --amend; never commit junk (logs, dumps, build/)            │
+└───────────────────────────────────────────────────────────────────┘
+EOF
+    if [ "$(git config --bool hooks.geminiReadOnly)" = "true" ]; then
+        echo "✖ Gemini does not run git operations in this repository (the owner's decision). Claude commits here." >&2
+        exit 1
+    fi
+    # One kind of change per commit: code, resources, docs.
+    kinds=$(printf '%s\n' "$staged" | awk '
+        /\.(java|kt|kts|c|cpp|h|js|ts|py|sh|smali|gradle)$/ {c=1; next}
+        /(^|\/)res\// || /\.xml$/ {r=1; next}
+        /\.md$/ || /(^|\/)docs?\// || /(^|\/)\.agents\// {d=1; next}
+        END { print c+r+d }')
+    if [ "$kinds" -gt 1 ]; then
+        echo "✖ Code, resources and documentation are mixed in one commit. Split it: git restore --staged <files>, one commit per kind." >&2
+        fail=1
+    fi
+    lines=$(git diff --cached --numstat | awk '{s+=$1+$2} END{print s+0}')
+    if [ "$lines" -gt 600 ]; then
+        echo "⚠ $lines changed lines in one commit. A return point should be small — split it into verified steps." >&2
+    fi
+fi
+exit $fail
