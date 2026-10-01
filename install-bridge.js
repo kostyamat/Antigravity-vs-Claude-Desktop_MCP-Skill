@@ -68,6 +68,12 @@ const fingerprints = {
   skill: fingerprintTree(path.join('skill', 'agent-bridge'))
 };
 const lastTime = previousConfig.installedFingerprints || {};
+
+// Where agreed contracts between applications live. Rooms on the board are where
+// they are negotiated; the text both sides shook hands on is filed here, one
+// folder per pair of applications. A machine that already keeps such a folder
+// names it in bridge_config.json (contractsDir) and it is used as it is.
+const CONTRACTS_DIR = previousConfig.contractsDir || path.join(SCRIPTS_DIR, 'contracts');
 // A machine with a config has been installed on before, whatever that install
 // knew about versions. Calling that a first install would be a lie on the one
 // line the human reads to decide whether anything of theirs is at risk.
@@ -183,6 +189,12 @@ try {
       console.log(`  + Created: ${d}`);
     }
   }
+  if (!fs.existsSync(CONTRACTS_DIR)) fs.mkdirSync(CONTRACTS_DIR, { recursive: true });
+  const contractsReadme = path.join(CONTRACTS_DIR, 'README.md');
+  if (!fs.existsSync(contractsReadme)) {
+    fs.copyFileSync(path.join(SCRIPTS_DIR, 'templates', 'CONTRACTS_README.md'), contractsReadme);
+  }
+  console.log(`  ✅ Contracts between applications: ${CONTRACTS_DIR}`);
   console.log('  ✅ Working directories ready.');
 } catch (e) {
   errorCount++;
@@ -369,7 +381,8 @@ const BRIDGE_HOME_POSIX = SCRIPTS_DIR.split(path.sep).join('/');
 function materialise(text) {
   return text
     .split('{{BRIDGE_HOME_POSIX}}').join(BRIDGE_HOME_POSIX)
-    .split('{{BRIDGE_HOME}}').join(SCRIPTS_DIR);
+    .split('{{BRIDGE_HOME}}').join(SCRIPTS_DIR)
+    .split('{{CONTRACTS_DIR}}').join(CONTRACTS_DIR);
 }
 
 const BS = String.fromCharCode(92);
@@ -745,6 +758,7 @@ try {
   cfg.installedVersion = VERSION || cfg.installedVersion || '';
   cfg.installedAt = new Date().toISOString();
   cfg.installedFingerprints = fingerprints;
+  cfg.contractsDir = CONTRACTS_DIR;
   if (roomsFromHistoryDone) cfg.roomsFromHistory = roomsFromHistoryDone;
   fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf8');
   console.log(`  ✅ Config saved (Administrator: ${cfg.adminName || 'Not configured'}, Port: ${cfg.uiPort}` +

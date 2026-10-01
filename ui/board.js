@@ -187,6 +187,14 @@ $('#roomDelete').onclick = async () => {
   await load(true);
 };
 $('#roomDocs').onclick = () => { DOC_ROOM = ROOM; showPanel('docs'); };
+// The id is what an agent reads a room by. Pasted into another conversation it
+// says "discuss it there".
+$('#roomCopy').onclick = () => {
+  const b = $('#roomCopy');
+  navigator.clipboard.writeText('room: ' + ROOM)
+    .then(() => { b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy id'; }, 1200); })
+    .catch(() => { b.textContent = ROOM; });
+};
 $('#newRoom').onclick = () => {
   showPanel('windows');
   $('#winFilter').focus();

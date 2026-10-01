@@ -796,6 +796,25 @@ const TOOLS = [
     }
   },
   {
+    name: 'invite_to_room',
+    description:
+      'Bring another window into a room you are in — when a conversation needs someone it does not have: ' +
+      'the session that owns the other side of an API, a researcher, a project the decision will touch. ' +
+      'The window becomes a member, is woken, and is told to read the room (its documents and history) ' +
+      'before answering. Find the window with list_cards; invite by its card id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        room: { type: 'string', description: 'Room id (from list_rooms or the board).' },
+        card: { type: 'string', description: 'Card id of the window to bring in (from list_cards).' },
+        why: { type: 'string', description: 'What it is needed for — the first thing it reads.' },
+        sender: { type: 'string', description: '"Claude" or "Gemini".' },
+        sessionId: { type: 'string', description: 'Your session id.' }
+      },
+      required: ['room', 'card', 'why']
+    }
+  },
+  {
     name: 'list_rooms',
     description:
       'The rooms of the signed-in Claude account, most recently used first, with their members and message counts. ' +
@@ -901,6 +920,7 @@ function handleRequest(req) {
     if (toolName === 'list_cards') return doListCards(id, args);
     if (toolName === 'create_room') return doCreateRoom(id, args);
     if (toolName === 'list_rooms') return doListRooms(id, args);
+    if (toolName === 'invite_to_room') return doInviteToRoom(id, args);
   } catch (err) {
     logError(`${toolName}: ${err.stack || err.message}`);
     return fail(id, `${toolName} failed: ${err.message}`);
@@ -909,9 +929,6 @@ function handleRequest(req) {
   fail(id, `Tool not found: ${toolName}`);
 }
 
-// The room a message belongs to. An explicit one wins. Otherwise: the window
-// this session runs in, and the window it is writing to, are looked up among the
-// rooms; one room shared by both is the answer, none or several means silence.
 // The rules live in room-routing.js, the one place that decides which room a
 // message or a document belongs in.
 function resolveRoom(a, toSession, toAgent, replyTo) {
@@ -955,6 +972,27 @@ function doListCards(id, a) {
   ok(id, `Windows touched in the last ${hours}h (account ${cardsLib.currentAccount() || '—'}):\n` +
          lines.join('\n') +
          '\n\nAddress by the id, show the name to the human.');
+}
+
+// A conversation that needs someone it does not have. The invited window joins
+// the room and is woken by a message addressed to it, in the room, so it reads
+// the history and the room's documents instead of being briefed from scratch.
+function doInviteToRoom(id, a) {
+  const room = bridgeDb.getRoom(String(a.room || '').trim());
+  if (!room) return fail(id, `invite_to_room: no room "${a.room}" — see list_rooms.`);
+  const card = String(a.card || '').trim();
+  if (!card) return fail(id, 'invite_to_room: `card` is required — see list_cards.');
+  const known = cardsLib.allCards({ names: boardNames() }).find(c => c.id === card);
+  const agent = (known && known.agent) || (/^local_/.test(card) ? 'Claude' : 'Gemini');
+  bridgeDb.addRoomMember(room.id, card, agent);
+  const from = normAgent(a.sender) || 'Claude';
+  return doPost(id, {
+    sender: from, sessionId: a.sessionId || '', canonicalId: a.canonicalId || '',
+    room: room.id, to: agent, toSession: card, status: 'question',
+    message: `You are invited to the room "${room.name}" (${room.id}). ${String(a.why || '').trim()}\n\n` +
+             `Read it first: get_messages({room: "${room.id}", only: "all"}) and list_docs({room: "${room.id}"}). ` +
+             `Answer here, in this room.`
+  });
 }
 
 function doCreateRoom(id, a) {
@@ -1140,7 +1178,12 @@ function doPost(id, a) {
   // wake only for something that actually asks.
   const toAgentOnly = (rec.to === 'Claude' || rec.to === 'Gemini') && WAKING_STATUSES.includes(status);
 
-  if (priority === 'P0' || rollCall || toOneSession || toAgentOnly) {
+  // A room is an audience chosen on purpose. A question, a blocker or a result
+  // posted to it wakes its windows — that is how a researcher in a debug room
+  // learns there is something to look into. The waker limits it to the room.
+  const toRoom = Boolean(rec.room) && WAKING_STATUSES.includes(status);
+
+  if (priority === 'P0' || rollCall || toOneSession || toAgentOnly || toRoom) {
     raiseTargetEnvironment(rec);
     wakeAntigravity(rec);
   }

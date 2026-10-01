@@ -322,6 +322,11 @@ def main():
                             members = room_members(room)
                             if members is not None and not (members & set(my_window)):
                                 continue
+                            # Inside the room: the owner always, an agent when it
+                            # asks, is stuck, answers or finishes — not for notes.
+                            if not from_human and pri != "P0" and \
+                                    (status or "") not in ("question", "blocked", "answer", "done"):
+                                continue
                         elif broadcast and not from_human and pri != "P0":
                             continue
                     # Session unknown: show everything, directed messages
