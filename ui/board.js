@@ -85,10 +85,20 @@ function addresseeName(m) {
 }
 function short(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s; }
 
-// Agents write Markdown. Two marks carry most of the meaning — code and bold —
-// and the rest reads fine as plain text.
+// Agents write Markdown. Three marks carry most of the meaning — a quote, code
+// and bold — and the rest reads fine as plain text. A run of `> ` lines is the
+// point of the parent this reply answers, set apart so the answer reads under it.
 function richText(s) {
-  return esc(s)
+  const out = [];
+  let quote = null;
+  for (const line of esc(s).split('\n')) {
+    const q = /^\s*&gt;\s?(.*)$/.exec(line);
+    if (q) { (quote = quote || []).push(q[1]); continue; }
+    if (quote) { out.push('<span class="quote">' + quote.join('\n') + '</span>' + line); quote = null; continue; }
+    out.push(line);
+  }
+  if (quote) out.push('<span class="quote">' + quote.join('\n') + '</span>');
+  return out.join('\n')
     .replace(/`([^`\n]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
 }
@@ -263,7 +273,7 @@ $('#winNewRoom').onclick = async () => {
   const suggested = cards.map(c => short(windowName(c), 28)).join(' + ');
   const name = prompt('Name the room', suggested);
   if (name == null) return;
-  const j = await post('/api/room/create', { name: name.trim() || suggested, cards });
+  const j = await post('/api/room/create', { name: name.trim() || suggested, cards, from: ME });
   if (j.error) { alert(j.error); return; }
   await loadRooms();
   showPanel('rooms');
@@ -271,7 +281,7 @@ $('#winNewRoom').onclick = async () => {
 };
 $('#winAddHere').onclick = async () => {
   const r = roomById(ROOM); if (!r) return;
-  for (const card of pickedWindows()) await post('/api/room/add', { id: r.id, card });
+  for (const card of pickedWindows()) await post('/api/room/add', { id: r.id, card, from: ME });
   await loadRooms();
   renderWindows();
 };
@@ -445,13 +455,26 @@ $('#feed').addEventListener('click', e => {
   if (!act) return;
   const id = Number(act.closest('.msg').dataset.id);
   const m = DATA.find(x => x.id === id); if (!m) return;
-  if (act.dataset.act === 'reply') startReply(m);
+  if (act.dataset.act === 'reply') startReply(m, SELECTED && SELECTED.id === id ? SELECTED.text : '');
   if (act.dataset.act === 'edit') startEdit(m);
   if (act.dataset.act === 'copy') {
     navigator.clipboard.writeText(m.text).then(() => { act.textContent = 'Copied'; setTimeout(() => { act.textContent = 'Copy'; }, 1200); })
       .catch(() => { act.textContent = 'Not copied'; });
   }
 });
+
+// Text selected in a message when Reply is pressed becomes the quote the reply
+// starts with: the owner answers one point of a long message, not all of it.
+// Taken on mousedown, before the click can clear the selection.
+let SELECTED = null;
+document.addEventListener('mousedown', e => {
+  const b = e.target.closest && e.target.closest('[data-act="reply"]');
+  if (!b) return;
+  const sel = window.getSelection(), msg = b.closest('.msg');
+  const text = sel ? String(sel).trim() : '';
+  const inside = text && sel.anchorNode && msg.querySelector('.msg-text').contains(sel.anchorNode);
+  SELECTED = inside ? { id: Number(msg.dataset.id), text } : null;
+}, true);
 
 function focusMessage(id) {
   const m = DATA.find(x => x.id === id);
@@ -535,8 +558,13 @@ $('#chips').addEventListener('click', e => {
   renderChips();
 });
 
-function startReply(m) {
+function startReply(m, quote) {
   EDIT = null; REPLY = m;
+  if (quote) {
+    const t = $('#text');
+    t.value = quote.split(/\r?\n/).map(l => '> ' + l).join('\n') + '\n\n' + t.value.replace(/^\s+/, '');
+    grow();
+  }
   if (!isHuman(m) && m.fromSession) {
     const v = 'card:' + m.fromSession + '|' + m.from;
     const sel = $('#to');

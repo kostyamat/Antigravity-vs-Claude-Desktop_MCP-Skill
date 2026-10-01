@@ -144,7 +144,8 @@ function wakeAntigravity(rec) {
       `Read it with get_messages. Act on it if it is yours. ` +
       (fromOwner
         ? `This is from the owner: if it is for you, answer him on the board with replyTo #${rec.id} - ` +
-          `say you are on it, then report the result there, not only in this chat.`
+          `say you are on it, then report the result there, not only in this chat. ` +
+          `Quote the point you answer with a "> " line and answer that point, not the whole message.`
         : `Do not reply to acknowledge - a receipt wakes the sender for nothing.`);
     const lsExe = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'antigravity', 'resources', 'bin', 'language_server.exe');
 

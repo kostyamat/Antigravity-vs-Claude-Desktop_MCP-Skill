@@ -181,6 +181,7 @@ code { font-family: var(--mono); font-size: .92em; }
 .msg-text { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 90ch; }
 .msg-text.clip { max-height: 15em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
 .msg-text code { background: var(--hover); padding: 0 3px; border-radius: 3px; }
+.msg-text .quote { display: block; border-left: 2px solid var(--line); padding-left: 10px; color: var(--ink-2); margin: 2px 0; }
 .more { border: 0; background: none; color: var(--accent); padding: 2px 0; font-size: 12.5px; }
 .msg img { display: block; max-width: min(420px, 100%); border-radius: var(--radius); margin-top: 6px; cursor: zoom-in; border: 1px solid var(--line); }
 .msg-tools {

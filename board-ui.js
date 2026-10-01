@@ -24,6 +24,7 @@ const bridgeDb = require('./bridge-db');
 const cardsLib = require('./cards');
 const archiver = require('./room-archive').createArchiver(bridgeDb, path.resolve(__dirname));
 const { wakeAntigravity } = require('./wake-antigravity');
+const { inviteText } = require('./room-invite');
 
 const SCRIPTS_DIR = path.resolve(__dirname);
 const LOG_FILE = path.join(SCRIPTS_DIR, 'board_ui_stderr.log');
@@ -227,6 +228,19 @@ function apiPost(data) {
 
   wakeAntigravity(rec);
   return { ok: true, id: nextId };
+}
+
+// A window put in a room is told so at once, in the room, addressed to it: the
+// message wakes it (Antigravity through the waker, Claude through its watchman)
+// and carries the calls that bring it in. Adding a member and saying nothing
+// left the owner to carry the room id to the window by hand.
+function inviteFromOwner(owner, room, card, known) {
+  const agent = (known && known.agent) || (/^local_/.test(card) ? 'Claude' : 'Gemini');
+  return apiPost({
+    from: String(owner || '').trim() || 'Owner',
+    room: room.id, to: agent, toSession: card, status: 'question',
+    text: inviteText(room, { name: (known && known.name) || '', card })
+  });
 }
 
 function apiEdit(data) {
@@ -492,9 +506,14 @@ const server = http.createServer((req, res) => {
           const known = new Map(cardsLib.allCards({}).map(c => [c.id, c]));
           const members = cards.map(c => ({ card: c, agent: (known.get(c) || {}).agent || '' }));
           out = bridgeDb.createRoom(d.name || 'room', members, cardsLib.currentAccount() || '');
+          if (out && out.id) {
+            for (const m of members) inviteFromOwner(d.from, out, m.card, known.get(m.card));
+          }
         } else if (what === 'add') {
           const known = new Map(cardsLib.allCards({}).map(c => [c.id, c]));
           out = bridgeDb.addRoomMember(d.id, d.card, (known.get(d.card) || {}).agent || d.agent || '');
+          const room = bridgeDb.getRoom(String(d.id || ''));
+          if (room) inviteFromOwner(d.from, room, d.card, known.get(d.card));
         } else if (what === 'remove') {
           out = bridgeDb.removeRoomMember(d.id, d.card);
         } else if (what === 'rename') {

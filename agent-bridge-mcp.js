@@ -25,6 +25,8 @@ const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
 const { workflowHint } = require('./workflow-hint');
 const { pendingP0 } = require('./p0');
 const { wakeAntigravity } = require('./wake-antigravity');
+const { inviteText } = require('./room-invite');
+const { checkQuotes } = require('./reply-quotes');
 
 const SCRIPTS_DIR  = path.resolve(__dirname);
 const BRIDGE_FILE  = path.join(SCRIPTS_DIR, 'agent_bridge.json');
@@ -517,6 +519,9 @@ const TOOLS = [
       'MANDATORY fields: `sender`, `sessionId` (your session identifier), and `message`; empty calls are rejected. ' +
       'If replying to an existing message — ALWAYS set `replyTo: #N`. When `replyTo` is provided, `to`, `toSession`, ' +
       'and `topic` are automatically inherited from the parent message to maintain thread continuity. ' +
+      'A reply quotes the thesis it answers: a `> ` line copied word for word from the parent, then the answer to it; ' +
+      'one quote per point, so the reader never guesses which point a paragraph is about. Quoting narrows the ' +
+      'reply: answer only the quoted points, briefly — a long message does not call for a long answer. ' +
       'If starting a new topic — explicitly specify `to`, `toSession`, and `topic`. ' +
       'Urgent tasks must use `priority: "P0"`, and the message must explain what needs immediate attention or halt. ' +
       'Report execution state with `status`: `working` (in progress; provide `progress` indicating current step), ' +
@@ -960,9 +965,7 @@ function doInviteToRoom(id, a) {
   return doPost(id, {
     sender: from, sessionId: a.sessionId || '', canonicalId: a.canonicalId || '',
     room: room.id, to: agent, toSession: card, status: 'question',
-    message: `You are invited to the room "${room.name}" (${room.id}). ${String(a.why || '').trim()}\n\n` +
-             `Read it first: get_messages({room: "${room.id}", only: "all"}) and list_docs({room: "${room.id}"}). ` +
-             `Answer here, in this room.`
+    message: inviteText(room, { name: (known && known.name) || '', card, why: a.why })
   });
 }
 
@@ -1097,6 +1100,23 @@ function doPost(id, a) {
   const routed = resolveRoom(a, toSession, toAgent, replyTo);
   const room = routed.room;
 
+  // A reply names the thesis it answers, in the parent's own words.
+  let quoteHint = '';
+  if (replyTo) {
+    const parent = bridgeDb.getMessageById(replyTo);
+    if (parent) {
+      let parentText = parent.message || '';
+      try { if (parent.file && /\.md$/i.test(parent.file)) parentText = fs.readFileSync(parent.file, 'utf8'); } catch (_) {}
+      const q = checkQuotes(text, parentText);
+      if (q.foreign.length) {
+        quoteHint = `⚠️ not in #${replyTo} word for word: ${q.foreign.map(x => '"' + x.slice(0, 60) + '"').join(', ')} — ` +
+                    'a quote is copied from the parent, never paraphrased';
+      } else if (!q.quotes && parentText.length > 400 && status !== 'ack') {
+        quoteHint = `ℹ️ #${replyTo} is long — quote the point you answer with a \`> \` line and answer only that`;
+      }
+    }
+  }
+
   const rec = {
     ts: new Date().toISOString(),
     from,
@@ -1164,6 +1184,7 @@ function doPost(id, a) {
   }
 
   const hints = [];
+  if (quoteHint) hints.push(quoteHint);
   if (routed.opened) hints.push(`🚪 opened room "${routed.opened.name}" (${routed.opened.id}) for this conversation — the human reads the board by rooms`);
   if (demoted) hints.push(`ℹ️ P0 lowered to normal — a \`${status}\` is not an emergency, so nobody was woken`);
   if (!rec.fromSession) hints.push('⚠️ `sessionId` not specified — recipient will not know which session to reply to');
