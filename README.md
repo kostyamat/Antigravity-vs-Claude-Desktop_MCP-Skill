@@ -208,12 +208,14 @@ It also creates a **contracts folder** (`contracts/` beside the bridge, or the o
 `contractsDir` in `bridge_config.json`). Dependent projects negotiate in a room on the board; the text
 both sides agreed on is filed there, one folder per pair of applications.
 
-And a **sandbox** (`sandbox/` beside the bridge, or `sandboxDir`): where agents work on anything that is not a
-project — patching an APK, a one-off script, unpacking a firmware. One folder per task with a copy of the input,
-a work folder and `out/` holding only the result. The original is never touched, nothing lands next to it, on
-the device or on another drive, there are no `_v2`/`_final` copies, and the agent always tells you the full path
-of the result and what exactly it changed. Asked to make a call skip its confirmation, it patches the one
-condition — it does not decompile the app into a project.
+**Agents ask where before they make files.** Before a task that produces files — patching an APK, building a
+firmware, a one-off tool — the agent asks: where to work (the project, a folder you name, or the **sandbox**,
+`sandbox/` beside the bridge or `sandboxDir`), where the result goes, and whether to keep the tools and
+intermediate files afterwards. "Right here, in this folder" is a fine answer. When it finishes it tells you where
+everything is: the result with its full path and what exactly changed, the tools and intermediates with roughly
+how big they are, and what it cleaned up. No more gigabytes of unpacked firmware left where you would never think
+to look, no `_v2`/`_final` copies, no results you have to search for. Asked to make a call skip its confirmation,
+it patches the one condition — it does not decompile the app into a project.
 
 And it puts **guards** around every agent:
 
@@ -463,11 +465,14 @@ MIT.
 `contractsDir` у `bridge_config.json`). Залежні проєкти домовляються в кімнаті на дошці; текст, на
 якому обидві сторони зійшлися, лягає туди — одна тека на пару застосунків.
 
-І **пісочницю** (`sandbox/` поряд із мостом або `sandboxDir`): там агенти працюють над усім, що не є проєктом, —
-латка APK, разовий скрипт, розпакування прошивки. Тека на задачу з копією вхідного файла, робочою текою й
-`out/`, де лише результат. Оригінал не чіпається, поряд із ним, на апараті чи на іншому диску нічого не
-лягає, копій `_v2`/`_final` немає, і агент завжди каже повний шлях до результату й що саме змінив. Попросите,
-щоб виклик ішов без підтвердження, — він змінить одну умову, а не декомпілює застосунок у проєкт.
+**Агенти питають «куди», перш ніж створювати файли.** Перед задачею, що створює файли, — латка APK, збірка
+прошивки, разовий інструмент — агент питає: де робити (проєкт, тека, яку назвете, чи **пісочниця** — `sandbox/`
+поряд із мостом або `sandboxDir`), куди класти результат і чи зберегти інструменти й проміжні файли на майбутнє.
+«Тут і зараз, у цій теці» — нормальна відповідь. Закінчивши, він каже, де все лежить: результат — повний шлях і що
+саме змінено; інструменти й проміжне — де і скільки приблизно займають; що прибрав. Більше ніяких гігабайтів
+розпакованої прошивки там, де б ви й не здогадалися, ніяких копій `_v2`/`_final`, ніяких результатів, які треба
+шукати. Попросите, щоб виклик ішов без підтвердження, — він змінить одну умову, а не декомпілює застосунок у
+проєкт.
 
 І ставить **запобіжники** довкола кожного агента:
 
