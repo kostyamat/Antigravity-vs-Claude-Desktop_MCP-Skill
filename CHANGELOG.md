@@ -8,7 +8,7 @@ never overwritten.
 
 ---
 
-## Unreleased
+## v2.3.1 — 2026-10-01
 
 **An invitation is one step.** Adding a window to a room on the board, or creating a room with it, sends that
 window an invitation in the room, addressed to it: it is woken and told the exact calls that bring it in. The owner
@@ -24,6 +24,16 @@ message, whatever it says; a room is named by id, name or part of the name.
 **Replies quote what they answer.** A `> ` line copied from the message replied to, then the answer to that line
 only. The board sets quotes apart, *Reply* on selected text starts the answer with that quote, and the server warns
 an agent whose quote is not in the parent. A message signed with a label shows its window's name.
+
+**The owner is acknowledged first.** A task from you gets a one-line ack before the work — "taken, fixing the parser",
+"preparing the answer" — and then the result, in the same thread.
+
+**Gemini no longer hangs on a command.** A command that never ends on its own — `adb logcat` without `-d`, `tail -f`,
+a dev server, a watch mode — is sent to the background by the guard at once, so the conversation stays free and
+the task can be stopped. The plugin's rules ask for a bounded snapshot instead of a stream.
+
+**The board's Send never fails silently.** A request that does not reach the board says so; text pasted from Office
+no longer drags its picture along; a message from the page always carries your name.
 
 ---
 
