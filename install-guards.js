@@ -111,7 +111,7 @@ function writeIfChanged(file, text) {
   return true;
 }
 
-function installGeminiPlugin(geminiConfigDir, bridgeDir, nodePath, sandboxDir) {
+function installGeminiPlugin(geminiConfigDir, bridgeDir, nodePath, sandboxDir, safeCommands) {
   const dir = path.join(geminiConfigDir, 'plugins', 'agent-bridge');
   const guard = path.join(bridgeDir, 'command-guard.js');
   // Antigravity runs a hook as `cmd /c <command>` and escapes every quote in it
@@ -120,7 +120,8 @@ function installGeminiPlugin(geminiConfigDir, bridgeDir, nodePath, sandboxDir) {
   // release did exactly that and blocked every command Gemini ran. The command
   // therefore carries no quotes and no path at all: a launcher beside
   // hooks.json, which is where a hook's working directory is, holds them.
-  const launcher = '@echo off\r\n"' + nodePath + '" "' + guard + '"\r\n';
+  const safe = safeCommands === 'allow' ? 'allow' : 'ask';
+  const launcher = '@echo off\r\nset AGENT_BRIDGE_SAFE_COMMANDS=' + safe + '\r\n"' + nodePath + '" "' + guard + '"\r\n';
   const hooks = {
     'agent-bridge-guard': {
       PreToolUse: [{

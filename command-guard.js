@@ -141,7 +141,14 @@ function main(input) {
   if (p.toolCall) {                                   // Antigravity
     const line = (p.toolCall.args || {}).CommandLine || (p.toolCall.args || {}).commandLine || '';
     const hit = judge(line);
-    return JSON.stringify(hit ? { decision: 'deny', reason: reasonFor(hit) } : {});
+    if (hit) return JSON.stringify({ decision: 'deny', reason: reasonFor(hit) });
+    // Antigravity requires a decision for every call: {} reads as a denial with
+    // no reason, and every command fails (tested on the board, #1008). So a
+    // command the guard has nothing against gets the owner's choice, set at
+    // install time: "ask" (Antigravity asks, honouring "Always Allow") or
+    // "allow" (it runs, as with auto-execution on). "ask" unless told otherwise:
+    // a guard must never quietly loosen someone's review setting.
+    return JSON.stringify({ decision: process.env.AGENT_BRIDGE_SAFE_COMMANDS === 'allow' ? 'allow' : 'ask' });
   }
   if (p.tool_input) {                                 // Claude Code
     const hit = judge(p.tool_input.command || '');

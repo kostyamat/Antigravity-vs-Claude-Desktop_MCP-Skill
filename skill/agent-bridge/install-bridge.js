@@ -661,8 +661,12 @@ try {
   const ch = guards.installClaudeGuardHook(path.join(USER_PROFILE, '.claude', 'settings.json'), process.execPath, SCRIPTS_DIR);
   if (!ch.ok) { warnCount++; console.warn('  ⚠️ Claude Code guard hook not installed: ' + ch.why); }
   else console.log('  ✅ Claude Code: command guard hook ' + (ch.changed ? 'installed' : 'up to date') + ' (PreToolUse on Bash and PowerShell)');
-  const g = guards.installGeminiPlugin(path.join(USER_PROFILE, '.gemini', 'config'), SCRIPTS_DIR, process.execPath, SANDBOX_DIR);
+  // What the guard answers for a command it has nothing against: "ask" (the
+  // default) or "allow" — bridge_config.json, geminiSafeCommands.
+  const g = guards.installGeminiPlugin(path.join(USER_PROFILE, '.gemini', 'config'), SCRIPTS_DIR, process.execPath,
+    SANDBOX_DIR, previousConfig.geminiSafeCommands);
   console.log('  ✅ Antigravity: plugin with the command guard ' + (g.changed ? 'installed' : 'up to date') + ' -> ' + g.dir);
+  console.log('     Safe commands: ' + (previousConfig.geminiSafeCommands === 'allow' ? 'allowed' : 'Antigravity asks (set geminiSafeCommands to "allow" to run them without asking)'));
 } catch (e) {
   warnCount++;
   console.warn('  ⚠️ Guards not installed: ' + e.message);
