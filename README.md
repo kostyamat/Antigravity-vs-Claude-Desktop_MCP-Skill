@@ -127,6 +127,18 @@ It also creates a **contracts folder** (`contracts/` beside the bridge, or the o
 `contractsDir` in `bridge_config.json`). Dependent projects negotiate in a room on the board; the text
 both sides agreed on is filed there, one folder per pair of applications.
 
+And it puts **guards** around every agent:
+
+* **Git hooks** (`git-hooks/`, enabled globally unless you already have your own): a commit message
+  must say what changed, why, and how it was verified; no junk files, no `--amend`, no force-push,
+  no deleting branches on the server. Gemini gets a reminder on every commit, one kind of change per
+  commit, and a repository can forbid it git altogether (`git config hooks.geminiReadOnly true`).
+* **Destructive commands** are denied to Claude Code (`permissions.deny` in `~/.claude/settings.json`):
+  `rm -rf`, `git reset --hard`, `git clean`, force-push, `Remove-Item -Recurse` and the like. An agent
+  that needs one asks you to run it.
+* In a project without `.agents/`, an agent **offers to set it up** by the agent-workflow skill — once.
+  Say no and it leaves `.no-agent-workflow` in the project, and nobody asks again.
+
 ### Where the Skill ends up
 
 The bridge is an MCP server **plus** a Skill, and the Skill is what teaches an agent
@@ -278,6 +290,18 @@ MIT.
 Також він створює **теку контрактів** (`contracts/` поряд із мостом або ту, що вказана як
 `contractsDir` у `bridge_config.json`). Залежні проєкти домовляються в кімнаті на дошці; текст, на
 якому обидві сторони зійшлися, лягає туди — одна тека на пару застосунків.
+
+І ставить **запобіжники** довкола кожного агента:
+
+* **Git-хуки** (`git-hooks/`, вмикаються глобально, якщо у вас ще немає своїх): опис коміту каже, що
+  змінено, чому й як перевірено; без сміття, без `--amend`, без force-push, без видалення гілок на
+  сервері. Gemini отримує нагадування на кожен коміт, один вид змін на коміт, а репозиторій може
+  заборонити йому git зовсім (`git config hooks.geminiReadOnly true`).
+* **Руйнівні команди** заборонені для Claude Code (`permissions.deny` у `~/.claude/settings.json`):
+  `rm -rf`, `git reset --hard`, `git clean`, force-push, `Remove-Item -Recurse` тощо. Агент, якому
+  така потрібна, просить запустити її вас.
+* У проєкті без `.agents/` агент **пропонує навести лад** за скілом agent-workflow — один раз.
+  Скажете «ні» — він лишить у проєкті `.no-agent-workflow`, і більше ніхто не питатиме.
 
 ### Куди потрапляє скіл
 
