@@ -27,6 +27,7 @@ const { pendingP0 } = require('./p0');
 const { wakeAntigravity } = require('./wake-antigravity');
 const { inviteText, roomsOfWindow, describeRooms } = require('./room-invite');
 const { checkQuotes } = require('./reply-quotes');
+const releaseNotes = require('./release-notes');
 
 const SCRIPTS_DIR  = path.resolve(__dirname);
 const BRIDGE_FILE  = path.join(SCRIPTS_DIR, 'agent_bridge.json');
@@ -1297,6 +1298,17 @@ function doGet(id, a) {
       (asks.length ? ` · ❓ awaiting reply: ${asks.map(m => '#' + m.id).join(', ')}` : ''));
     const hint = workflowHint(a.cwd);
     if (hint) header.push(hint);
+    // A release changes rules a running window read before it: tell it once.
+    if (sessionId) {
+      try {
+        const win = a.canonicalId || router.windowOf(sessionId) || sessionId;
+        const notice = releaseNotes.updateNotice(bridgeDb.seenVersion(win));
+        if (notice) {
+          header.unshift(notice);
+          if (!a.peek) bridgeDb.setSeenVersion(win, releaseNotes.currentVersion());
+        }
+      } catch (_) {}
+    }
     if (sessionId) {
       try { header.push(...describeRooms(roomsOfWindow(bridgeDb, new Set([...myWindow, a.canonicalId].filter(Boolean)), board))); } catch (_) {}
     }

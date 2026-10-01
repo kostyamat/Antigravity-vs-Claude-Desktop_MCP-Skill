@@ -203,6 +203,16 @@ function initSchema(db) {
   try {
     db.exec("ALTER TABLE messages ADD COLUMN room TEXT DEFAULT ''");
   } catch (_) {}
+  // The bridge version each window has been told about. A session reads the
+  // skill once, at its start, and keeps that copy for its whole life: a new
+  // release changes files it will never look at again. See release-notes.js.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS window_versions (
+      window TEXT PRIMARY KEY,
+      version TEXT NOT NULL,
+      seen_at TEXT
+    );
+  `);
   // A document is written by one window for another, so it belongs behind the
   // same door as the conversation that produced it. Without this the documents
   // of a thread scatter and are found again only by whoever remembers the topic.
@@ -1320,6 +1330,19 @@ function roomsOfCard(card) {
     .all(String(card)).map(r => r.room);
 }
 
+function seenVersion(window) {
+  if (!window) return '';
+  const r = getDb().prepare('SELECT version FROM window_versions WHERE window = ?').get(String(window));
+  return r ? r.version : '';
+}
+
+function setSeenVersion(window, version) {
+  if (!window || !version) return;
+  getDb().prepare('INSERT INTO window_versions (window, version, seen_at) VALUES (?, ?, ?) ' +
+    'ON CONFLICT(window) DO UPDATE SET version = excluded.version, seen_at = excluded.seen_at')
+    .run(String(window), String(version), new Date().toISOString());
+}
+
 module.exports = {
   DB_PATH,
   getDb,
@@ -1353,5 +1376,7 @@ module.exports = {
   readRooms,
   renameRoom,
   touchRoom,
-  roomsOfCard
+  roomsOfCard,
+  seenVersion,
+  setSeenVersion
 };
