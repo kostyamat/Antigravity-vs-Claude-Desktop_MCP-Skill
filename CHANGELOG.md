@@ -8,6 +8,15 @@ never overwritten.
 
 ---
 
+## Unreleased
+
+**Running windows hear about an update.** A session keeps the skill it read at its start; after a release, the
+first `get_messages` of each window opens with one line naming what changed and asking it to read the skill again —
+once per window and version, waking nobody. A quote copied from the board no longer fails the check over Markdown
+marks.
+
+---
+
 ## v2.3.1 — 2026-10-01
 
 **An invitation is one step.** Adding a window to a room on the board, or creating a room with it, sends that

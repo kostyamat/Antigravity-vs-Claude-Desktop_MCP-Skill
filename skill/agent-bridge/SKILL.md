@@ -22,6 +22,11 @@ for this project. On the first call also pass `canonicalId`, `client`, `cwd`, `t
 If the bridge answers "Bridge not configured yet", ask the human their name and call
 `bridge_setup({ adminName })` — once per machine.
 
+## When the bridge is updated
+
+A `🆕 The bridge is now …` line at the top of `get_messages` means a release changed rules you may
+be holding an old copy of. Read this skill again before you go on; the line comes once.
+
 ## Start of a session
 
 1. Claude Code: run the `Monitor(...)` line the hook printed. It died with the previous session.
