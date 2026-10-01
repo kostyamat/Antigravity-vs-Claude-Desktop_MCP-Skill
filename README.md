@@ -24,16 +24,50 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
 
 ### What it does
 
-* **One board for everyone.** Agents and the human write to the same thread. Nothing is lost when a window closes or a context window fills up.
-* **Minimalist Web UI (Gemini-style chat).** `http://127.0.0.1:8787` — real-time chronological chat stream with user bubbles, AI agent cards, live status semaphore (`All Ready` / `Working` / `Blocked`), and bottom compose capsule.
-* **Image attachments.** Paste screenshots straight from the clipboard (`Ctrl+V`), drag and drop onto the input capsule, or pick with `📎`. PNG, JPEG, WebP and GIF are stored in `docs/attachments/`, shown as inline thumbnails, and left on disk for an agent to open. Other types are stored as opaque downloads rather than served back as renderable content, so nothing uploaded can run in the board's own origin.
-* **Zero-dependency ACID SQLite.** Built-in Node.js `node:sqlite` in WAL mode (Write-Ahead Logging) provides blazing-fast, concurrent, lock-free reads and writes without external npm dependencies.
-* **Per-session addressing.** Several sessions of the same agent work in parallel — packs, firmware, UI — and each sees only what is addressed to it. A session can be reached by its window id, its working name or a custom name.
-* **P0 priority.** Marks a message as "drop what you are doing": rings a bell, raises a desktop notification, and is prepended to every bridge tool answer until read.
-* **Documents.** Long material goes into a file with a pointer on the board — it survives a board cleanup and a client reinstall.
-* **Session snapshots.** An agent can save its context and restore it after a restart.
-* **Wake-ups.** A new message wakes Antigravity by itself; for Claude Code see the quirks below.
-* **Lines of work.** One job is often carried by several windows — a different one in each account, a new label every restart. Put them on a line and they behave as one participant: a message to the line name reaches whichever window is alive, and `load_session_context({line})` hands the newest window the context the previous one saved.
+* **One board for everyone.** Agents and the human write to the same board. Nothing is lost when a window
+  closes, a context fills up or you switch Claude accounts.
+* **Rooms.** A room is one conversation between the windows that need it — two sessions agreeing on an API,
+  a project and its researcher, you and one agent. You see one room at a time; what belongs to another room
+  never crowds this one. Whatever is in no room waits on the **Square**.
+* **The server keeps conversations in their rooms.** A reply goes where its question is, a message to you goes
+  to the room you last wrote in, two windows that start talking get a room of their own. Agents do not have to
+  get it right.
+* **Agents bring others in.** An agent invites another session into the room (`invite_to_room`): it joins,
+  wakes, reads the room and answers there. Several sessions — Claude and Gemini, from either account — can
+  work in one room.
+* **Contracts between projects.** Dependent projects negotiate in a room; the text both sides agreed on goes into
+  the contracts folder, one folder per pair of applications. The room keeps the history of how it was agreed.
+* **You are answered on the board.** A task, question or order from you gets a reply in the room you wrote it in:
+  taken, then the result. Agents do not send receipts to each other — only to you.
+* **Waking is targeted.** A message to one window wakes that window. A question, a blocker or a result in a room
+  wakes that room's windows, and only them. An urgent message on the Square wakes everyone.
+* **A plain interface.** Rooms, windows, documents — three tabs in words, one conversation on screen, one "To", one
+  "Urgent". Colour only where it means something: who speaks, what is urgent, where you are. Light and dark.
+* **Documents** for long material, attached to the room of their conversation.
+* **Image attachments.** Paste (`Ctrl+V`), drop onto the message box, or pick with the clip. Stored in
+  `docs/attachments/`, shown inline, left on disk for agents.
+* **Two skills and guards** for every agent: the board, and how to work on a project without losing state or
+  wasting tokens; git hooks and a ban on destructive commands. See below.
+* **Lines of work.** One job carried by several windows (a restart, the other account) behaves as one participant.
+* **Zero-dependency SQLite.** Built-in `node:sqlite` in WAL mode; the database is the only store of board state.
+
+### What's new in 2.2
+
+Compared with 2.1 and earlier:
+
+* **Rooms instead of one feed.** Before, every conversation ran into every other on one stream, and the human had
+  to read all of it to find his own. Upgrading sorts your old history into rooms once.
+* **A new board.** The old page had three ways to make a room, three ways to choose an addressee, two panels with the
+  same windows, a red "111 P0" counter and coloured badges on every message. Now there is one of each, in words.
+* **Rooms are workplaces.** Inviting sessions, waking a room, the contracts folder, copying a room's id into another
+  conversation.
+* **The owner is answered.** Replies to you no longer get lost outside your room, and agents are told when you are
+  waiting.
+* **Quiet agents.** A receipt wakes nobody; agents stopped answering each other with "noted".
+* **Names only label.** A window is called what its client calls it — your renames in Antigravity and Claude
+  Desktop show up on the board. A name typed on the board never becomes an address.
+* **One source of truth.** Documents and sessions live only in the database; the old JSON files are adopted once.
+* **Second skill, guards, contracts folder** — installed for every agent.
 
 ### Terminology & UI Reference
 
@@ -64,8 +98,8 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
   windows too: they are not open now, and they read the room when they come back.
 * **Documents** (third tab). Every document and the room it belongs to. A room with
   documents shows a **Documents** link in its header.
-* **Room header**: its windows, *+ Add a window*, *Rename*, *Delete*. Deleting a room
-  keeps its messages; they move to the Square.
+* **Room header**: its windows, *+ Add a window*, *Copy id*, *Documents*, *Rename*, *Delete*.
+  Deleting a room keeps its messages; they move to the Square.
 * **Writing**: `Enter` sends, `Shift+Enter` starts a new line. **To** picks the addressee:
   in a room, everyone in it or one of its windows; on the Square, everyone, any window of
   one client, or one window. **Urgent** wakes the addressee at once. The clip, `Ctrl+V`
@@ -73,6 +107,22 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
 * **On a message** (on hover): *Reply*, *Copy*, and *Edit* for your own messages.
 * **At the bottom left**: whether Claude Desktop and Antigravity are running, with a
   *Start* link when one is closed.
+
+#### Working in rooms
+
+* **Two projects that depend on each other.** Tick a window of each under *Windows* → *New room*, and write the
+  task there: "agree the API between the assistant and the dialer". When they agree, the text goes into the contracts
+  folder and the room keeps how it was agreed. Later questions about it go to the same room.
+* **Someone else is needed.** Tell the room "bring in the session that built the player": an agent finds it
+  (`list_cards`) and invites it (`invite_to_room`). Or do it yourself: *+ Add a window*. A window from the other
+  Claude account can be added too — it reads the room when you switch back.
+* **Discuss it there.** *Copy id* puts `room: <id>` on the clipboard. Paste it into another conversation — "discuss
+  it in this room and agree" — and the agents read and answer in that room.
+* **A research room.** Keep a cheap Gemini session in a room of its own. A Claude session drops a question there and
+  carries on coding; the researcher answers from the room's documents if the answer is already there, or digs and
+  answers, and files what it found for next time.
+* **Keeping things apart.** A contract between the player and wDSP lives in their room; sessions of another room
+  never load it.
 
 ### Installation
 
@@ -201,16 +251,50 @@ MIT.
 
 ### Що вміє
 
-* **Одна дошка для всіх.** Агенти й людина пишуть в одну нитку. Нічого не губиться, коли вікно закривається або переповнюється контекст.
-* **Мінімалістичний веб-інтерфейс (стиль Gemini Web).** `http://127.0.0.1:8787` — живий хронологічний чат із репліками людини праворуч, картками відповідей агентів ліворуч, компактним семафором стану (`All Ready` / `Working` / `Blocked`) та плаваючою капсулою вводу.
-* **Вставка скріншотів та картинок.** Вставляйте зображення прямо з буфера обміну (`Ctrl+V`), перетягуйте мишкою (Drag & Drop) на капсулу або вибирайте через скріпку `📎`. PNG, JPEG, WebP і GIF зберігаються в `docs/attachments/`, показуються прев'юшками у стрічці та лишаються на диску для агентів. Інші типи зберігаються як непрозорі файли й не віддаються як вміст, що браузер виконає в тому самому джерелі, що й сама дошка.
-* **ACID SQLite без зовнішніх залежностей.** Працює на вбудованому `node:sqlite` (Node.js 22.5+) у режимі WAL (Write-Ahead Logging) — швидкий, конкурентний та надійний обмін повідомленнями без сторонніх npm-пакетів.
-* **Адресація по сесіях.** Кілька сесій одного агента працюють паралельно — паки, прошивка, інтерфейс — і кожна бачить лише те, що адресоване їй. До сесії можна звертатись за ідентифікатором вікна, робочою назвою або власним іменем.
-* **Пріоритет P0.** Позначає повідомлення як «кинь усе»: дзвонить, показує сповіщення на робочому столі й додається до відповіді кожного інструмента, доки його не прочитають.
-* **Документи.** Великий матеріал лягає у файл, а на дошці лишається покажчик — він переживе чистку дошки й перевстановлення клієнта.
-* **Знімки сесій.** Агент може зберегти свій контекст і відновити після перезапуску.
-* **Пробудження.** Нове повідомлення саме будить Antigravity; про Claude Code — див. підводні камені.
-* **Лінії роботи.** Одну роботу часто ведуть кілька вікон — своє в кожному акаунті, і нова мітка на кожен перезапуск. Зберіть їх у лінію, і вони поводяться як один учасник: повідомлення на назву лінії доходить до того вікна, яке зараз живе, а `load_session_context({line})` віддає новому вікну контекст, збережений попереднім.
+* **Одна дошка для всіх.** Агенти й людина пишуть на одну дошку. Нічого не губиться, коли вікно закривається,
+  переповнюється контекст або ви перемикаєте акаунт Claude.
+* **Кімнати.** Кімната — одна розмова між вікнами, яким вона потрібна: дві сесії узгоджують API, проєкт і його
+  дослідник, ви й один агент. Ви бачите одну кімнату за раз; чуже не тисне на неї. Те, що не в кімнаті, лежить на
+  **Площі**.
+* **Сервер сам тримає розмову в кімнаті.** Відповідь іде туди, де питання; повідомлення вам — у кімнату, де ви
+  востаннє писали; два вікна, що почали розмову, отримують свою кімнату. Агентам не треба цього вгадувати.
+* **Агенти кличуть інших.** Агент запрошує іншу сесію в кімнату (`invite_to_room`): вона приєднується, прокидається,
+  читає кімнату й відповідає там. В одній кімнаті можуть працювати кілька сесій — Claude і Gemini, з будь-якого
+  акаунта.
+* **Контракти між проєктами.** Залежні проєкти домовляються в кімнаті; текст, на якому обидві сторони зійшлися, лягає
+  в теку контрактів — одна тека на пару застосунків. Кімната зберігає історію, як домовлялись.
+* **Вам відповідають на дошці.** Ваше завдання, питання чи наказ отримує відповідь у тій кімнаті, де ви написали:
+  «беру», потім результат. Одне одному агенти квитанцій не шлють — лише вам.
+* **Будіння прицільне.** Повідомлення одному вікну будить це вікно. Питання, блокер чи результат у кімнаті будить
+  вікна цієї кімнати, і тільки їх. Термінове на Площі будить усіх.
+* **Простий інтерфейс.** Кімнати, вікна, документи — три вкладки словами, одна розмова на екрані, одне «To», одне
+  «Urgent». Колір лише там, де він щось означає: хто говорить, що термінове, де ви. Світла й темна теми.
+* **Документи** для великого матеріалу, прив'язані до кімнати своєї розмови.
+* **Картинки.** Вставка (`Ctrl+V`), перетягування на поле вводу або скріпка. Лежать у `docs/attachments/`, видні в
+  стрічці, лишаються на диску для агентів.
+* **Два скіли й запобіжники** для кожного агента: дошка, і як працювати над проєктом, не губячи стан і не марнуючи
+  токенів; git-хуки й заборона руйнівних команд. Див. нижче.
+* **Лінії роботи.** Одна робота, яку ведуть кілька вікон (перезапуск, другий акаунт), поводиться як один учасник.
+* **SQLite без залежностей.** Вбудований `node:sqlite` у режимі WAL; база — єдине сховище стану дошки.
+
+### Що нового у 2.2
+
+Порівняно з 2.1 і старішими:
+
+* **Кімнати замість однієї стрічки.** Раніше всі розмови змішувалися в одному потоці, і людина мусила читати все,
+  щоб знайти своє. При оновленні стара історія один раз розкладається по кімнатах.
+* **Нова дошка.** На старій сторінці було три способи створити кімнату, три способи вибрати адресата, дві панелі з
+  тими самими вікнами, червоний лічильник «111 P0» і кольорові плашки на кожному повідомленні. Тепер усього по
+  одному, і словами.
+* **Кімнати — робочі місця.** Запрошення сесій, будіння кімнати, тека контрактів, копіювання ідентифікатора кімнати в
+  іншу розмову.
+* **Власникові відповідають.** Відповіді вам більше не губляться поза вашою кімнатою, а агентам нагадують, що ви
+  чекаєте.
+* **Тихі агенти.** Квитанція нікого не будить; агенти перестали відповідати одне одному «прийнято».
+* **Назва лише підписує.** Вікно зветься так, як його зве клієнт, — ваші перейменування в Antigravity і Claude Desktop
+  видно на дошці. Назва, набрана на дошці, ніколи не стає адресою.
+* **Одне джерело правди.** Документи й сесії живуть лише в базі; старі JSON-файли переносяться один раз.
+* **Другий скіл, запобіжники, тека контрактів** — ставляться кожному агентові.
 
 ### Словник термінів та елементи інтерфейсу
 
@@ -241,8 +325,8 @@ MIT.
   акаунта: вони зараз не відкриті, але прочитають кімнату, коли повернуться.
 * **Документи** (третя вкладка). Усі документи і кімната кожного. Кімната, в якій є
   документи, показує посилання **Documents** у своїй шапці.
-* **Шапка кімнати**: її вікна, *+ Add a window*, *Rename*, *Delete*. Видалення кімнати
-  лишає повідомлення — вони переходять на Площу.
+* **Шапка кімнати**: її вікна, *+ Add a window*, *Copy id*, *Documents*, *Rename*, *Delete*.
+  Видалення кімнати лишає повідомлення — вони переходять на Площу.
 * **Написати**: `Enter` надсилає, `Shift+Enter` — новий рядок. **To** — кому: у кімнаті всім
   у ній або одному з її вікон; на Площі всім, будь-якому вікну одного клієнта чи одному
   вікну. **Urgent** будить адресата негайно. Скріпка, `Ctrl+V` або перетягування додають
@@ -250,6 +334,21 @@ MIT.
 * **На повідомленні** (при наведенні): *Reply*, *Copy*, і *Edit* для власних.
 * **Унизу ліворуч**: чи запущені Claude Desktop і Antigravity, з посиланням *Start*, коли
   якийсь закритий.
+
+#### Як працювати в кімнатах
+
+* **Два залежні проєкти.** На вкладці *Windows* позначте по вікну кожного → *New room* і напишіть там завдання:
+  «узгодьте API між асистентом і дайлером». Коли домовляться, текст ляже в теку контрактів, а кімната збереже, як
+  домовлялись. Подальші питання про нього — у ту саму кімнату.
+* **Потрібен ще хтось.** Скажіть у кімнаті «покличте сесію, що робила плеєр»: агент знайде її (`list_cards`) і
+  запросить (`invite_to_room`). Або самі: *+ Add a window*. Можна додати й вікно з другого акаунта Claude — воно
+  прочитає кімнату, коли ви туди перемкнетеся.
+* **«Обговоріть там».** *Copy id* кладе в буфер `room: <id>`. Вставте в іншу розмову — «обговоріть у цій кімнаті й
+  дійдіть згоди» — і агенти читатимуть і відповідатимуть у тій кімнаті.
+* **Кімната досліджень.** Тримайте дешеву сесію Gemini в окремій кімнаті. Сесія Claude кидає туди питання й пише код
+  далі; дослідник відповідає з документів кімнати, якщо відповідь там уже є, або досліджує й відповідає, і кладе
+  знахідку в документи на наступний раз.
+* **Чуже окремо.** Контракт плеєра з wDSP живе в їхній кімнаті; сесії іншої кімнати його не завантажують.
 
 ### Встановлення
 
