@@ -24,6 +24,7 @@ Install (once per machine), in .claude/settings.json:
     }
 """
 import json
+import subprocess
 import os
 import sqlite3
 import sys
@@ -60,6 +61,9 @@ def _client_session_id():
     hook that blocks would hold up the start of the session it is briefing, and
     a convenience must never be able to do that.
     """
+    # stdin can be read only once, and more than one part of this hook asks.
+    if "_SID" in globals():
+        return _SID
     if sys.stdin is None or sys.stdin.closed:
         return ""
     box = {}
@@ -77,8 +81,10 @@ def _client_session_id():
         t.join(1.5)
         payload = json.loads(box.get("raw") or "{}")
         value = payload.get("session_id") or payload.get("sessionId") or ""
-        return str(value).strip()
+        globals()["_SID"] = str(value).strip()
+        return _SID
     except Exception:
+        globals()["_SID"] = ""
         return ""
 
 
@@ -159,6 +165,24 @@ def workflow_hint(start):
             "in the project root so the offer is not repeated." % d)
 
 
+def window_state():
+    """(P0 still pending, read cursor) for this window. P0 by the one rule in p0.js:
+    addressed to it, admitted by its room, unread, less than a day old. Counting
+    every P0 above the agent's oldest cursor showed thirty, days old, from rooms
+    this window is not in."""
+    try:
+        sid = _client_session_id() or ""
+        win = _find_window(sid) if sid else None
+        args = ["node", os.path.join(_bridge_home(), "p0.js"), ME, sid]
+        if win and win.get("window"):
+            args.append(win["window"])
+        out = subprocess.run(args, capture_output=True, timeout=15)
+        data = json.loads(out.stdout.decode("utf-8", "replace") or "{}")
+        return int(data.get("count", 0)), data.get("cursor")
+    except Exception:
+        return 0, None
+
+
 def main():
     if not os.path.exists(DB):
         return 0                       # no bridge on this machine — stay silent
@@ -187,10 +211,13 @@ def main():
 
     window, line, line_members = None, "", []
     try:
-        cur.execute("""select count(*),
-                              coalesce(sum(case when priority = 'P0' then 1 else 0 end), 0)
-                       from messages where id > ? and from_agent <> ?""", (cursor, ME))
-        unread, p0 = cur.fetchone()
+        # The window's own read cursor when the bridge can tell it: the agent-wide
+        # one lags far behind and made every session start with hundreds "unread".
+        p0, win_cursor = window_state()
+        if isinstance(win_cursor, int) and win_cursor > cursor:
+            cursor = win_cursor
+        cur.execute("select count(*) from messages where id > ? and from_agent <> ?", (cursor, ME))
+        unread = cur.fetchone()[0]
         cur.execute("""select id, from_agent, coalesce(topic, ''),
                               substr(replace(coalesce(message, ''), char(10), ' '), 1, 80)
                        from messages order by id desc limit ?""", (SHOW_LAST,))

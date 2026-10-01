@@ -58,7 +58,6 @@ const MIME_BY_EXT = {
   '.webp': 'image/webp',
   '.gif': 'image/gif'
 };
-const P0_FLAG_FILE = path.join(SCRIPTS_DIR, 'P0_PENDING.txt');
 const HOST = '127.0.0.1';
 const PORT_FROM = 8787;
 const INLINE_LIMIT = 4000;
@@ -225,12 +224,6 @@ function apiPost(data) {
     rec.file = file;
   }
 
-  if (priority === 'P0') {
-    try {
-      fs.writeFileSync(P0_FLAG_FILE,
-        `${rec.ts}\t#${rec.id}\t${from} → ${rec.to}\t${rec.topic}\n`, { flag: 'a' });
-    } catch (_) {}
-  }
   wakeAntigravity(rec);
   return { ok: true, id: nextId };
 }

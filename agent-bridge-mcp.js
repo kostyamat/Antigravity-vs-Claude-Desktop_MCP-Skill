@@ -23,6 +23,7 @@ const bridgeDb = require('./bridge-db');
 const cardsLib = require('./cards');
 const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
 const { workflowHint } = require('./workflow-hint');
+const { pendingP0 } = require('./p0');
 const { wakeAntigravity } = require('./wake-antigravity');
 
 const SCRIPTS_DIR  = path.resolve(__dirname);
@@ -42,8 +43,6 @@ const DOCS_ARCHIVE = path.join(SCRIPTS_DIR, 'docs', 'archive');
 //
 //
 // ═════════════════════════════════════════════════════════════════════════════════════════
-const P0_FLAG_FILE = path.join(SCRIPTS_DIR, 'P0_PENDING.txt');
-
 // Statuses that never justify P0, and statuses that are worth waking someone for.
 const QUIET_P0_STATUSES = ['ack', 'answer', 'done'];
 const WAKING_STATUSES = ['question', 'blocked', 'done', 'answer'];
@@ -124,12 +123,6 @@ function ringBell(rec) {
     const topic = (rec.topic || '').replace(/["'`$]/g, '');
     const head = (rec.message || '').replace(/\s+/g, ' ').slice(0, 120).replace(/["'`$]/g, '');
     const title = `P0 from ${who}${topic ? ' · ' + topic : ''}`;
-
-    try {
-      fs.writeFileSync(P0_FLAG_FILE,
-        `${new Date().toISOString()}\t#${rec.id}\t${who} → ${rec.to || 'all'}\t${topic}\n${head}\n`,
-        { flag: 'a' });
-    } catch (_) {}
 
     const ps = [
       "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;",
@@ -493,36 +486,9 @@ function pendingP0Banner() {
     const myLine = mySession ? bridgeDb.resolveSessionAliases(mySession, { agent: myAgent }) : new Set();
     const myWindow = mySession ? bridgeDb.resolveSessionAliases(mySession, { agent: myAgent, lines: false }) : new Set();
     const myWindowCards = new Set([...myWindow, myCanonical].filter(Boolean));
-    const mine = board.filter(m => {
-      if ((m.id || 0) <= cursor) return false;
-      if (m.priority !== 'P0') return false;
-
-      if (mySession) {
-        let isOwn = false;
-        if (m.from === myAgent) {
-          const fromLower = String(m.fromSession || '').trim().toLowerCase();
-          for (const a of myWindow) {
-            if (String(a).trim().toLowerCase() === fromLower) { isOwn = true; break; }
-          }
-        }
-        if (isOwn) return false;
-      } else {
-        if (m.from === myAgent) return false;
-      }
-
-      if (m.to !== myAgent && m.to !== 'all' && m.to) return false;
-      if (!router.roomAdmits(m, myWindowCards)) return false;
-      if (m.toSession && m.toSession !== 'all') {
-        if (!mySession) return false;
-        const toLower = String(m.toSession).trim().toLowerCase();
-        let match = false;
-        for (const a of myLine) {
-          if (String(a).trim().toLowerCase() === toLower) { match = true; break; }
-        }
-        if (!match) return false;
-      }
-      return true;
-    });
+    // One rule for what is still urgent: p0.js (read, addressed, room, age).
+    const mine = pendingP0({ board, agent: myAgent, myWindow: myWindowCards, myLine, cursor,
+                             roomAdmits: router.roomAdmits });
     if (!mine.length) return '';
     const lines = mine.slice(-3).map(m =>
       `   #${m.id} from ${m.from}${m.topic ? ' · ' + m.topic : ''} — ${(m.message || '').replace(/\s+/g, ' ').slice(0, 90)}`);
@@ -1162,13 +1128,6 @@ function doPost(id, a) {
   bridgeDb.touchRoom(rec.room);
   noteSession(from, rec.fromSession, rec.topic, rec.to, rec.toSession, sessionIdentity(a));
   rememberAgent(from);
-  if (priority === 'P0') {
-    try {
-      fs.writeFileSync(P0_FLAG_FILE,
-        `${rec.ts}\t#${rec.id}\t${from} → ${rec.to || 'all'}\t${rec.topic || ''}\n`,
-        { flag: 'a' });
-    } catch (_) {}
-  }
 
   // Waking costs the recipient a full inference cycle, so only a message that
   // actually asks something does it: a question, a blocker, an answer, or work
@@ -1301,7 +1260,8 @@ function doGet(id, a) {
   if (reader) {
     const mine = board.filter(m => isForMe(m) && !isMyOwn(m));
     const unread = mine.filter(m => m.id > cursor);
-    const p0 = unread.filter(m => m.priority === 'P0');
+    const p0 = pendingP0({ board, agent: reader, myWindow: new Set([...myWindow, a.canonicalId].filter(Boolean)),
+                           myLine, cursor, roomAdmits: router.roomAdmits });
     const asks = unread.filter(m => m.status === 'question' || m.status === 'blocked');
     const sessTag = sessionId ? ` [session: ${sessionId}]` : '';
     header.push(`📬 ${reader}${sessTag}: ${unread.length} new` +
