@@ -74,6 +74,12 @@ const lastTime = previousConfig.installedFingerprints || {};
 // folder per pair of applications. A machine that already keeps such a folder
 // names it in bridge_config.json (contractsDir) and it is used as it is.
 const CONTRACTS_DIR = previousConfig.contractsDir || path.join(SCRIPTS_DIR, 'contracts');
+
+// Where agents work on anything that is not a project — patching an APK, a
+// one-off script — instead of leaving files next to the input, on the device or
+// on another drive. A machine that already has such a place names it in
+// bridge_config.json (sandboxDir).
+const SANDBOX_DIR = previousConfig.sandboxDir || path.join(SCRIPTS_DIR, 'sandbox');
 // A machine with a config has been installed on before, whatever that install
 // knew about versions. Calling that a first install would be a lie on the one
 // line the human reads to decide whether anything of theirs is at risk.
@@ -195,6 +201,12 @@ try {
     fs.copyFileSync(path.join(SCRIPTS_DIR, 'templates', 'CONTRACTS_README.md'), contractsReadme);
   }
   console.log(`  ✅ Contracts between applications: ${CONTRACTS_DIR}`);
+  if (!fs.existsSync(SANDBOX_DIR)) fs.mkdirSync(SANDBOX_DIR, { recursive: true });
+  const sandboxReadme = path.join(SANDBOX_DIR, 'README.md');
+  if (!fs.existsSync(sandboxReadme)) {
+    fs.copyFileSync(path.join(SCRIPTS_DIR, 'templates', 'SANDBOX_README.md'), sandboxReadme);
+  }
+  console.log(`  ✅ Sandbox for work outside projects: ${SANDBOX_DIR}`);
   console.log('  ✅ Working directories ready.');
 } catch (e) {
   errorCount++;
@@ -385,7 +397,8 @@ function materialise(text) {
   return text
     .split('{{BRIDGE_HOME_POSIX}}').join(BRIDGE_HOME_POSIX)
     .split('{{BRIDGE_HOME}}').join(SCRIPTS_DIR)
-    .split('{{CONTRACTS_DIR}}').join(CONTRACTS_DIR);
+    .split('{{CONTRACTS_DIR}}').join(CONTRACTS_DIR)
+    .split('{{SANDBOX_DIR}}').join(SANDBOX_DIR);
 }
 
 const BS = String.fromCharCode(92);
@@ -648,7 +661,7 @@ try {
   const ch = guards.installClaudeGuardHook(path.join(USER_PROFILE, '.claude', 'settings.json'), process.execPath, SCRIPTS_DIR);
   if (!ch.ok) { warnCount++; console.warn('  ⚠️ Claude Code guard hook not installed: ' + ch.why); }
   else console.log('  ✅ Claude Code: command guard hook ' + (ch.changed ? 'installed' : 'up to date') + ' (PreToolUse on Bash and PowerShell)');
-  const g = guards.installGeminiPlugin(path.join(USER_PROFILE, '.gemini', 'config'), SCRIPTS_DIR, process.execPath);
+  const g = guards.installGeminiPlugin(path.join(USER_PROFILE, '.gemini', 'config'), SCRIPTS_DIR, process.execPath, SANDBOX_DIR);
   console.log('  ✅ Antigravity: plugin with the command guard ' + (g.changed ? 'installed' : 'up to date') + ' -> ' + g.dir);
 } catch (e) {
   warnCount++;
@@ -797,6 +810,7 @@ try {
   cfg.installedAt = new Date().toISOString();
   cfg.installedFingerprints = fingerprints;
   cfg.contractsDir = CONTRACTS_DIR;
+  cfg.sandboxDir = SANDBOX_DIR;
   if (roomsFromHistoryDone) cfg.roomsFromHistory = roomsFromHistoryDone;
   fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf8');
   console.log(`  ✅ Config saved (Administrator: ${cfg.adminName || 'Not configured'}, Port: ${cfg.uiPort}` +

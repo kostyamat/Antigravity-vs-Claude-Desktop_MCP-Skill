@@ -77,7 +77,7 @@ function installGitHooks(hooksDir) {
 const BEGIN = '<!-- agent-bridge:guards';
 const END = '<!-- /agent-bridge:guards -->';
 
-function guardRulesText() {
+function guardRulesText(sandboxDir) {
   const { RULES } = require('./command-guard');
   return [
     '# Guards (agent-bridge)',
@@ -86,6 +86,16 @@ function guardRulesText() {
       RULES.map(r => '`' + r.label + '`').join(', ') + '. A hook blocks them anyway; looking for another way ' +
       'to do the same thing is not allowed. If one is really needed, stop and ask the owner to run it.',
     '- A damaged file is restored on its own: `git restore <file>` — never the whole repository.',
+    '',
+    '# Where files go (agent-bridge)',
+    '',
+    '- **A project is its folder.** Nothing you make goes next to where an input lay, onto the device under ' +
+      'test, into a package, Downloads, the Desktop or another drive.',
+    '- **Work that is not a project goes to the sandbox' + (sandboxDir ? ' `' + sandboxDir + '`' : '') + '**: one folder ' +
+      'per task (`input/` a copy of the original, `work/`, `out/` the result only, `NOTES.md`). No sandbox, or unsure — ask.',
+    '- **The smallest change**: one condition patched, not a whole app decompiled into a project. One working copy, ' +
+      'no `_v2`/`_final` siblings. Clean up inside the task folder.',
+    '- **Always say where the result is**: the full path, what changed (lines before and after), how to install or check it.',
     '- How to work on a project (the `.agents/` files, the session slice, point changes, one source of truth): ' +
       'the `agent-workflow` skill. The shared board: the `agent-bridge` skill.',
     ''
@@ -99,7 +109,7 @@ function writeIfChanged(file, text) {
   return true;
 }
 
-function installGeminiPlugin(geminiConfigDir, bridgeDir, nodePath) {
+function installGeminiPlugin(geminiConfigDir, bridgeDir, nodePath, sandboxDir) {
   const dir = path.join(geminiConfigDir, 'plugins', 'agent-bridge');
   const guard = path.join(bridgeDir, 'command-guard.js').split(path.sep).join('/');
   const hooks = {
@@ -113,7 +123,7 @@ function installGeminiPlugin(geminiConfigDir, bridgeDir, nodePath) {
   let changed = false;
   changed = writeIfChanged(path.join(dir, 'plugin.json'), JSON.stringify({ name: 'agent-bridge' }, null, 2) + '\n') || changed;
   changed = writeIfChanged(path.join(dir, 'hooks.json'), JSON.stringify(hooks, null, 2) + '\n') || changed;
-  changed = writeIfChanged(path.join(dir, 'rules', 'AGENTS.md'), guardRulesText()) || changed;
+  changed = writeIfChanged(path.join(dir, 'rules', 'AGENTS.md'), guardRulesText(sandboxDir)) || changed;
 
   // The block an earlier release put into the user's own AGENTS.md.
   const userRules = path.join(geminiConfigDir, 'AGENTS.md');

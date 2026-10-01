@@ -16,6 +16,10 @@ agent_bridge_archive/
 agent_bridge_backups/
 snapshot-*/
 antigravity_relay/
+# Created by the installer beside the bridge when no other place is configured:
+# the agents' work and the user's agreements, not the bridge's source.
+contracts/
+sandbox/
 
 # ─── Private: window and session identifiers ───────────────────────
 gemini_convs.json
