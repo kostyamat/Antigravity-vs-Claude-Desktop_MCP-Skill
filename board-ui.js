@@ -153,8 +153,17 @@ function apiBoard(options = {}) {
   };
 }
 
+// What the page sends always comes from the owner. His name is written into the
+// page when it is served; a page served while the config could not be read, or
+// restored by the browser with the field empty, sent no author, and the owner
+// was refused his own board with "Author is required".
+function ownerName() {
+  return (readConfig().adminName || '').trim() || 'Owner';
+}
+
 function apiPost(data) {
-  const from = (data.from || '').trim();
+  const fromPage = !data.fromSession || /^human/i.test(String(data.fromSession));
+  const from = (data.from || '').trim() || (fromPage ? ownerName() : '');
   const text = (data.text || '').trim();
   if (!from) return { error: 'Author is required' };
   if (!text) return { error: 'Message text is empty' };
@@ -237,7 +246,7 @@ function apiPost(data) {
 function inviteFromOwner(owner, room, card, known) {
   const agent = (known && known.agent) || (/^local_/.test(card) ? 'Claude' : 'Gemini');
   return apiPost({
-    from: String(owner || '').trim() || 'Owner',
+    from: String(owner || '').trim() || ownerName(),
     room: room.id, to: agent, toSession: card, status: 'question',
     text: inviteText(room, { name: (known && known.name) || '', card })
   });
