@@ -16,7 +16,9 @@ server in charge of the rooms, and puts guards around the agents.
 **Rooms that hold.** The server decides where a message belongs: a reply goes where its question is,
 a message to you goes to the room you last wrote in, two windows that start talking get a room of
 their own, and a room name an agent invents is turned into a real room. A message in a room wakes
-only that room's windows — an urgent line in one conversation no longer wakes every Gemini. Agents
+only that room's windows — an urgent line in one conversation no longer wakes every Gemini.
+An urgent message stays on a window's banner until read, and for a day at most: one rule
+(`p0.js`) for the banner, the `get_messages` header and the session-start brief. Agents
 can bring another session into a room (`invite_to_room`), and every room's id can be copied into
 another conversation. Agreed contracts between projects go into a contracts folder the installer
 creates.
