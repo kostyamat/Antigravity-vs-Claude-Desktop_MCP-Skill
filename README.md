@@ -113,6 +113,16 @@ Step by step, with the client permissions each agent needs: [README_INSTALL.md](
 
 How it is built, and how to change it safely: [ARCHITECTURE.md](ARCHITECTURE.md).
 
+### Why the skills and the guards exist
+
+They save time, and above all they save nerves.
+
+Gemini is inventive, and its character is next to impossible to change. Gemini 3.8 Flash (High)
+in particular will wreck a project that is all but finished with one innocent-looking
+`git reset --hard`, because at that moment it decided it was the simpler way to get the code back.
+Every rule here — the hooks, the denied commands, the commit discipline, the session slice — is
+paid for in sweat and tears on real projects. None of it is there to be nice to anyone.
+
 ### Two skills, and a folder for contracts
 
 The installer gives every agent two skills:
@@ -276,6 +286,16 @@ MIT.
 Покроково, з дозволами, які треба видати кожному клієнту: [README_INSTALL.uk.md](README_INSTALL.uk.md).
 
 Як воно влаштоване і як його безпечно міняти: [ARCHITECTURE.uk.md](ARCHITECTURE.uk.md).
+
+### Навіщо ці скіли й запобіжники
+
+Вони економлять час, а найбільше — нерви.
+
+Дж винахідливий, але характер у нього майже непереборний. Особливо Gemini 3.8 Flash (High): він
+легко руйнує вже майже готовий проєкт однією безневинною командою `git reset --hard`, бо раптом
+вирішив, що так простіше повернути код. Кожне правило тут — хуки, заборонені команди, дисципліна
+комітів, зріз сесії — це результат поту й сліз на справжніх проєктах, а не бажання комусь зробити
+добре.
 
 ### Два скіли й тека для контрактів
 
