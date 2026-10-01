@@ -12,8 +12,10 @@
 //      exists; a name that is not a room is
 //      the agent's idea of a topic, and becomes a real room between the two
 //      windows, called by that name;
-//   3. a message to the human goes to the room where he last wrote to this
-//      window;
+//   3. a message to the human, to everyone or to no window in particular goes
+//      to the room this window is talking in — where the owner last wrote among
+//      its rooms, else where it last wrote; the Square only for a window with no
+//      recent room;
 //   4. the one room the two windows share — the busiest, if they share several;
 //   5. a conversation between two windows that share none opens a room for them.
 //
@@ -93,13 +95,23 @@ function createRouter(bridgeDb, cardsLib) {
         return made ? { room: made.room.id, opened: made.isNew ? made.room : null } : { room: '' };
       }
 
+      // A message to the owner, to everyone, or to "any Gemini" names no window to
+      // share a room with. It goes where this window is talking: the room the
+      // owner last wrote in among its rooms, else the one it last wrote in itself.
+      // The Square belongs to the owner — "if I want everyone, I go to the Square"
+      // — and an agent answering a room by broadcasting there took a room's urgent
+      // note to every window on the machine.
       const toHuman = isHuman(toSession) || (toAgent && !['Claude', 'Gemini', 'all'].includes(toAgent));
-      if (toHuman && mine) {
+      if ((toHuman || !theirs) && mine) {
         const rooms = new Set(bridgeDb.roomsOfCard(mine));
+        if (!rooms.size) return { room: '' };
         const since = new Date(Date.now() - OWNER_WINDOW_HOURS * 3600e3).toISOString();
-        const last = bridgeDb.getDb().prepare(
-          "SELECT room FROM messages WHERE from_session LIKE 'human%' AND room <> '' AND ts > ? ORDER BY id DESC"
-        ).all(since).find(r => rooms.has(r.room));
+        const recent = bridgeDb.getDb().prepare(
+          "SELECT room, from_session FROM messages WHERE room <> '' AND ts > ? ORDER BY id DESC"
+        ).all(since).filter(r => rooms.has(r.room));
+        const mineSet = new Set([mine, a.sessionId, a.canonicalId].filter(Boolean).map(String));
+        const last = recent.find(r => isHuman(r.from_session)) ||
+                     recent.find(r => mineSet.has(String(r.from_session)));
         return { room: last ? last.room : '' };
       }
 

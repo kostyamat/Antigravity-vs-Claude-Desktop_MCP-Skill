@@ -1189,7 +1189,9 @@ function doPost(id, a) {
   if (routed.opened) hints.push(`🚪 opened room "${routed.opened.name}" (${routed.opened.id}) for this conversation — the human reads the board by rooms`);
   if (demoted) hints.push(`ℹ️ P0 lowered to normal — a \`${status}\` is not an emergency, so nobody was woken`);
   if (!rec.fromSession) hints.push('⚠️ `sessionId` not specified — recipient will not know which session to reply to');
-  if (rec.to === 'all') hints.push('ℹ️ addressed to all (`to: "all"`)');
+  if (rec.to === 'all') hints.push(rec.room
+    ? `ℹ️ to everyone in room ${rec.room} — the room you are talking in; the Square is the owner's`
+    : 'ℹ️ addressed to all (`to: "all"`), on the Square');
   if (rec.file) hints.push(`📄 long text stored completely in ${rec.file}`);
 
   ok(id, `✅ Recorded as #${nextId}${rec.room ? ` in room ${rec.room}` : ''}${rec.to !== 'all' ? ` for ${rec.to}` : ''}` +
