@@ -52,7 +52,10 @@ No chronicles, no WORKLOG. One commit after every verified step:
 - body: **what** changed, **why** (which problem), **what it touches**, **how it was verified**
   (build, test, device), **related** items, and what stays open;
 - `fix`, `wip`, `update` as a whole message, and `--amend`, are banned;
-- code, resources and documentation go in separate commits.
+- code, resources and documentation go in separate commits;
+- small and frequent: a commit is a savepoint. Ten subsystems in one commit cannot be bisected or
+  reverted one by one, and an hour without a commit is an hour that one crash can erase;
+- experiments live in a working branch, never straight in `main`.
 
 A rejected commit means fixing the message or the content — never bypassing a hook.
 
@@ -81,11 +84,17 @@ like a rewrite.
   and writer of the flag or field, across the whole project (code, manifests, resources, configs,
   build and obfuscation rules). Decide how the change affects each of them **before** making it.
   Trace a bug through the whole chain of state, from the source of the data to what the user sees.
+- **Ask of each use:** who calls it and on which thread; where its data goes next (storage, IPC,
+  events, hardware); at which point of the component's lifecycle; whether initialisation order
+  depends on it. Fixing one button by breaking a lifecycle, a listener or a saved setting is not a fix.
+- **Do not touch a line you do not understand.** A flag, a call, an odd ordering may be there for a
+  reason nobody wrote down. Find its history and its path through the system first; until then it
+  stays.
 
 **Making it**
-- **Point changes only.** Change the lines the task needs. Never regenerate a whole class or file
-  from memory: it silently drops half the code — the edge cases, the fixes, the comments nobody
-  remembers.
+- **Point changes only.** Change the lines the task needs, keeping the file's formatting, comments
+  and style. Never regenerate a whole class or file from memory: it silently drops half the code —
+  the edge cases, the fixes, the comments nobody remembers.
 - **One source of truth.** Every state, rule or decision has exactly one canonical function, class
   or method; everyone else calls it. Never a second copy "just here".
 - **No island logic, no crutches.** No local patches, hardcoded values, stubs or one-off database
@@ -108,6 +117,10 @@ like a rewrite.
 - **Clean up after yourself.** Deleting something, grep the whole tree for its traces and list every
   candidate before removing any. Update the documentation in the same step. Stage only your own
   work. Your report names everything that changed and matches `git status`.
+- **Irreversible means asking first.** Before anything that destroys data for good — dropping or
+  truncating a table, a `DELETE` without a narrow `WHERE`, removing storage, cloud resources,
+  secrets or keys — stop, tell the user what will be lost and why it seems necessary, and wait for
+  an explicit yes.
 - **Never destructive git.** No `reset --hard`, `clean`, `checkout -- .`, `stash` to "get back to a
   clean state", no force-push. A damaged file is restored on its own: `git restore <file>`.
 - **Do not delete the user's data** to make room or tidy up: rename or move it, and say where.
