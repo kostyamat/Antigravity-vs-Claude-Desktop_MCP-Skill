@@ -66,4 +66,40 @@ function installGitHooks(hooksDir) {
   return { ok: true, state: current ? 'moved from ' + current : 'enabled', path: want };
 }
 
-module.exports = { installDenyList, installGitHooks, DENY };
+// Antigravity has no deny list: it reads ~/.gemini/config/AGENTS.md as its
+// standing instructions at the start of every session (its own administrator,
+// board #991). So the same commands go there as text, inside a marked block the
+// installer owns and replaces; everything outside the block is the user's.
+const BEGIN = '<!-- agent-bridge:guards — written by the bridge installer; edit outside this block -->';
+const END = '<!-- /agent-bridge:guards -->';
+
+function geminiGuardBlock() {
+  const commands = [...new Set(DENY.map(r => r.replace(/^\w+\(/, '').replace(/:\*\)$/, '')))];
+  return [
+    BEGIN,
+    '## Guards (agent-bridge)',
+    '',
+    '- **Never run destructive commands.** Not one of these, whatever the reason: ' +
+      commands.map(c => '`' + c + '`').join(', ') + '. If one seems necessary, stop and ask the owner to run it.',
+    '- A damaged file is restored on its own: `git restore <file>` — never the whole repository.',
+    '- How to work on a project (the `.agents/` files, the session slice, point changes, one source of truth): ' +
+      'the `agent-workflow` skill. The shared board: the `agent-bridge` skill.',
+    END
+  ].join('\n');
+}
+
+function installGeminiRules(agentsMdPath) {
+  const block = geminiGuardBlock();
+  let text = fs.existsSync(agentsMdPath) ? fs.readFileSync(agentsMdPath, 'utf8') : '';
+  const a = text.indexOf(BEGIN), b = text.indexOf(END);
+  const next = (a >= 0 && b > a)
+    ? text.slice(0, a) + block + text.slice(b + END.length)
+    : (text.replace(/\s*$/, '') + (text.trim() ? '\n\n' : '') + block + '\n');
+  if (next === text) return { ok: true, changed: false };
+  if (text) fs.copyFileSync(agentsMdPath, `${agentsMdPath}.bak-${stamp()}`);
+  fs.mkdirSync(path.dirname(agentsMdPath), { recursive: true });
+  fs.writeFileSync(agentsMdPath, next, 'utf8');
+  return { ok: true, changed: true };
+}
+
+module.exports = { installDenyList, installGitHooks, installGeminiRules, DENY };

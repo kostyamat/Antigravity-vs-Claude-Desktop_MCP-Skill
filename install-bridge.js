@@ -642,6 +642,8 @@ try {
   } else {
     console.log('  ✅ Claude Code: destructive commands denied' + (d.added ? ' (' + d.added + ' rules added)' : ' (up to date)'));
   }
+  const g = guards.installGeminiRules(path.join(USER_PROFILE, '.gemini', 'config', 'AGENTS.md'));
+  console.log('  ✅ Antigravity: guard rules ' + (g.changed ? 'written to' : 'already in') + ' ~/.gemini/config/AGENTS.md');
 } catch (e) {
   warnCount++;
   console.warn('  ⚠️ Guards not installed: ' + e.message);
