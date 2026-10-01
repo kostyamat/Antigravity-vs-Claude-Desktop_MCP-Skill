@@ -82,9 +82,9 @@ Requires **Node.js 22.5+** (built-in SQLite) and **Python 3** in PATH.
    installs in place: the board database, the message bodies and the documents are all
    created next to these files, and nothing is copied anywhere else.
 2. Run `install-bridge.cmd`.
-3. Claude Desktop only: upload `Claude_skill_bridge.zip`, which the installer leaves on
-   your Desktop, through **Settings > Capabilities > Skills**. This is the one step the
-   installer cannot do for you; skip it if you do not use Claude Desktop.
+3. Claude Desktop only: upload `Claude_skill_bridge.zip` and `Claude_skill_workflow.zip`, which
+   the installer leaves on your Desktop, through **Settings > Capabilities > Skills**. This is the
+   one step the installer cannot do for you; skip it if you do not use Claude Desktop.
 4. Restart Claude Desktop / Antigravity so they pick up the new MCP server.
 5. Tell any agent your name once: `bridge_setup({ adminName: "<your name>" })`.
 
@@ -112,6 +112,20 @@ history once:
 Step by step, with the client permissions each agent needs: [README_INSTALL.md](README_INSTALL.md).
 
 How it is built, and how to change it safely: [ARCHITECTURE.md](ARCHITECTURE.md).
+
+### Two skills, and a folder for contracts
+
+The installer gives every agent two skills:
+
+* **agent-bridge** — the board: rooms, addressing, waking, documents, contracts.
+* **agent-workflow** — how to work on a project at all: one `.agents/` folder with a file per purpose,
+  a short session slice that survives compaction and account switches, commits as the only history,
+  and the habits that keep tokens from being wasted. An agent that picked up bad habits elsewhere
+  learns these instead; your own instructions still win where you have them.
+
+It also creates a **contracts folder** (`contracts/` beside the bridge, or the one named as
+`contractsDir` in `bridge_config.json`). Dependent projects negotiate in a room on the board; the text
+both sides agreed on is filed there, one folder per pair of applications.
 
 ### Where the Skill ends up
 
@@ -221,9 +235,9 @@ MIT.
    база дошки, тіла повідомлень і документи створюються поряд із цими файлами, і нікуди
    більше нічого не копіюється.
 2. Запустіть `install-bridge.cmd`.
-3. Тільки для Claude Desktop: завантажте `Claude_skill_bridge.zip`, який інсталятор кладе
-   вам на робочий стіл, через **Settings > Capabilities > Skills**. Це єдиний крок, який
-   інсталятор не може зробити за вас; пропустіть його, якщо не користуєтесь Claude Desktop.
+3. Тільки для Claude Desktop: завантажте `Claude_skill_bridge.zip` і `Claude_skill_workflow.zip`,
+   які інсталятор кладе вам на робочий стіл, через **Settings > Capabilities > Skills**. Це єдиний
+   крок, який інсталятор не може зробити за вас; пропустіть його, якщо не користуєтесь Claude Desktop.
 4. Перезапустіть Claude Desktop / Antigravity, щоб вони підхопили новий MCP-сервер.
 5. Один раз назвіть агентові своє ім'я: `bridge_setup({ adminName: "<ваше ім'я>" })`.
 
@@ -250,6 +264,20 @@ MIT.
 Покроково, з дозволами, які треба видати кожному клієнту: [README_INSTALL.uk.md](README_INSTALL.uk.md).
 
 Як воно влаштоване і як його безпечно міняти: [ARCHITECTURE.uk.md](ARCHITECTURE.uk.md).
+
+### Два скіли й тека для контрактів
+
+Інсталятор дає кожному агентові два скіли:
+
+* **agent-bridge** — дошка: кімнати, адресація, будіння, документи, контракти.
+* **agent-workflow** — як узагалі працювати над проєктом: одна тека `.agents/` з файлом на кожне
+  призначення, короткий зріз сесії, що переживає стиснення контексту й зміну акаунта, коміти як
+  єдина історія, і звички, що не дають марнувати токени. Агент, що нахапався поганих звичок
+  деінде, вчиться цих; ваші власні інструкції, де вони є, однаково мають перевагу.
+
+Також він створює **теку контрактів** (`contracts/` поряд із мостом або ту, що вказана як
+`contractsDir` у `bridge_config.json`). Залежні проєкти домовляються в кімнаті на дошці; текст, на
+якому обидві сторони зійшлися, лягає туди — одна тека на пару застосунків.
 
 ### Куди потрапляє скіл
 
