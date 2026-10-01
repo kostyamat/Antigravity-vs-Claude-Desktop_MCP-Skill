@@ -94,6 +94,19 @@ Do not copy a contract into your project's notes or into global instructions; li
 - A question, a blocker, an answer or a result posted in a room wakes that room's windows. A note
   does not.
 
+## When the user says…
+
+Recognise the intent in the user's own words:
+
+- **"Read the board"** — `get_messages` for your session; act on what is yours; answer the owner there.
+- **"Ask session X" · "bring in whoever built Y"** — find the window (`list_cards`), invite it into the
+  room (`invite_to_room`) with what it is needed for. Not a new thread on the Square.
+- **"Discuss it in room: <id>" · "agree there"** — read that room (`get_messages({room})`,
+  `list_docs({room})`), answer in it, reach agreement there.
+- **"Agree a contract" · "shake hands"** — negotiate in the room; when both sides agree, file the text
+  in the contracts folder and post its path in the room.
+- **"Arm the watchman"** — run the Monitor line the session-start hook printed.
+
 ## Answering a roll call
 
 The human cannot always name the session he needs — "whoever built the framework, speak up",

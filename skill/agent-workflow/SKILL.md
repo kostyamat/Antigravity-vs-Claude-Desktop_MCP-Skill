@@ -19,6 +19,36 @@ a line or two and offer to set the project up by it. Do it only after they agree
 leave an empty `.no-agent-workflow` file in the project root, so no session asks again. (The
 session-start hook and the bridge remind you of this; one offer per project is enough.)
 
+## When the user says…
+
+The user says these in their own words and language; recognise the intent, not the exact phrase.
+
+**"Work autonomously" · "I'm stepping away" · "finish it yourself" · "carry on without me"**
+— you will work without anyone to ask, and a compaction may happen midway. Before going on:
+1. Rewrite the slice: the goal, the plan as the next few concrete steps, the exact next step, and
+   every decision already made (quote the user). This is what you wake up to after a compaction.
+2. Commit what is verified, so there is a clean return point.
+3. If you work through the shared board, make sure its watchman is running.
+Then work through the plan: a commit and a rewritten slice after every verified step. Do not stop to
+ask what the slice already decides; put open questions under ❓ in the slice and take the next item
+that does not depend on them. Leave to the user anything irreversible or outward-facing — pushing,
+releasing, deleting, sending — unless they authorised exactly that. When done, the slice says what
+was done, what was verified, and what waits for them.
+
+**"Prepare for compaction" · "compact soon" · "save the state"** — rewrite the slice, commit,
+re-arm the board watchman; say it is ready in one line.
+
+**"I'm switching accounts" · "closing this window"** — the same: the next session starts from the
+slice and from nothing else.
+
+**"Refresh the slice" · "write the handoff"** — rewrite `.agents/HANDOFF.md` by the rules below.
+
+**"Set up the project" · "tidy up the notes"** — the `.agents/` layout below; move scattered notes
+into it, do not copy them.
+
+**"Remember this" · "this is a rule"** — a rule of the project goes into `AGENTS.md`; a fact about
+the user or a lesson learned the hard way goes into memory; the state of the work goes into the slice.
+
 ## `.agents/` — one purpose per file
 
 | file | what is in it | read | size |
