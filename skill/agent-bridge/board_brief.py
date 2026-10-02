@@ -197,6 +197,29 @@ def rooms_of_window(sid, win):
         return []
 
 
+def register_window(session_id, window):
+    """Record this window in the board registry before the agent has said anything.
+
+    The registry only ever learned of a window when something inside it called the
+    bridge, so a window that had just opened was missing from the board — and after
+    an account switch, all of them at once, which reads as "the board cannot see the
+    new account". The hook already knows the window and its title, so recording them
+    costs one short call and makes the window appear by itself.
+
+    Written under the label the brief tells the agent to sign with, so the agent's
+    own first call updates this row instead of creating a second one.
+    """
+    if not session_id or not window or not window.get("window"):
+        return
+    try:
+        subprocess.run(
+            ["node", os.path.join(_bridge_home(), "register-window.js"), ME, str(session_id),
+             window["window"], "claude-code", os.getcwd(), window.get("title", "")],
+            capture_output=True, timeout=15)
+    except Exception:
+        pass                           # the board is a convenience, never a gate
+
+
 def prompt_invites():
     """UserPromptSubmit: an invitation reaches a window that was asleep.
 
@@ -328,6 +351,10 @@ def main():
         con.close()
     except Exception:
         return 0
+
+    # Outside the block above on purpose: a registry that cannot be written to
+    # must still leave the human with a brief.
+    register_window(hook_session, window)
 
     lines = ["agent-bridge: %s%s" % (
         ("%d unread for %s" % (unread, ME)) if unread else "nothing new",
