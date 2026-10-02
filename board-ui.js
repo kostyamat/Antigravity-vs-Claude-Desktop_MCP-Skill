@@ -337,7 +337,10 @@ function apiCards(hours) {
 
 function apiRooms() {
   const account = cardsLib.currentAccount() || '';
-  return { account, rooms: bridgeDb.readRooms(account) };
+  const rooms = bridgeDb.readRooms().map(r => (account && r.account && r.account !== account)
+    ? Object.assign({}, r, { elsewhere: true })
+    : r);
+  return { account, emails: cardsLib.accountEmails(), rooms };
 }
 
 function apiSessions() {

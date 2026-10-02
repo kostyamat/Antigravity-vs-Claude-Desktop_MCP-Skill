@@ -989,15 +989,18 @@ function doCreateRoom(id, a) {
 }
 
 function doListRooms(id, a) {
-  const acct = a.account || cardsLib.currentAccount() || '';
-  const rooms = bridgeDb.readRooms(acct);
+  const here = a.account || cardsLib.currentAccount() || '';
+  const emails = cardsLib.accountEmails();
+  const rooms = bridgeDb.readRooms();
   if (!rooms.length) return ok(id, 'No rooms yet. Make one with create_room.');
   const known = new Map(cardsLib.allCards({ names: boardNames() }).map(c => [c.id, c]));
   const lines = rooms.map(r => {
     const who = r.members
       .map(m => (known.get(m.card) || {}).name || m.card.slice(0, 12))
       .join(' + ');
-    return `${r.name} [${r.id}] · ${r.messages} messages\n     ${who}`;
+    const whose = (here && r.account && r.account !== here)
+      ? ` · ${emails[r.account] || 'other account'}` : '';
+    return `${r.name} [${r.id}] · ${r.messages} messages${whose}\n     ${who}`;
   });
   ok(id, `Rooms of account ${acct || '—'}:\n` + lines.join('\n'));
 }

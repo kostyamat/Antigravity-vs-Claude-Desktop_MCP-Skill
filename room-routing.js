@@ -182,7 +182,7 @@ function createRouter(bridgeDb, cardsLib) {
       const norm = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
       const want = norm(q);
       if (!want) return null;
-      const rooms = bridgeDb.readRooms(account());
+      const rooms = bridgeDb.readRooms();
       const named = rooms.filter(r => norm(r.name) === want);
       if (named.length === 1) return bridgeDb.getRoom(named[0].id);
       const words = want.split(' ');

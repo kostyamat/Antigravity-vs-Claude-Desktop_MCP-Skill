@@ -137,8 +137,12 @@ function renderRooms() {
   let html = row(SQUARE, 'Square', 'Messages outside any room' + (lastLoose ? ' · ' + ago(lastLoose) : ''),
                  'Everything that was never put in a room');
   html += '<div class="divider"></div>';
+  // Rooms stay sorted by what was last said in them, across both accounts, so
+  // the one being talked in is on top wherever it was made. Whose it is goes in
+  // the line under the name rather than into a block of its own.
+  const whose = r => r.elsewhere ? ' · ' + (CARD_EMAILS[r.account] || 'other account') : '';
   html += ROOMS.map(r => row(r.id, r.name,
-    r.messages + (r.messages === 1 ? ' message' : ' messages') + (r.lastTs ? ' · ' + ago(r.lastTs) : ''),
+    r.messages + (r.messages === 1 ? ' message' : ' messages') + (r.lastTs ? ' · ' + ago(r.lastTs) : '') + whose(r),
     r.name + '\n' + r.members.map(m => windowName(m.card, m.agent)).join('\n'))).join('');
   if (!ROOMS.length) html += '<div class="hint" style="padding:8px">No rooms yet. Tick two windows under Windows to make one.</div>';
   $('#roomList').innerHTML = html;
@@ -150,7 +154,12 @@ $('#roomList').addEventListener('click', e => {
 });
 
 async function loadRooms() {
-  try { ROOMS = (await (await fetch('/api/rooms')).json()).rooms || []; } catch (_) { return; }
+  try {
+    const r = await (await fetch('/api/rooms')).json();
+    ROOMS = r.rooms || [];
+    if (r.account) CARD_ACCOUNT = r.account;
+    if (r.emails) CARD_EMAILS = r.emails;
+  } catch (_) { return; }
   renderRooms();
   if (ROOM != null) renderHead();
 }

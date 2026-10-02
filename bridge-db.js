@@ -1264,11 +1264,14 @@ function getRoom(id) {
 // Rooms of one account, busiest last used first. A room with no account set is
 // shown everywhere: it was made before accounts mattered, and hiding it would
 // look like it had been lost.
-function readRooms(account) {
+// Every room, whichever account made it. The board is one board on one
+// machine and both accounts are the same person, so dividing rooms by account
+// hid thirty-one of thirty-four after a switch — and hid them from addressing
+// by name too, not only from the list. The account column stays as provenance,
+// and the surfaces that show a room mark whose it is; it is not a wall.
+function readRooms() {
   const db = getDb();
-  const rows = account
-    ? db.prepare("SELECT * FROM rooms WHERE account = ? OR account = ''").all(String(account))
-    : db.prepare('SELECT * FROM rooms').all();
+  const rows = db.prepare('SELECT * FROM rooms').all();
   for (const r of rows) {
     r.members = db.prepare('SELECT card, agent FROM room_members WHERE room = ? ORDER BY agent, card').all(r.id);
     const c = db.prepare('SELECT COUNT(*) AS n, MAX(id) AS last, MAX(ts) AS lastTs FROM messages WHERE room = ?').get(r.id);
