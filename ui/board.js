@@ -233,8 +233,8 @@ $('#newRoom').onclick = () => {
 // ── windows ─────────────────────────────────────────────────────────────────
 
 async function loadCards() {
-  const all = $('#winOtherAccount').checked;
-  try { CARDS = (await (await fetch('/api/cards?hours=720' + (all ? '&all=1' : ''))).json()).cards || []; } catch (_) {}
+  // Every account, always: the server marks which window lives where.
+  try { CARDS = (await (await fetch('/api/cards?hours=720')).json()).cards || []; } catch (_) {}
 }
 
 function renderWindows() {
@@ -268,7 +268,6 @@ function updateTray() {
 
 $('#winList').addEventListener('change', updateTray);
 $('#winFilter').addEventListener('input', renderWindows);
-$('#winOtherAccount').onchange = async () => { await loadCards(); renderWindows(); };
 
 $('#winNewRoom').onclick = async () => {
   const cards = pickedWindows(); if (!cards.length) return;

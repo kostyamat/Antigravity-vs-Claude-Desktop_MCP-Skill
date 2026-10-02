@@ -309,23 +309,24 @@ function boardCardNames() {
   return names;
 }
 
-function apiCards(hours, allAccounts) {
+function apiCards(hours) {
   const names = boardCardNames();
   const here = cardsLib.currentAccount() || '';
-  const list = cardsLib.allCards({ sinceHours: hours || 48, names });
 
-  // Windows of the other Claude account are offered too, marked as elsewhere.
-  // One of them is not open now and will not answer today — but it reads the
-  // board when it comes back, and a room is exactly how a thread waits for it.
-  if (allAccounts) {
-    for (const acct of cardsLib.claudeAccounts()) {
-      if (acct === here) continue;
-      for (const c of cardsLib.claudeCards(acct)) {
-        if (c.archived) continue;
-        list.push(Object.assign({}, c, { name: c.name || names[c.id] || '', elsewhere: true }));
-      }
-    }
-  }
+  // Every account at once, each window marked with the one it belongs to. The
+  // other account used to sit behind a checkbox, so after a switch the owner
+  // opened the list, found no Claude windows in it, and read that as the board
+  // having lost them. A window that is not open now still reads the board when
+  // it comes back, which is exactly how a room waits for it — so it belongs in
+  // the list, marked, rather than hidden.
+  //
+  // Marked, not separated: every account passes the same age filter, or the
+  // other one would pour its whole history in beside a day of this one.
+  const list = cardsLib.allCards({ sinceHours: hours || 48, names, allAccounts: true })
+    .map(c => (c.agent === 'Claude' && here && c.account && c.account !== here)
+      ? Object.assign({}, c, { elsewhere: true })
+      : c);
+
   return { account: here, accounts: cardsLib.claudeAccounts(), cards: list };
 }
 
@@ -497,7 +498,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.startsWith('/api/cards')) {
     const q = new URL(req.url, 'http://x').searchParams;
     return send(res, 200, 'application/json; charset=utf-8',
-      JSON.stringify(apiCards(Number(q.get('hours')) || 48, q.get('all') === '1')));
+      JSON.stringify(apiCards(Number(q.get('hours')) || 48)));
   }
   if (req.method === 'GET' && req.url === '/api/rooms') {
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(apiRooms()));
@@ -512,14 +513,14 @@ const server = http.createServer((req, res) => {
         const d = JSON.parse(body || '{}');
         if (what === 'create') {
           const cards = (d.cards || []).map(x => String(x).trim()).filter(Boolean);
-          const known = new Map(cardsLib.allCards({}).map(c => [c.id, c]));
+          const known = new Map(cardsLib.allCards({ allAccounts: true }).map(c => [c.id, c]));
           const members = cards.map(c => ({ card: c, agent: (known.get(c) || {}).agent || '' }));
           out = bridgeDb.createRoom(d.name || 'room', members, cardsLib.currentAccount() || '');
           if (out && out.id) {
             for (const m of members) inviteFromOwner(d.from, out, m.card, known.get(m.card));
           }
         } else if (what === 'add') {
-          const known = new Map(cardsLib.allCards({}).map(c => [c.id, c]));
+          const known = new Map(cardsLib.allCards({ allAccounts: true }).map(c => [c.id, c]));
           out = bridgeDb.addRoomMember(d.id, d.card, (known.get(d.card) || {}).agent || d.agent || '');
           const room = bridgeDb.getRoom(String(d.id || ''));
           if (room) inviteFromOwner(d.from, room, d.card, known.get(d.card));

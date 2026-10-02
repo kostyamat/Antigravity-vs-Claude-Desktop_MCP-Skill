@@ -208,10 +208,20 @@ function byActivity(a, b) {
 // `sinceHours` drops windows nobody has touched lately: there are over two
 // hundred Antigravity conversations on this machine, and a picker showing all of
 // them is the crowded square again.
+// Every Claude window of every account signed in on this machine, newest
+// first. One job here is carried from two accounts, so a list limited to the
+// account signed in right now hides half the work and shows it as absence.
+function claudeCardsEverywhere() {
+  const out = [];
+  for (const acct of claudeAccounts()) out.push(...claudeCards(acct));
+  return out.sort(byActivity);
+}
+
 function allCards(opts) {
   const o = opts || {};
   const names = o.names || {};
-  const cards = claudeCards(o.account).concat(geminiCards());
+  const cards = (o.allAccounts ? claudeCardsEverywhere() : claudeCards(o.account))
+    .concat(geminiCards());
   const cutoff = o.sinceHours
     ? Date.now() - o.sinceHours * 3600 * 1000
     : null;
@@ -231,6 +241,7 @@ module.exports = {
   currentAccount,
   claudeAccounts,
   claudeCards,
+  claudeCardsEverywhere,
   geminiCards,
   allCards
 };
