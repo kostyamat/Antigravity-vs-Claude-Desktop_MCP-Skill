@@ -105,6 +105,7 @@ code { font-family: var(--mono); font-size: .92em; }
 .row input { margin-top: 3px; }
 .row.here .row-meta::after { content: " · in this room"; color: var(--accent); }
 .group { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); padding: 10px 8px 4px; }
+.group .plain { text-transform: none; letter-spacing: 0; }
 .divider { height: 1px; background: var(--line); margin: 6px 8px; }
 
 .tray {

@@ -21,6 +21,8 @@ const ME = $('#from').value;
 let DATA = [];          // every message, oldest first
 let ROOMS = [];
 let CARDS = [];
+let CARD_ACCOUNT = '';      // the Claude account signed in right now
+let CARD_EMAILS = {};       // account id -> address, for those that have one
 let SESSIONS = [];
 let DOCS = [];
 let ROOM = null;        // null until the first choice; SQUARE ('') is a real place
@@ -234,7 +236,12 @@ $('#newRoom').onclick = () => {
 
 async function loadCards() {
   // Every account, always: the server marks which window lives where.
-  try { CARDS = (await (await fetch('/api/cards?hours=720')).json()).cards || []; } catch (_) {}
+  try {
+    const r = await (await fetch('/api/cards?hours=720')).json();
+    CARDS = r.cards || [];
+    CARD_ACCOUNT = r.account || '';
+    CARD_EMAILS = r.emails || {};
+  } catch (_) {}
 }
 
 function renderWindows() {
@@ -246,12 +253,41 @@ function renderWindows() {
   const row = c => '<label class="row' + (inRoom.has(c.id) ? ' here' : '') + '" title="' + esc(c.name || '') + '">' +
     '<input type="checkbox" value="' + esc(c.id) + '"' + (picked.has(c.id) ? ' checked' : '') + '>' +
     '<div class="row-main"><div class="row-name">' + esc(c.name || 'Untitled window') + '</div>' +
-    '<div class="row-meta">' + esc([project(c), c.elsewhere ? 'other account' : '', c.busy ? 'working now' : '',
+    '<div class="row-meta">' + esc([project(c), c.busy ? 'working now' : '',
       c.activeAt ? ago(c.activeAt) : ''].filter(Boolean).join(' · ')) + '</div></div></label>';
   const group = (title, list) => list.length ? '<div class="group">' + title + '</div>' + list.map(row).join('') : '';
   const shown = CARDS.filter(match);
+  const claude = shown.filter(c => c.agent === 'Claude');
+
+  // Grouped by account, not ticked window by window. With two accounts open at
+  // once the question is nearly always "which of my accounts is this one in",
+  // and a heading answers it for a whole block instead of per row. The heading
+  // stays plain "Claude" on a machine with one account, where naming it would
+  // only raise a question nobody has.
+  //
+  // An account is named by its address wherever the machine knows one, because
+  // that is the name the owner thinks in and a uuid is not. Only the account
+  // signed in to Claude Code records an address, so the other heading says
+  // which side of the switch it is on instead of inventing a name for it.
+  const named = a => esc(CARD_EMAILS[a] || '');
+  // Group headings are uppercased by the stylesheet, which suits a word and
+  // not an address: an address in capitals reads as shouting, and is harder
+  // match against what the owner typed when he signed in.
+  const head = (a, fallback) => 'Claude \u00b7 ' +
+    (named(a) ? '<span class="plain">' + named(a) + '</span>' : fallback);
+  const others = [...new Set(claude.filter(c => c.elsewhere).map(c => c.account || ''))];
+  const mine = group(others.length ? head(CARD_ACCOUNT, 'this account') : 'Claude',
+    claude.filter(c => !c.elsewhere));
+  // Two accounts is today's case and "other account" says it plainly; with more
+  // than two that wording would hide exactly what it claims to show, so each
+  // account gets its own heading.
+  const elsewhere = others.length < 2
+    ? group(head(others[0], 'other account'), claude.filter(c => c.elsewhere))
+    : others.map(a => group(head(a, 'account ' + String(a).slice(0, 8)),
+        claude.filter(c => c.elsewhere && c.account === a))).join('');
+
   $('#winList').innerHTML =
-    group('Claude', shown.filter(c => c.agent === 'Claude')) +
+    mine + elsewhere +
     group('Antigravity', shown.filter(c => c.agent !== 'Claude')) ||
     '<div class="hint" style="padding:8px">' + (q ? 'No window matches.' : 'No windows found.') + '</div>';
   updateTray();

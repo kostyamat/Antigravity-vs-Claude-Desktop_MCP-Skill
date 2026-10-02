@@ -27,6 +27,7 @@ const APPDATA = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
 
 const CLAUDE_SESSIONS = path.join(APPDATA, 'Claude', 'claude-code-sessions');
 const CLAUDE_CONFIG = path.join(APPDATA, 'Claude', 'config.json');
+const CLAUDE_CODE_CONFIG = path.join(HOME, '.claude.json');
 const GEMINI_HOME = path.join(HOME, '.gemini', 'antigravity');
 const GEMINI_CONVERSATIONS = path.join(GEMINI_HOME, 'conversations');
 const GEMINI_SUMMARIES = path.join(GEMINI_HOME, 'conversation_summaries.db');
@@ -85,6 +86,22 @@ function listDirs(dir) {
 function currentAccount() {
   const cfg = readJson(CLAUDE_CONFIG);
   return (cfg && cfg.lastKnownAccountUuid) || null;
+}
+
+// The address behind an account id, where this machine records one. Claude
+// Code keeps the account it is signed in to, so usually one of the two is
+// named and the other is not; nothing else on disk carries an address, and a
+// heading that says the real one beats a uuid that means nothing to anybody.
+// Accounts with no address recorded are simply absent from the map, and the
+// caller says "this account" or "other account" rather than inventing a name.
+function accountEmails() {
+  const out = {};
+  const cfg = readJson(CLAUDE_CODE_CONFIG);
+  const acc = cfg && cfg.oauthAccount;
+  if (acc && acc.accountUuid && acc.emailAddress) {
+    out[String(acc.accountUuid)] = String(acc.emailAddress);
+  }
+  return out;
 }
 
 function claudeAccounts() {
@@ -239,6 +256,7 @@ function allCards(opts) {
 
 module.exports = {
   currentAccount,
+  accountEmails,
   claudeAccounts,
   claudeCards,
   claudeCardsEverywhere,

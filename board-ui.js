@@ -327,7 +327,12 @@ function apiCards(hours) {
       ? Object.assign({}, c, { elsewhere: true })
       : c);
 
-  return { account: here, accounts: cardsLib.claudeAccounts(), cards: list };
+  return {
+    account: here,
+    accounts: cardsLib.claudeAccounts(),
+    emails: cardsLib.accountEmails(),
+    cards: list
+  };
 }
 
 function apiRooms() {
