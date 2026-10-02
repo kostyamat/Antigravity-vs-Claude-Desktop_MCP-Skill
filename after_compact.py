@@ -47,9 +47,26 @@ def git(root, *args):
         return "(git %s: %s)" % (" ".join(args), e)
 
 
+def stale_note(root):
+    """What pre_compact.py found missing from the slice when the compaction fired; None if nothing."""
+    try:
+        data = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace") or "{}")
+        from pre_compact import note_path
+        path = note_path(data.get("session_id"))
+        with io.open(path, encoding="utf-8") as f:
+            note = json.load(f)
+        os.remove(path)  # said once
+    except Exception:
+        return None
+    if os.path.normcase(note.get("root", "")) != os.path.normcase(root):
+        return None
+    return note.get("problems") or None
+
+
 def main():
     root = find_root(os.getcwd())
     slice_text = read_slice(root)
+    stale = stale_note(root)
     lines = [
         "THE CONTEXT WAS JUST COMPACTED. What to do:",
         "1) If the session-start hook printed a watchman line for the board, run it again: the watchman died.",
@@ -59,6 +76,10 @@ def main():
         "",
         "=== Project: %s ===" % root,
     ]
+    if stale:
+        lines += ["", "🔴 THE SLICE WAS STALE WHEN THE COMPACTION FIRED - it does not cover everything below.",
+                  "Before carrying on: reconstruct what these hold (git show, git diff), commit it, rewrite the slice."]
+        lines += stale
     if slice_text:
         lines += ["", "=== .agents/HANDOFF.md ===", slice_text]
     else:

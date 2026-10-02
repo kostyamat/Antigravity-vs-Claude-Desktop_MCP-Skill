@@ -332,11 +332,14 @@ try {
     console.warn(`  ⚠️ settings.json cannot be read (invalid JSON) — NOT modifying.`);
     console.warn('     Add the hooks by hand: the commands are printed above.');
   } else {
-    // Three hooks, one way of installing them. A hook is found by a word in its
+    // Four hooks, one way of installing them. A hook is found by a word in its
     // command, so an earlier copy at another path is moved here rather than
     // added twice.
     //   board_brief         — every session start: who you are on the board, what is new.
     //   after_compact       — after a compaction only: the slice, last commits, dirty files.
+    //   pre_compact         — before a compaction: warns when the slice lags the tree
+    //                          (commits after it, dirty files) and leaves a note that
+    //                          after_compact hands to the woken session. Never blocks.
     //   board_brief --prompt — every prompt, silent unless this window was invited into
     //                          a room: a Claude window cannot be woken from outside, so
     //                          the owner's next word, whatever it is, carries the invitation.
@@ -347,6 +350,9 @@ try {
       { event: 'SessionStart', needle: 'after_compact', matcher: 'compact',
         hook: { type: 'command', command: `${pyCmd} "${posix(path.join(SCRIPTS_DIR, 'after_compact.py'))}"`,
                 timeout: 30, statusMessage: 'Context guard: the session slice after compaction' } },
+      { event: 'PreCompact', needle: 'pre_compact', matcher: null,
+        hook: { type: 'command', command: `${pyCmd} "${posix(path.join(SCRIPTS_DIR, 'pre_compact.py'))}"`,
+                timeout: 20, statusMessage: 'Context guard: is the slice current?' } },
       { event: 'UserPromptSubmit', needle: 'board_brief', matcher: null,
         hook: { type: 'command', command: briefCmd + ' --prompt', timeout: 10 } }
     ];
