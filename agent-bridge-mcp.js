@@ -1095,8 +1095,15 @@ function doPost(id, a) {
         }
       } catch (_) {}
       const ownParent = parent.from === from && mine.has(String(parent.fromSession || ''));
-      if (!toAgent || toAgent === 'all') toAgent = ownParent ? (parent.to || 'all') : parent.from;
-      if (!toSession) toSession = ownParent ? (parent.toSession || '') : (parent.fromSession || '');
+      // The thread's counterpart: the parent's addressee for one's own message, else its author.
+      const threadAgent = ownParent ? (parent.to || 'all') : parent.from;
+      if (!toAgent || toAgent === 'all') toAgent = threadAgent;
+      // A session is inherited only with its own agent. Replying in the owner's thread while
+      // naming another agent took the owner's session (#1605, #1608: to Claude / human/web) and
+      // reached nobody - the same guard the web UI keeps.
+      if (!toSession && String(toAgent).toLowerCase() === String(threadAgent).toLowerCase()) {
+        toSession = ownParent ? (parent.toSession || '') : (parent.fromSession || '');
+      }
       if (!topic && parent.topic) topic = parent.topic;
     }
   }
