@@ -162,6 +162,12 @@ async function loadRooms() {
   } catch (_) { return; }
   renderRooms();
   if (ROOM != null) renderHead();
+  // The recipient list is built from the room's members: an invited window was missing from it
+  // until the page was reloaded. Rebuilt only when the members change, so a poll does not close
+  // an open dropdown.
+  const r = roomById(ROOM);
+  const sig = r ? r.id + ':' + r.members.map(m => m.card).join(',') : '';
+  if (sig !== loadRooms.sig) { loadRooms.sig = sig; fillTo($('#to').value); }
 }
 
 function enterRoom(id) {
