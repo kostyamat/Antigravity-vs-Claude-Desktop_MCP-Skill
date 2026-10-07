@@ -161,6 +161,27 @@ function firstWorkspace(raw) {
 // Every Antigravity conversation worth showing. The id is the file name and the
 // address the waker already delivers to, so nothing has to be translated; the
 // name, the project and whether the window is busy come from the summaries.
+// A conversation file is not always a window. Antigravity also keeps a database per
+// sub-conversation an agent starts (trajectory type 22, with a parent reference) and
+// leaves empty ones behind; its sidebar shows neither, so neither has a summary row,
+// and the board listed 26 of them as "Untitled window" (08.10.2026). Asked only for
+// files without a summary, so the big ones are rarely opened.
+function isWindow(id) {
+  try {
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(path.join(GEMINI_CONVERSATIONS, id + '.db'), { readOnly: true });
+    try {
+      const parents = db.prepare('SELECT COUNT(*) AS n FROM parent_references').get().n;
+      const steps = db.prepare('SELECT COUNT(*) AS n FROM steps').get().n;
+      return !Number(parents) && Number(steps) > 0;
+    } finally {
+      db.close();
+    }
+  } catch (_) {
+    return true;      // an unreadable file stays listed: hiding a real window is the worse error
+  }
+}
+
 function geminiCards() {
   let ids = [];
   try {
@@ -191,6 +212,7 @@ function geminiCards() {
   for (const id of ids) {
     const m = meta.get(id);
     if (m && Number(m.killed) === 1) continue;
+    if (!m && !annotatedTitle(id) && !isWindow(id)) continue;
     let activeAt = null;
     try {
       activeAt = fs.statSync(path.join(GEMINI_CONVERSATIONS, id + '.db')).mtime.toISOString();
