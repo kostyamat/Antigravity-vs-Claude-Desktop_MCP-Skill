@@ -93,6 +93,9 @@ code { font-family: var(--mono); font-size: .92em; }
 }
 .row:hover { background: var(--hover); }
 .row.on { background: var(--selected); }
+/* an Antigravity child process, listed under the window that started it */
+.row.child { padding-left: 24px; }
+.row.child .row-name { color: var(--ink-2, inherit); }
 .row-main { flex: 1; min-width: 0; }
 .row-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13.5px; }
 .row-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--ink-3); }

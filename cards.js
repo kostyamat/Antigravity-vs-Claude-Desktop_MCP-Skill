@@ -161,24 +161,80 @@ function firstWorkspace(raw) {
 // Every Antigravity conversation worth showing. The id is the file name and the
 // address the waker already delivers to, so nothing has to be translated; the
 // name, the project and whether the window is busy come from the summaries.
+// The strings inside a protobuf message, depth first. Antigravity stores its rows as
+// protobuf without a schema we have; the fields we need are plain strings in them.
+function protoStrings(buf, out, depth) {
+  out = out || [];
+  if (!buf || depth > 6) return out;
+  let i = 0;
+  const varint = () => {
+    let v = 0, shift = 0, b;
+    do { if (i >= buf.length) throw new Error('eof'); b = buf[i++]; v += (b & 0x7f) * 2 ** shift; shift += 7; } while (b & 0x80);
+    return v;
+  };
+  try {
+    while (i < buf.length) {
+      const key = varint();
+      const wire = key & 7;
+      if (wire === 0) varint();
+      else if (wire === 1) i += 8;
+      else if (wire === 5) i += 4;
+      else if (wire === 2) {
+        const len = varint();
+        if (len < 0 || i + len > buf.length) return out;
+        const part = buf.subarray(i, i + len);
+        i += len;
+        const before = out.length;
+        protoStrings(part, out, (depth || 0) + 1);
+        if (out.length === before) {
+          const s = part.toString('utf8');
+          if (s && !s.includes('�') && !/[\x00-\x08\x0e-\x1f]/.test(s)) out.push(s);
+        }
+      } else return out;
+    }
+  } catch (_) {}
+  return out;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 // A conversation file is not always a window. Antigravity also keeps a database per
-// sub-conversation an agent starts (trajectory type 22, with a parent reference) and
-// leaves empty ones behind; its sidebar shows neither, so neither has a summary row,
-// and the board listed 26 of them as "Untitled window" (08.10.2026). Asked only for
-// files without a summary, so the big ones are rarely opened.
-function isWindow(id) {
+// child process an agent starts in a project (trajectory type 22, with a parent
+// reference), and leaves empty ones behind; its sidebar shows neither, so neither has a
+// summary row, and the board listed 26 of them as "Untitled window" (08.10.2026).
+// A child is shown under its parent window with the task it was given; an empty one is
+// dropped. Asked only for files without a summary, so the big ones are rarely opened.
+function conversationKind(id, known) {
   try {
     const { DatabaseSync } = require('node:sqlite');
     const db = new DatabaseSync(path.join(GEMINI_CONVERSATIONS, id + '.db'), { readOnly: true });
     try {
-      const parents = db.prepare('SELECT COUNT(*) AS n FROM parent_references').get().n;
-      const steps = db.prepare('SELECT COUNT(*) AS n FROM steps').get().n;
-      return !Number(parents) && Number(steps) > 0;
+      const steps = Number(db.prepare('SELECT COUNT(*) AS n FROM steps').get().n);
+      if (!steps) return { kind: 'empty' };
+      const ref = db.prepare('SELECT data FROM parent_references ORDER BY idx LIMIT 1').get();
+      if (!ref) return { kind: 'window' };
+      const parent = protoStrings(Buffer.from(ref.data)).filter(s => UUID.test(s)).find(s => known.has(s)) || '';
+      // The task: the request the child started from (step type 14, the same words the
+      // parent was given), or, when it started without one, the first action it took.
+      let task = '';
+      for (const r of db.prepare('SELECT step_type, step_payload FROM steps ORDER BY idx LIMIT 8').all()) {
+        const strings = protoStrings(r.step_payload ? Buffer.from(r.step_payload) : null);
+        if (Number(r.step_type) === 14) {
+          task = strings.filter(s => !UUID.test(s) && /\s/.test(s)).sort((a, b) => b.length - a.length)[0] || '';
+        } else {
+          for (const s of strings) {
+            try { task = JSON.parse(s).toolAction || ''; } catch (_) {}
+            if (task) break;
+          }
+        }
+        if (task) break;
+      }
+      return { kind: 'child', parent, task: task.replace(/\s+/g, ' ').trim() };
     } finally {
       db.close();
     }
   } catch (_) {
-    return true;      // an unreadable file stays listed: hiding a real window is the worse error
+    return { kind: 'window' };   // an unreadable file stays listed: hiding a real window is the worse error
   }
 }
 
@@ -208,19 +264,23 @@ function geminiCards() {
     // no summaries: fall back to file times and bare ids
   }
 
+  const known = new Set(ids);
   const out = [];
+  const children = [];
   for (const id of ids) {
     const m = meta.get(id);
     if (m && Number(m.killed) === 1) continue;
-    if (!m && !annotatedTitle(id) && !isWindow(id)) continue;
+    const title = annotatedTitle(id);
+    const kind = (m || title) ? { kind: 'window' } : conversationKind(id, known);
+    if (kind.kind === 'empty') continue;
     let activeAt = null;
     try {
       activeAt = fs.statSync(path.join(GEMINI_CONVERSATIONS, id + '.db')).mtime.toISOString();
     } catch (_) {}
-    out.push({
+    const card = {
       agent: 'Gemini',
       id,
-      name: annotatedTitle(id) || (m && (m.title || m.preview)) || '',
+      name: title || (m && (m.title || m.preview)) || '',
       project: m ? firstWorkspace(m.workspace_uris) : '',
       account: null,          // Antigravity switches accounts without splitting these
       archived: false,
@@ -228,9 +288,32 @@ function geminiCards() {
       steps: m ? Number(m.step_count) || 0 : 0,
       createdAt: null,
       activeAt: asIso(m && m.last_user_input_time) || activeAt
-    });
+    };
+    if (kind.kind === 'child') {
+      card.parent = kind.parent;
+      card.task = kind.task;
+      children.push(card);
+    } else {
+      out.push(card);
+    }
   }
-  return out.sort(byActivity);
+  out.sort(byActivity);
+
+  // A child is named after its parent window and the task it was given, and listed right
+  // under the parent (newest child first); one whose parent is gone goes to the end.
+  const byId = new Map(out.map(c => [c.id, c]));
+  const under = new Map();
+  for (const c of children.sort(byActivity)) {
+    const p = byId.get(c.parent);
+    c.name = '↳ ' + ((p && p.name) || 'Antigravity') + (c.task ? ': ' + c.task : '');
+    if (p && !c.project) c.project = p.project;
+    const key = p ? p.id : '';
+    if (!under.has(key)) under.set(key, []);
+    under.get(key).push(c);
+  }
+  const ordered = [];
+  for (const c of out) ordered.push(c, ...(under.get(c.id) || []));
+  return ordered.concat(under.get('') || []);
 }
 
 function byActivity(a, b) {

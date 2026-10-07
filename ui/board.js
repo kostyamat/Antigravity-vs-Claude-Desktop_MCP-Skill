@@ -265,7 +265,8 @@ function renderWindows() {
   const inRoom = new Set((roomById(ROOM) || { members: [] }).members.map(m => m.card));
   const project = c => (c.project || '').split(/[\\/]/).filter(Boolean).pop() || '';
   const match = c => !q || (c.name + ' ' + project(c)).toLowerCase().includes(q);
-  const row = c => '<label class="row' + (inRoom.has(c.id) ? ' here' : '') + '" title="' + esc(c.name || '') + '">' +
+  const row = c => '<label class="row' + (inRoom.has(c.id) ? ' here' : '') + (c.parent !== undefined ? ' child' : '') +
+    '" title="' + esc(c.name || '') + '">' +
     '<input type="checkbox" value="' + esc(c.id) + '"' + (picked.has(c.id) ? ' checked' : '') + '>' +
     '<div class="row-main"><div class="row-name">' + esc(c.name || 'Untitled window') + '</div>' +
     '<div class="row-meta">' + esc([project(c), c.busy ? 'working now' : '',
