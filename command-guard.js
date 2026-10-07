@@ -36,7 +36,8 @@ const RULES = [
   { label: 'rm -r / rm -rf (recursive delete)', test: c => c.cmd === 'rm' && c.posixRecursive },
   { label: 'Remove-Item -Recurse', test: c => ['remove-item', 'ri', 'rm', 'rmdir', 'del', 'erase', 'rd'].includes(c.cmd) && c.args.some(a => /^-r(e(c(u(r(s(e)?)?)?)?)?)?$/i.test(a)) && c.isPowerShellish },
   { label: 'rmdir /s · rd /s · del /s', test: c => ['rmdir', 'rd', 'del', 'erase'].includes(c.cmd) && c.args.some(a => /^\/s$/i.test(a)) },
-  { label: 'Format-Volume / format', test: c => c.cmd === 'format-volume' || (c.cmd === 'format' && c.args.some(a => /^[a-z]:$/i.test(a))) }
+  { label: 'Format-Volume / format', test: c => c.cmd === 'format-volume' || (c.cmd === 'format' && c.args.some(a => /^[a-z]:$/i.test(a))) },
+  { label: 'adb shell pm grant / appops set (Permission Cheating)', test: c => c.cmd === 'adb' && /(pm\s+grant|appops\s+set)/.test(c.args.join(' ')) }
 ];
 
 // Split a command line into words, honouring quotes.
@@ -163,6 +164,10 @@ function streaming(line) {
 }
 
 function reasonFor(label) {
+  if (label.includes('Permission Cheating')) {
+    return 'Blocked by the agent-bridge guard: Permission Cheating via adb pm grant / appops set is FORBIDDEN. ' +
+      'It works on the test stand but fails for end users. The app must handle permissions natively via UI or system APIs.';
+  }
   return `Blocked by the agent-bridge guard: ${label} destroys work or history. ` +
     'Do not look for another way to do the same. If it really is needed, stop and ask the owner to run it. ' +
     'A damaged file is restored on its own: git restore <file>.';
