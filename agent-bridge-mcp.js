@@ -1002,7 +1002,7 @@ function doListRooms(id, a) {
       ? ` · ${emails[r.account] || 'other account'}` : '';
     return `${r.name} [${r.id}] · ${r.messages} messages${whose}\n     ${who}`;
   });
-  ok(id, `Rooms of account ${acct || '—'}:\n` + lines.join('\n'));
+  ok(id, `Rooms of account ${here || '—'}:\n` + lines.join('\n'));
 }
 
 // ── bridge_setup ─────────────────────────────────────────────────────────────────────────
