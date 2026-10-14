@@ -82,6 +82,13 @@ function createRouter(bridgeDb, cardsLib) {
     const mine = windowOf(a.canonicalId) || windowOf(a.sessionId);
     const theirs = windowOf(toSession);
     try {
+      // A room the sender names that exists wins over everything, the parent's
+      // room included: the owner opens a room to move a conversation into it,
+      // and an answer to a message from elsewhere must land where he asked.
+      const named = String(a.room || '').trim();
+      const found = named ? findRoom(named, [mine]) : null;
+      if (found) return { room: found.id };
+
       if (replyTo) {
         const parent = bridgeDb.getMessageById(replyTo);
         if (parent && parent.room && bridgeDb.getRoom(parent.room)) return { room: parent.room };
@@ -89,10 +96,7 @@ function createRouter(bridgeDb, cardsLib) {
         if (parent && !parent.room && isHuman(parent.fromSession)) return { room: '' };
       }
 
-      const named = String(a.room || '').trim();
       if (named) {
-        const found = findRoom(named, [mine]);
-        if (found) return { room: found.id };
         const made = roomOfPair(mine, theirs, named);
         return made ? { room: made.room.id, opened: made.isNew ? made.room : null } : { room: '' };
       }
