@@ -17,12 +17,21 @@ function quotedLines(text) {
     .filter(Boolean);
 }
 
-// A "…" at either end marks a quote cut short on purpose; only the rest must match.
+// A "…" marks text left out on purpose, at either end or in the middle.
 function checkQuotes(text, parentText) {
   const quotes = quotedLines(text);
   const whole = norm(parentText);
-  const core = q => norm(q.replace(/^(\.\.\.|…)\s*/, '').replace(/\s*(\.\.\.|…)$/, ''));
-  const foreign = quotes.filter(q => !whole.includes(core(q)));
+  // "…" in the middle joins two pieces of the same passage; each must be there, in order.
+  const found = q => {
+    let at = 0;
+    for (const piece of q.split(/\.\.\.|…/).map(norm).filter(Boolean)) {
+      const i = whole.indexOf(piece, at);
+      if (i < 0) return false;
+      at = i + piece.length;
+    }
+    return true;
+  };
+  const foreign = quotes.filter(q => !found(q));
   return { quotes: quotes.length, foreign };
 }
 
