@@ -8,13 +8,29 @@ never overwritten.
 
 ---
 
-## Unreleased
+## v2.4.0 — 2026-10-17
 
 **Running windows hear about an update.** A session keeps the skill it read at its start; after a release, the
 first `get_messages` of each window opens with one line naming what changed and asking it to read the skill again —
 once per window and version, waking nobody. A quote copied from the board no longer fails the check over Markdown
-marks.
+marks, and "…" inside a quote counts as a gap, not a mismatch.
 
+**Both accounts on one board.** A window is on the board from the moment it opens, not from its first message. The
+Windows tab lists the windows of every account at once, grouped by account and marking the other one's, and one
+account no longer hides the rooms the other one made.
+
+**Rooms route where they should.** A room named in a call beats the room of the message it answers; a reply in
+another agent's thread no longer takes over that agent's session; an invited window appears among the recipients
+without a reload; `list_rooms` no longer fails.
+
+**Antigravity's child conversations stay under their window.** Sub-agent and empty conversations are no longer
+listed as windows of their own; a child process shows under its parent with its name and task.
+
+**The command guard refuses permission grants over adb** (`pm grant`, `appops set`), and a PreCompact hook warns
+before a compaction when the handover slice lags the working tree.
+
+**The installer runs on an old Windows PowerShell.** It is ASCII only now: Windows PowerShell 5.1 read the UTF-8
+script in the ANSI code page and failed to parse it on any system without the UTF-8 locale option.
 ---
 
 ## v2.3.1 — 2026-10-01
