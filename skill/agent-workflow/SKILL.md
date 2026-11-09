@@ -135,8 +135,9 @@ A rejected commit means fixing the message or the content — never bypassing a 
   act on, write long artifacts to a file and pass the path.
 - Prefer one wide command over several narrow ones, and answer from what you already read.
 - Write a finding down once, at the end of a logical step, in its one canonical place.
-- Rules agents read are best in English: other scripts cost up to twice the tokens. What the user
-  reads — the slice, the queue, commit messages — is in the user's language.
+- Rules agents read are best in English: other scripts cost up to twice the tokens. The slice is
+  read at every session start, so it is English too. What only the user reads — the queue, the debt
+  list, commit messages — is in the user's language.
 - Memory files hold facts that outlive the current task (who the user is, what was learned the hard
   way). Never the state of the work: that is the slice's job.
 
@@ -199,6 +200,24 @@ like a rewrite.
   minute, finding it again costs days.
 - **Mark how each fact is known**: 🔬 read in code or firmware, 📻 measured, 🧩 inferred, ❓ unverified.
   An honest ❓ beats a confident sentence that turns out wrong.
+
+**Working with a helper agent** (a cheaper agent in another window, e.g. Gemini in Antigravity)
+- **Ask the user for a helper** when real work starts. The lead keeps design, review and the user;
+  the helper takes the routine: research in code and firmware, ports, translations, tests, device
+  measurements. A helper's quota is usually far larger than the lead's, so delegate generously.
+- **One room per lead and helper; every message inside it**, answers too. A helper takes tasks only
+  from its own lead. Leads of different lines agree with each other directly, never through or with
+  the other line's helper.
+- **A task names** the base commit, exactly what to change and what not to touch, the acceptance
+  (build, tests, what to show on the device) and says "research only" when no code is wanted.
+- **The helper delivers commits from its own sandbox or branch; the lead reviews the diff before
+  merging**: point changes only (no file rewritten from memory, no line-ending churn — check
+  `git diff --stat`), no second source of truth, no swallowed errors, no private text in logs.
+  Return it with concrete fixes; merge the content, not the noise.
+- **The helper never edits the lead's slice** and never acts on another lead's "go".
+- **Shared devices are booked in the room**: "taking X" before, "done" after; the lead gives an
+  explicit "go", and says so again when a helper is waiting for it.
+- **"Agreed" is not "started"**: ask who does it, on which branch, and when it reaches the device.
 
 **Working with tools and other sessions**
 - **Hand research to another session** (a room on the board) instead of filling your own context
