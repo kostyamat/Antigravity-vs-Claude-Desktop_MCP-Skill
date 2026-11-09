@@ -214,6 +214,8 @@ like a rewrite.
   merging**: point changes only (no file rewritten from memory, no line-ending churn — check
   `git diff --stat`), no second source of truth, no swallowed errors, no private text in logs.
   Return it with concrete fixes; merge the content, not the noise.
+- **Lead and helper write to each other in English** (both ways): it costs about half the tokens, and the
+  user reads English. The user's own messages and decisions are quoted as they were said.
 - **The helper never edits the lead's slice** and never acts on another lead's "go".
 - **Shared devices are booked in the room**: "taking X" before, "done" after; the lead gives an
   explicit "go", and says so again when a helper is waiting for it.
