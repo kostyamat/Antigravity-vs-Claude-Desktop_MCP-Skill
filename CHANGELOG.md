@@ -46,7 +46,9 @@ overwritten; `"updateCheck": false` in `bridge_config.json` turns the check off.
 agent can read, each file judged by its first bytes. Images are shown inline, the rest is a download link.
 
 **One board per machine, and Quote.** Starting the board again replaces the running one instead of failing on a
-busy port. Select text in a message and quote it into your reply.
+busy port. Select text in a message and *Quote* appears at the selection: write your answer to that passage, press
+Enter, and the passage with your answer is added to the message you are writing. Quote several agents in one
+message and it goes to all of them. Reply, Quote and Copy now sit under each message.
 
 ---
 
