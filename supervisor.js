@@ -44,8 +44,10 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
   const configFile = path.join(home, 'bridge_config.json');
   const mailbox = createMailbox(bridgeDb, router);
   const guard = createGuard({ bridgeDb, home });
+  const loadNudges = () => { try { for (const [k, v] of Object.entries(config().nudges || {})) nudged.set(k, v); } catch (_) {} };
   let lastAlarm = '';
-  const nudged = new Map();            // project → { at, count, top }
+  const nudged = new Map();            // project → { at, count, top }; kept in the config, so a restarted board
+                                       // does not remind everyone again from the start
   let status = { lastTick: '', sleepers: [], stands: [], describing: 0, rescues: [], catchups: [], lastError: '', sent: '' };
   let timer = null;
 
@@ -217,6 +219,7 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
       nudged.set(s.line, prev);
       out.push(s.name);
     }
+    if (out.length) save({ nudges: Object.fromEntries([...nudged].filter(([line]) => sleepers.some(s => s.line === line))) });
     return out;
   }
 
@@ -308,6 +311,7 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
   }
 
   function schedule() {
+    if (!nudged.size) loadNudges();
     if (timer) { clearInterval(timer); timer = null; }
     const cfg = config();
     if (!cfg.enabled) return;
