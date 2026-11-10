@@ -25,6 +25,13 @@ const cardsLib = require('./cards');
 const archiver = require('./room-archive').createArchiver(bridgeDb, path.resolve(__dirname));
 const { wakeAntigravity } = require('./wake-antigravity');
 const { inviteText } = require('./room-invite');
+const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
+const rules = require('./board-rules').createRules(bridgeDb, cardsLib, router);
+const { projectName } = require('./project-line');
+const dbBackup = require('./db-backup');
+// The build this process was started from; the installer asks for it to know
+// whether the running dashboard is the code on disk.
+const BUILD = require('./build-print').modulesPrint(path.resolve(__dirname));
 
 const SCRIPTS_DIR = path.resolve(__dirname);
 const LOG_FILE = path.join(SCRIPTS_DIR, 'board_ui_stderr.log');
@@ -322,15 +329,29 @@ function apiCards(hours) {
   //
   // Marked, not separated: every account passes the same age filter, or the
   // other one would pour its whole history in beside a day of this one.
+  const helpers = bridgeDb.readHelpers();
   const list = cardsLib.allCards({ sinceHours: hours || 48, names, allAccounts: true })
-    .map(c => (c.agent === 'Claude' && here && c.account && c.account !== here)
-      ? Object.assign({}, c, { elsewhere: true })
-      : c);
+    .map(c => {
+      const out = (c.agent === 'Claude' && here && c.account && c.account !== here)
+        ? Object.assign({}, c, { elsewhere: true })
+        : Object.assign({}, c);
+      // The participant behind the window: its project. Shown first, because the
+      // window's own name is whatever the client made of its first sentence.
+      let line = '';
+      try { line = c.agent === 'Claude' ? (router.addressOf(c.id) || '') : (bridgeDb.lineOf(c.id) || ''); } catch (_) {}
+      if (line && line !== c.id) { out.line = line; out.projectName = projectName(line) || line; }
+      const boss = helpers.find(h => h.helper === c.id);
+      if (boss) out.helperOf = router.nameOf(boss.lead);
+      return out;
+    });
 
   return {
     account: here,
     accounts: cardsLib.claudeAccounts(),
     emails: cardsLib.accountEmails(),
+    problem: cardsLib.claudeProblem(),
+    lines: [...bridgeDb.readLines().keys()].map(l => ({ id: l, name: projectName(l) || l })),
+    stands: bridgeDb.readStands().map(s => Object.assign({}, s, { holderName: router.nameOf(s.holder) })),
     cards: list
   };
 }
@@ -526,6 +547,9 @@ const server = http.createServer((req, res) => {
           out = bridgeDb.createRoom(d.name || 'room', members, cardsLib.currentAccount() || '');
           if (out && out.id) {
             for (const m of members) inviteFromOwner(d.from, out, m.card, known.get(m.card));
+            const p = rules.autoPair(out.id);
+            if (p) apiPost({ from: String(d.from || '').trim() || ownerName(), room: out.id, to: 'Gemini', toSession: p.helper,
+                             topic: 'helper', text: rules.pairNotice(p) });
           }
         } else if (what === 'add') {
           const known = new Map(cardsLib.allCards({ allAccounts: true }).map(c => [c.id, c]));
@@ -551,6 +575,17 @@ const server = http.createServer((req, res) => {
       } catch (e) {
         out = { error: e.message };
       }
+      send(res, 200, 'application/json; charset=utf-8', JSON.stringify(out));
+    });
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/api/stand/release') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
+    req.on('end', () => {
+      let out;
+      try { out = { ok: bridgeDb.releaseStand(String(JSON.parse(body || '{}').stand || '')) }; }
+      catch (e) { out = { error: e.message }; }
       send(res, 200, 'application/json; charset=utf-8', JSON.stringify(out));
     });
     return;
@@ -682,6 +717,9 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  if (req.method === 'GET' && req.url === '/api/version') {
+    return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ build: BUILD }));
+  }
   if (req.method === 'GET' && req.url === '/api/agents') {
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({
       antigravity: isProcessRunning('Antigravity.exe'),
@@ -799,6 +837,9 @@ function openAppWindow(url) {
     console.log('   (Browser did not open automatically — open link manually: ' + url + ')');
   }
 }
+
+// The board database is the only store of everything said here; see db-backup.js.
+dbBackup.start(bridgeDb, path.resolve(__dirname));
 
 function listen(port, retries = 30) {
   const onError = err => {

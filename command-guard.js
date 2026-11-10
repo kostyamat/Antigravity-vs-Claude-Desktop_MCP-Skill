@@ -37,6 +37,11 @@ const RULES = [
   { label: 'Remove-Item -Recurse', test: c => ['remove-item', 'ri', 'rm', 'rmdir', 'del', 'erase', 'rd'].includes(c.cmd) && c.args.some(a => /^-r(e(c(u(r(s(e)?)?)?)?)?)?$/i.test(a)) && c.isPowerShellish },
   { label: 'rmdir /s · rd /s · del /s', test: c => ['rmdir', 'rd', 'del', 'erase'].includes(c.cmd) && c.args.some(a => /^\/s$/i.test(a)) },
   { label: 'Format-Volume / format', test: c => c.cmd === 'format-volume' || (c.cmd === 'format' && c.args.some(a => /^[a-z]:$/i.test(a))) },
+  // The board lives in one file. Nothing an agent is asked to do needs it deleted, moved or
+  // overwritten; the board itself archives and clears through its own tools.
+  { label: 'deleting or overwriting the board database (agent_bridge.db)', test: c =>
+      ['rm', 'del', 'erase', 'remove-item', 'ri', 'unlink', 'truncate', 'mv', 'move', 'move-item', 'clear-content', 'shred'].includes(c.cmd) &&
+      c.args.some(a => /agent_bridge\.db/i.test(a)) },
   { label: 'adb shell pm grant / appops set (Permission Cheating)', test: c => c.cmd === 'adb' && /(pm\s+grant|appops\s+set)/.test(c.args.join(' ')) }
 ];
 

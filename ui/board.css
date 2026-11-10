@@ -244,3 +244,9 @@ code { font-family: var(--mono); font-size: .92em; }
   .compose-bar .hint { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+/* Stands somebody holds: shown above the feed in every room. */
+.stand-bar { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 6px 16px; font-size: 13px;
+  border-bottom: 1px solid var(--line, #8884); background: color-mix(in srgb, #e0a020 12%, transparent); }
+.stand-bar[hidden] { display: none; }
+.hint.warn { color: #b25e00; }

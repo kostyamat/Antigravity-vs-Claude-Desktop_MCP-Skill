@@ -223,6 +223,32 @@ function initSchema(db) {
     db.exec('CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room)');
   } catch (_) {}
 
+  // Who works for whom. A lead hands a task to its helper and the helper reports
+  // back to that lead; both forgot which window the other was after a compaction,
+  // and a helper then took work from whoever wrote to it last. The pair is kept
+  // here, by window id, with the room they talk in.
+  //
+  // A stand is one physical device on the bench. Two windows installing on it at
+  // once ruin both runs, and "taking 198 / done" said in a room was seen only by
+  // that room. One row per stand that is taken; the row is deleted when it is free.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS helpers (
+      helper TEXT PRIMARY KEY,
+      lead TEXT NOT NULL,
+      room TEXT DEFAULT '',
+      since TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_helpers_lead ON helpers(lead);
+    CREATE TABLE IF NOT EXISTS stand_bookings (
+      stand TEXT PRIMARY KEY,
+      holder TEXT NOT NULL,
+      agent TEXT DEFAULT '',
+      room TEXT DEFAULT '',
+      note TEXT DEFAULT '',
+      since TEXT
+    );
+  `);
+
   migrateLinesOnce(db);
 }
 
@@ -1030,6 +1056,7 @@ function saveSession(s) {
   // it resolve turned a task name into a second identity for the window.
   if (s.canonicalId && s.sessionId) {
     registerSessionAlias(s.sessionId, s.canonicalId);
+    if (/^local_/.test(s.canonicalId)) adoptCard(s.sessionId, s.canonicalId, s.agent || 'Claude');
   }
 }
 
@@ -1327,10 +1354,93 @@ function touchRoom(id) {
 
 // Which rooms a card belongs to — used to decide where an incoming message
 // belongs when the sender did not name a room.
+//
+// A room holds a participant, and a participant is a line of work — by default
+// the project folder, see project-line.js. So a window is in every room that any
+// window of its line is in: the room made from one account's window is the same
+// room for the other account's window of that project.
 function roomsOfCard(card) {
-  if (!card) return [];
-  return getDb().prepare('SELECT room FROM room_members WHERE card = ?')
-    .all(String(card)).map(r => r.room);
+  const ids = cluster(card);
+  if (!ids.length) return [];
+  return getDb().prepare('SELECT DISTINCT room FROM room_members WHERE card IN (' + ids.map(() => '?').join(',') + ')')
+    .all(...ids).map(r => r.room);
+}
+
+// Everything that is the same participant as this id: the id itself, its line,
+// and every member of that line. An id that is on no line stands alone.
+function cluster(card) {
+  const c = String(card || '').trim();
+  if (!c) return [];
+  let line = '';
+  try { line = lineOf(c) || (lineMembers(c).length ? c : ''); } catch (_) {}
+  if (!line) return [c];
+  return [...new Set([c, line, ...lineMembers(line).map(m => m.member)])];
+}
+
+// The stable name of a participant: its line when it has one, else the id.
+function addressOf(card) {
+  const c = String(card || '').trim();
+  if (!c) return '';
+  try { return lineOf(c) || c; } catch (_) { return c; }
+}
+
+// A room member recorded under a run id becomes the window that run belongs to.
+// Rooms made while the bridge could not see Claude's windows hold the id of one
+// run of the window; the window restarts, gets a new run id, and the room no
+// longer knows it. Called when the pair (run id, window id) is first learned.
+// Touches only rows whose card is exactly `from`.
+function adoptCard(from, to, agent) {
+  const a = String(from || '').trim();
+  const b = String(to || '').trim();
+  if (!a || !b || a === b) return 0;
+  const db = getDb();
+  let n = 0;
+  try {
+    for (const r of db.prepare('SELECT room FROM room_members WHERE card = ?').all(a)) {
+      db.prepare('INSERT OR IGNORE INTO room_members (room, card, agent) VALUES (?, ?, ?)').run(r.room, b, String(agent || ''));
+      db.prepare('DELETE FROM room_members WHERE room = ? AND card = ?').run(r.room, a);
+      n++;
+    }
+    n += db.prepare('UPDATE helpers SET lead = ? WHERE lead = ?').run(b, a).changes;
+    if (!db.prepare('SELECT 1 FROM helpers WHERE helper = ?').get(b)) {
+      n += db.prepare('UPDATE helpers SET helper = ? WHERE helper = ?').run(b, a).changes;
+    }
+    n += db.prepare('UPDATE stand_bookings SET holder = ? WHERE holder = ?').run(b, a).changes;
+  } catch (_) {}
+  return n;
+}
+
+// ── Lead and helper ─────────────────────────────────────────────────────────────────────
+
+function setHelper(helper, lead, room) {
+  getDb().prepare('INSERT INTO helpers (helper, lead, room, since) VALUES (?, ?, ?, ?) ' +
+    'ON CONFLICT(helper) DO UPDATE SET lead = excluded.lead, room = excluded.room, since = excluded.since')
+    .run(String(helper).trim(), String(lead).trim(), String(room || ''), new Date().toISOString());
+}
+
+function dropHelper(helper) {
+  return getDb().prepare('DELETE FROM helpers WHERE helper = ?').run(String(helper).trim()).changes > 0;
+}
+
+function readHelpers() {
+  try { return getDb().prepare('SELECT helper, lead, room, since FROM helpers ORDER BY since').all(); } catch (_) { return []; }
+}
+
+// ── Stands ──────────────────────────────────────────────────────────────────────────────
+
+function readStands() {
+  try { return getDb().prepare('SELECT stand, holder, agent, room, note, since FROM stand_bookings ORDER BY stand').all(); } catch (_) { return []; }
+}
+
+function takeStand(stand, holder, agent, room, note) {
+  getDb().prepare('INSERT INTO stand_bookings (stand, holder, agent, room, note, since) VALUES (?, ?, ?, ?, ?, ?) ' +
+    'ON CONFLICT(stand) DO UPDATE SET holder = excluded.holder, agent = excluded.agent, room = excluded.room, ' +
+    'note = excluded.note, since = excluded.since')
+    .run(String(stand), String(holder), String(agent || ''), String(room || ''), String(note || ''), new Date().toISOString());
+}
+
+function releaseStand(stand) {
+  return getDb().prepare('DELETE FROM stand_bookings WHERE stand = ?').run(String(stand)).changes > 0;
 }
 
 function seenVersion(window) {
@@ -1380,6 +1490,15 @@ module.exports = {
   renameRoom,
   touchRoom,
   roomsOfCard,
+  cluster,
+  addressOf,
+  adoptCard,
+  setHelper,
+  dropHelper,
+  readHelpers,
+  readStands,
+  takeStand,
+  releaseStand,
   seenVersion,
   setSeenVersion
 };

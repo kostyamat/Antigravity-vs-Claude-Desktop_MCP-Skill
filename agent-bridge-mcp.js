@@ -25,7 +25,13 @@ const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
 const { workflowHint } = require('./workflow-hint');
 const { pendingP0 } = require('./p0');
 const { wakeAntigravity } = require('./wake-antigravity');
-const { inviteText, roomsOfWindow, describeRooms } = require('./room-invite');
+const { inviteText } = require('./room-invite');
+const { isHuman } = require('./room-routing');
+const rules = require('./board-rules').createRules(bridgeDb, cardsLib, router);
+const stands = require('./stands').createStands(bridgeDb, router);
+const brief = require('./window-brief').createBrief(bridgeDb, cardsLib, router, rules, stands);
+const claudeHome = require('./claude-home');
+const mailbox = require('./mailbox').createMailbox(bridgeDb, router);
 const { checkQuotes } = require('./reply-quotes');
 const releaseNotes = require('./release-notes');
 
@@ -47,6 +53,7 @@ const DOCS_ARCHIVE = path.join(SCRIPTS_DIR, 'docs', 'archive');
 //
 // ═════════════════════════════════════════════════════════════════════════════════════════
 // Statuses that never justify P0, and statuses that are worth waking someone for.
+const AGENT_NAMES = ['Claude', 'Gemini'];
 const QUIET_P0_STATUSES = ['ack', 'answer', 'done'];
 const WAKING_STATUSES = ['question', 'blocked', 'done', 'answer'];
 
@@ -111,13 +118,19 @@ function setupBanner() {
   } catch (e) { return ''; }
 }
 
+// Who is calling right now. One server process serves every window of its
+// client — Claude Desktop starts one for all its windows, Antigravity one for all
+// its conversations — so "who am I" is a property of the call, never of the
+// process. It used to be remembered from the first call the process ever saw:
+// every later window was then shown the first window's urgent messages, and its
+// own post came back to it as somebody else's unread P0.
 let myAgent = null;
 let mySession = null;
-let myCanonical = null;   // the window id the client issued, when the agent passes it
+let myCanonical = null;
 function rememberAgent(who, session, canonical) {
-  if (who && !myAgent) myAgent = who;
-  if (session && !mySession) mySession = String(session).trim();
-  if (canonical && !myCanonical) myCanonical = String(canonical).trim();
+  myAgent = who || null;
+  mySession = session ? String(session).trim() : null;
+  myCanonical = canonical ? String(canonical).trim() : null;
 }
 
 function ringBell(rec) {
@@ -403,6 +416,7 @@ function launchClaudeDesktop() {
 // keeps its history, the other client keeps its tools, and the human keeps the
 // dashboard. The bridge runs short-handed, it does not stop.
 function raiseTargetEnvironment(rec) {
+  if (process.env.AGENT_BRIDGE_NO_WAKE) return;
   try {
     const to = String(rec.to || '').trim().toLowerCase();
     const toSession = String(rec.toSession || '').trim();
@@ -512,6 +526,10 @@ function fail(id, message) {
   sendResponse({ jsonrpc: '2.0', id, error: { code: -32000, message } });
 }
 
+const IDENTITY_TOOLS = new Set(['post_message', 'get_messages', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand',
+  'mark_read', 'list_docs', 'read_doc', 'ack_doc']);
+const WRITING_TOOLS = new Set(['post_message', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand']);
+
 const TOOLS = [
   {
     name: 'post_message',
@@ -535,16 +553,17 @@ const TOOLS = [
       properties: {
         sender: { type: 'string', description: 'Sender identifier: "Claude", "Gemini", or human name.' },
         message: { type: 'string', description: 'Message content. Unlimited length.' },
-        sessionId: { type: 'string', description: 'Your session/branch identifier (e.g. "main", "feature/refactor", or UUID). Required so recipients know where to route replies.' },
+        sessionId: { type: 'string', description: 'Who you are: the id your client issued for this window — Claude: the id the session-start hook printed; Antigravity: the id of your own conversation. Never a name you made up: a signature that cannot be traced to a window is refused.' },
         canonicalId: { type: 'string', description: 'The id your client issued for this window (Claude Code: get_session({session_id:"self"}).sessionId). Send it once and the human can address this window by it from the board.' },
         client: { type: 'string', description: 'Which application this session runs in: claude-code | claude-desktop | antigravity.' },
         cwd: { type: 'string', description: 'Working directory of this session. Stays on this machine; the database is never published.' },
         title: { type: 'string', description: 'Window title, so the human recognises the session in the board.' },
         to: { type: 'string', description: 'Recipient: "Claude", "Gemini", or "all" (default is "all" unless replying).' },
-        toSession: { type: 'string', description: 'Target session of recipient (if replyTo is not specified).' },
+        toSession: { type: 'string', description: 'Who it is for: the recipient\'s window id, or its project (the folder name, e.g. "MyApp") — every window of that project receives it, whichever account is signed in. Not needed with replyTo. A helper may leave it out: the message goes to its lead.' },
         replyTo: { type: 'number', description: 'Message ID (#N) being replied to. Automatically links thread and routes to parent author.' },
         topic: { type: 'string', description: 'Short topic/category (e.g. "auth", "refactoring") for filtering.' },
-        room: { type: 'string', description: 'Room id, name or part of the name: keeps this message inside that conversation. Left out, the bridge attaches the room when sender and recipient share exactly one.' },
+        room: { type: 'string', description: 'Room id, name or part of the name: keeps this message inside that conversation. Left out, the bridge uses the room of the message you reply to, your lead\'s room if you are a helper, or the one room you share with the recipient; when that is not exactly one room the call is refused and lists the rooms to choose from.' },
+        square: { type: 'boolean', description: 'true = write on the Square, in front of every window. Only when the owner asked you to speak to everyone. Without it a message that fits no room is refused, not put on the Square.' },
         priority: { type: 'string', enum: PRIORITIES, description: 'P0 = immediate attention/stop; normal; fyi = for information only.' },
         status: { type: 'string', enum: STATUSES, description: 'info | question | answer | working | done | blocked | ack' },
         progress: { type: 'string', description: 'Current progress description, e.g. "step 3 of 5" or "awaiting build".' }
@@ -792,6 +811,50 @@ const TOOLS = [
     }
   },
   {
+    name: 'set_helper',
+    description:
+      'Record who works for whom, once, so that neither side has to remember it. A lead calls ' +
+      'set_helper({helper: "<the helper\'s window id>"}); a helper that was told whose helper it is calls ' +
+      'set_helper({lead: "<the lead\'s window id or project>"}). The pair gets a room (the one they share, or a new one), ' +
+      'the helper is told in it, and from then on: a helper\'s post that names nobody goes to its lead; a task to ' +
+      'somebody else\'s helper, or a helper\'s answer to somebody who is not its lead, is refused. ' +
+      'The pair survives compaction, restarts and account switches — it is printed at every session start and at ' +
+      'the top of get_messages. release: true ends it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sender: { type: 'string', description: '"Claude" or "Gemini".' },
+        sessionId: { type: 'string', description: 'Your own window id.' },
+        helper: { type: 'string', description: 'The helper\'s window id (list_cards). Given by the lead.' },
+        lead: { type: 'string', description: 'The lead\'s window id or project name. Given by the helper.' },
+        room: { type: 'string', description: 'The room the two talk in, if it is not the one they already share.' },
+        release: { type: 'boolean', description: 'true = the pair is over.' }
+      },
+      required: ['sender', 'sessionId']
+    }
+  },
+  {
+    name: 'book_stand',
+    description:
+      'Take or release a stand — a physical device on the bench that only one window may install on at a time. ' +
+      'ALWAYS book before an install, a flash, a reboot or a test run on a shared device, and say done when you ' +
+      'finish. action "take": refused, with the holder\'s name, when another participant has it. action "done": ' +
+      'frees it. The booking is shown to every window at the top of get_messages and at session start, and noted ' +
+      'in your room. action "list": who has what.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sender: { type: 'string', description: '"Claude" or "Gemini".' },
+        sessionId: { type: 'string', description: 'Your own window id.' },
+        stand: { type: 'string', description: 'The name everybody uses for the device, e.g. "198".' },
+        action: { type: 'string', enum: ['take', 'done', 'list'], description: 'take (default) | done | list' },
+        note: { type: 'string', description: 'What you are doing and for how long, e.g. "MyApp install + volume test, ~10 min".' },
+        room: { type: 'string', description: 'Room to note it in. Defaults to your room.' }
+      },
+      required: ['sender', 'sessionId']
+    }
+  },
+  {
     name: 'list_rooms',
     description:
       'The rooms of the signed-in Claude account, most recently used first, with their members and message counts. ' +
@@ -848,6 +911,9 @@ const TOOLS = [
   }
 ];
 
+const pairTools = require('./pair-tools').createPairTools({
+  bridgeDb, cardsLib, router, rules, stands, ok, fail, doPost, normAgent });
+
 function handleRequest(req) {
   const { id, method, params } = req;
 
@@ -877,9 +943,34 @@ function handleRequest(req) {
   const toolName = params && params.name;
   const args = (params && params.arguments) || {};
 
+  // Who is speaking is settled once, here, for every tool that carries a
+  // signature: see board-rules.js. A call that writes is refused when the
+  // signature cannot be traced to a window.
+  if (IDENTITY_TOOLS.has(toolName)) {
+    let who;
+    try {
+      who = rules.identify(args, normAgent(args.sender || args.reader), WRITING_TOOLS.has(toolName));
+    } catch (err) {
+      logError(`identify: ${err.stack || err.message}`);
+      who = null;
+    }
+    if (who && who.error) return fail(id, `${toolName}: ${who.error}`);
+    if (who && who.agent) {
+      if (args.reader !== undefined && args.sender === undefined) args.reader = who.agent; else args.sender = who.agent;
+      if (toolName === 'get_messages' || toolName === 'mark_read' || /_doc$/.test(toolName) && toolName !== 'put_doc') args.reader = who.agent;
+      args.sessionId = who.sessionId || '';
+      if (who.canonicalId) args.canonicalId = who.canonicalId;
+      if (who.title && !args.title && toolName !== 'put_doc') args.title = who.title;
+      if (who.cwd && !args.cwd) args.cwd = who.cwd;
+      if (who.note) args._identityNote = who.note;
+    }
+  }
+
   rememberAgent(normAgent(args.reader || args.sender), args.sessionId, args.canonicalId);
 
   try {
+    if (toolName === 'set_helper') return pairTools.doSetHelper(id, args);
+    if (toolName === 'book_stand') return pairTools.doBookStand(id, args);
     if (toolName === 'bridge_setup') return doSetup(id, args);
     if (toolName === 'post_message') return doPost(id, args);
     if (toolName === 'get_messages') return doGet(id, args);
@@ -975,17 +1066,40 @@ function doCreateRoom(id, a) {
   const cards = (a.cards || []).map(c => String(c).trim()).filter(Boolean);
   if (!cards.length) return fail(id, 'create_room: `cards` is empty — a room needs at least one window.');
 
-  const known = new Map(cardsLib.allCards({ names: boardNames() }).map(c => [c.id, c]));
-  const unknown = cards.filter(c => !known.has(c));
-  const members = cards.map(c => ({ card: c, agent: (known.get(c) || {}).agent || '' }));
+  // A member is a window id, a run id of one, or a project: all three resolve
+  // to the window (or the project's line) the room will hold.
+  const resolved = cards.map(c => router.windowOf(c) || c);
+  const unknown = resolved.filter(c => !router.cardOf(c) && !bridgeDb.cluster(c).some(x => router.cardOf(x)));
+  const members = resolved.map(c => ({ card: c, agent: router.agentOf(c) }));
 
   const room = bridgeDb.createRoom(a.name, members, a.account || cardsLib.currentAccount() || '');
+  const paired = announcePair(room.id, normAgent(a.sender) || '', a.sessionId || '');
   const who = room.members
-    .map(m => `${m.agent === 'Claude' ? '🤖' : '✨'} ${(known.get(m.card) || {}).name || m.card}`)
+    .map(m => `${m.agent === 'Claude' ? '🤖' : '✨'} ${router.nameOf(m.card)}`)
     .join(' + ');
   ok(id, `Room "${room.name}" [${room.id}] — ${who}` +
+         (paired ? `\n🧑‍🔧 pair on record: "${router.nameOf(paired.helper)}" is the helper of "${router.nameOf(paired.lead)}"` : '') +
          (unknown.length ? `\n⚠️ not among the open windows: ${unknown.join(', ')}` : '') +
          `\n\nPost into it with room: "${room.id}", read it with get_messages({room: "${room.id}"}).`);
+}
+
+// A room of one Claude project and one Antigravity window is a pair: record it
+// and say so in the room, to the helper. Returns the pair, or null.
+function announcePair(roomId, fromAgent, fromSession) {
+  let p = null;
+  try { p = rules.autoPair(roomId); } catch (e) { logError(`autoPair: ${e.message}`); }
+  if (!p) return null;
+  try {
+    const rec = {
+      ts: new Date().toISOString(), from: fromAgent || router.agentOf(p.lead), fromSession: fromSession || p.lead,
+      room: p.room, to: 'Gemini', toSession: p.helper, replyTo: null, topic: 'helper',
+      priority: 'normal', status: 'info', progress: '', message: rules.pairNotice(p), file: null, readBy: []
+    };
+    rec.id = bridgeDb.addMessage(rec).id;
+    bridgeDb.touchRoom(p.room);
+    wakeAntigravity(rec);
+  } catch (e) { logError(`announcePair: ${e.message}`); }
+  return p;
 }
 
 function doListRooms(id, a) {
@@ -993,11 +1107,8 @@ function doListRooms(id, a) {
   const emails = cardsLib.accountEmails();
   const rooms = bridgeDb.readRooms();
   if (!rooms.length) return ok(id, 'No rooms yet. Make one with create_room.');
-  const known = new Map(cardsLib.allCards({ names: boardNames() }).map(c => [c.id, c]));
   const lines = rooms.map(r => {
-    const who = r.members
-      .map(m => (known.get(m.card) || {}).name || m.card.slice(0, 12))
-      .join(' + ');
+    const who = r.members.map(m => router.nameOf(m.card)).join(' + ');
     const whose = (here && r.account && r.account !== here)
       ? ` · ${emails[r.account] || 'other account'}` : '';
     return `${r.name} [${r.id}] · ${r.messages} messages${whose}\n     ${who}`;
@@ -1107,10 +1218,40 @@ function doPost(id, a) {
       if (!topic && parent.topic) topic = parent.topic;
     }
   }
+  const isAgent = AGENT_NAMES.includes(from);
+  const mineWin = router.windowOf(a.canonicalId) || router.windowOf(a.sessionId);
+
+  // A helper that names nobody means its lead. It forgot whom to report to after
+  // every compaction; the pair is on record, so it no longer has to know.
+  const boss = isAgent ? router.leadOf(mineWin) : null;
+  if (boss && !toSession && !replyTo && !String(a.room || '').trim() && a.square !== true) {
+    toSession = boss.lead;
+    if (!toAgent || toAgent === 'all') toAgent = router.agentOf(boss.lead);
+  }
+
+  // The address is the recipient's window (or its project), never whatever the
+  // other side happened to sign with: a run id dies with the run, and a label
+  // nobody registered reaches nobody.
+  if (toSession && toSession !== 'all' && !isHuman(toSession)) {
+    const w = router.windowOf(toSession);
+    if (w) toSession = w;
+    else if (isAgent) {
+      return fail(id, 'post_message: toSession "' + toSession + '" is no window and no project the board knows — ' +
+        'the message would reach nobody. Find the recipient with list_cards (its id) or name its project folder. ' +
+        'Message NOT recorded.');
+    }
+  }
   if (!toAgent) toAgent = 'all';
+  if (toAgent === 'all' && toSession && toSession !== 'all' && !isHuman(toSession)) toAgent = router.agentOf(toSession);
 
   const routed = resolveRoom(a, toSession, toAgent, replyTo);
+  if (routed.refuse && isAgent) return fail(id, `post_message: ${routed.refuse} Message NOT recorded.`);
   const room = routed.room;
+
+  if (isAgent) {
+    const no = rules.helperGuard({ mine: mineWin, theirs: toSession && toSession !== 'all' ? toSession : '', room });
+    if (no) return fail(id, `post_message: ${no} Message NOT recorded.`);
+  }
 
   // A reply names the thesis it answers, in the parent's own words.
   let quoteHint = '';
@@ -1196,7 +1337,9 @@ function doPost(id, a) {
   }
 
   const hints = [];
+  if (a._identityNote) hints.push('ℹ️ ' + a._identityNote);
   if (quoteHint) hints.push(quoteHint);
+  if (routed.opened) announcePair(routed.opened.id, from, rec.fromSession);
   if (routed.opened) hints.push(`🚪 opened room "${routed.opened.name}" (${routed.opened.id}) for this conversation — the human reads the board by rooms`);
   if (demoted) hints.push(`ℹ️ P0 lowered to normal — a \`${status}\` is not an emergency, so nobody was woken`);
   if (!rec.fromSession) hints.push('⚠️ `sessionId` not specified — recipient will not know which session to reply to');
@@ -1238,12 +1381,9 @@ function doGet(id, a) {
       if (row && row.agent) reader = normAgent(row.agent);
     } catch (_) {}
   }
-  // The line answers "is this for me"; the window answers "is this mine" and
-  // "what have I read". Mixing them would either hide a sibling window's posts
-  // as our own echo, or mark a message read for a window that never saw it.
-  const myLine = sessionId ? bridgeDb.resolveSessionAliases(sessionId, { agent: reader }) : new Set();
-  const myWindow = sessionId ? bridgeDb.resolveSessionAliases(sessionId, { agent: reader, lines: false }) : new Set();
-  const cursor = reader ? bridgeDb.getCursor(reader, sessionId) : 0;
+  // What is for this window and what is its own echo: mailbox.js, the one rule.
+  const box = mailbox.open(reader, sessionId, a.canonicalId);
+  const { myLine, myWindow, cursor, isForMe, isMyOwn } = box;
   const only = a.only || (reader ? 'new' : 'all');
   const limit = typeof a.limit === 'number' && a.limit > 0 ? a.limit : DEFAULT_LIMIT;
 
@@ -1253,36 +1393,6 @@ function doGet(id, a) {
     return ok(id, `🧵 Thread #${root} — ${chain.length} messages\n\n` +
       chain.map(m => renderOne(m, !!a.full)).join('\n\n───\n\n'));
   }
-
-  const isForMe = (m) => {
-    if (m.toSession && m.toSession !== 'all') {
-      if (!sessionId) return false;
-      const targetLower = String(m.toSession).trim().toLowerCase();
-      let match = false;
-      for (const a of myLine) {
-        if (String(a).trim().toLowerCase() === targetLower) { match = true; break; }
-      }
-      if (!match) return false;
-    }
-    if (reader) {
-      if (m.to !== reader && m.to !== 'all') return false;
-    }
-    if (sessionId && !router.roomAdmits(m, new Set([...myWindow, a.canonicalId].filter(Boolean)))) return false;
-    return true;
-  };
-
-  const isMyOwn = (m) => {
-    if (!reader) return false;
-    if (sessionId) {
-      if (m.from !== reader) return false;
-      const fromLower = String(m.fromSession || '').trim().toLowerCase();
-      for (const a of myWindow) {
-        if (String(a).trim().toLowerCase() === fromLower) return true;
-      }
-      return false;
-    }
-    return m.from === reader;
-  };
 
   let list = board.slice();
   if (a.room) {
@@ -1320,8 +1430,15 @@ function doGet(id, a) {
       } catch (_) {}
     }
     if (sessionId) {
-      try { header.push(...describeRooms(roomsOfWindow(bridgeDb, new Set([...myWindow, a.canonicalId].filter(Boolean)), board))); } catch (_) {}
+      try {
+        header.push(...brief.describe({ myWindow: new Set([...myWindow, a.canonicalId].filter(Boolean)),
+          win: router.windowOf(a.canonicalId) || router.windowOf(sessionId), board, full: false }));
+      } catch (_) {}
+    } else {
+      header.push('⚠️ No sessionId: you see the whole agent\'s mail, and your own rooms, helper and stands cannot be shown. ' +
+        'Pass the id of your own window.');
     }
+    if (a._identityNote) header.push('ℹ️ ' + a._identityNote);
     // The owner works through the board: a task given there is answered there.
     // Silence from every window, while they talk among themselves, is what he
     // reads as being ignored.
@@ -1779,19 +1896,20 @@ function accountOfWindow(windowId) {
   if (!w.startsWith('local_')) return '';
   if (Date.now() - accountCache.at > 60000) {
     const map = new Map();
-    const root = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Claude', 'claude-code-sessions');
-    try {
-      for (const acc of fs.readdirSync(root, { withFileTypes: true })) {
-        if (!acc.isDirectory()) continue;
-        const accDir = path.join(root, acc.name);
-        for (const sub of fs.readdirSync(accDir, { withFileTypes: true })) {
-          if (!sub.isDirectory()) continue;
-          for (const f of fs.readdirSync(path.join(accDir, sub.name))) {
-            if (f.startsWith('local_') && f.endsWith('.json')) map.set(f.slice(0, -5), acc.name);
+    for (const root of claudeHome.sessionRoots()) {
+      try {
+        for (const acc of fs.readdirSync(root, { withFileTypes: true })) {
+          if (!acc.isDirectory()) continue;
+          const accDir = path.join(root, acc.name);
+          for (const sub of fs.readdirSync(accDir, { withFileTypes: true })) {
+            if (!sub.isDirectory()) continue;
+            for (const f of fs.readdirSync(path.join(accDir, sub.name))) {
+              if (f.startsWith('local_') && f.endsWith('.json')) map.set(f.slice(0, -5), acc.name);
+            }
           }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
     accountCache = { at: Date.now(), map };
   }
   return accountCache.map.get(w) || '';

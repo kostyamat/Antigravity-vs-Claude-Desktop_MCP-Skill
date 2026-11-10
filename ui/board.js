@@ -23,6 +23,9 @@ let ROOMS = [];
 let CARDS = [];
 let CARD_ACCOUNT = '';      // the Claude account signed in right now
 let CARD_EMAILS = {};       // account id -> address, for those that have one
+let CARD_PROBLEM = '';      // why there may be no Claude windows to list
+let LINES = [];             // projects: { id, name }
+let STANDS = [];            // stands somebody holds right now
 let SESSIONS = [];
 let DOCS = [];
 let ROOM = null;        // null until the first choice; SQUARE ('') is a real place
@@ -63,7 +66,11 @@ function windowName(id, agent) {
   const s = String(id || '').trim();
   if (!s || s === 'all') return '';
   if (/^human/i.test(s)) return ME || 'You';
+  // A participant is a project; the window's own name is secondary and changes.
+  const line = LINES.find(x => x.id === s);
+  if (line) return '\ud83d\udcc1 ' + line.name;
   const c = CARDS.find(x => x.id === s);
+  if (c && c.projectName) return c.projectName + (c.name ? ' \u00b7 ' + c.name : '');
   if (c && c.name) return c.name;
   const r = SESSIONS.find(x => x.sessionId === s || x.canonicalId === s ||
                                (x.aliases || []).some(a => a.sessionId === s));
@@ -256,6 +263,10 @@ async function loadCards() {
     CARDS = r.cards || [];
     CARD_ACCOUNT = r.account || '';
     CARD_EMAILS = r.emails || {};
+    CARD_PROBLEM = r.problem || '';
+    LINES = r.lines || [];
+    STANDS = r.stands || [];
+    renderStands();
   } catch (_) {}
 }
 
@@ -265,11 +276,11 @@ function renderWindows() {
   const inRoom = new Set((roomById(ROOM) || { members: [] }).members.map(m => m.card));
   const project = c => (c.project || '').split(/[\\/]/).filter(Boolean).pop() || '';
   const match = c => !q || (c.name + ' ' + project(c)).toLowerCase().includes(q);
-  const row = c => '<label class="row' + (inRoom.has(c.id) ? ' here' : '') + (c.parent !== undefined ? ' child' : '') +
+  const row = c => '<label class="row' + ((inRoom.has(c.id) || (c.line && inRoom.has(c.line))) ? ' here' : '') + (c.parent !== undefined ? ' child' : '') +
     '" title="' + esc(c.name || '') + '">' +
     '<input type="checkbox" value="' + esc(c.id) + '"' + (picked.has(c.id) ? ' checked' : '') + '>' +
-    '<div class="row-main"><div class="row-name">' + esc(c.name || 'Untitled window') + '</div>' +
-    '<div class="row-meta">' + esc([project(c), c.busy ? 'working now' : '',
+    '<div class="row-main"><div class="row-name">' + esc(c.projectName ? c.projectName + ' \u00b7 ' + (c.name || 'window') : (c.name || 'Untitled window')) + '</div>' +
+    '<div class="row-meta">' + esc([c.projectName ? '' : project(c), c.helperOf ? 'helper of ' + c.helperOf : '', c.busy ? 'working now' : '',
       c.activeAt ? ago(c.activeAt) : ''].filter(Boolean).join(' · ')) + '</div></div></label>';
   const group = (title, list) => list.length ? '<div class="group">' + title + '</div>' + list.map(row).join('') : '';
   const shown = CARDS.filter(match);
@@ -303,10 +314,35 @@ function renderWindows() {
         claude.filter(c => c.elsewhere && c.account === a))).join('');
 
   $('#winList').innerHTML =
+    (CARD_PROBLEM ? '<div class="hint warn" style="padding:8px">' + esc(CARD_PROBLEM) + '</div>' : '') +
     mine + elsewhere +
     group('Antigravity', shown.filter(c => c.agent !== 'Claude')) ||
     '<div class="hint" style="padding:8px">' + (q ? 'No window matches.' : 'No windows found.') + '</div>';
   updateTray();
+}
+
+// Stands somebody holds: one line above the feed, in every room, because a
+// stand is shared by rooms that do not see each other.
+function renderStands() {
+  let bar = $('#standBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'standBar';
+    bar.className = 'stand-bar';
+    const feed = $('#feed');
+    feed.parentNode.insertBefore(bar, feed);
+    bar.addEventListener('click', async e => {
+      const b = e.target.closest('button[data-stand]');
+      if (!b || !confirm('Free stand ' + b.dataset.stand + '? Its holder is not told.')) return;
+      await fetch('/api/stand/release', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stand: b.dataset.stand }) });
+      await loadCards();
+    });
+  }
+  bar.hidden = !STANDS.length;
+  bar.innerHTML = STANDS.map(s => '<span class="stand">\ud83d\udd27 ' + esc(s.stand) + ' \u2014 ' + esc(s.holderName || s.holder) +
+    ', ' + esc(ago(s.since)) + (s.note ? ' \u00b7 ' + esc(s.note) : '') +
+    ' <button type="button" class="link-btn" data-stand="' + esc(s.stand) + '">free</button></span>').join('');
 }
 
 function pickedWindows() { return [...document.querySelectorAll('#winList input:checked')].map(i => i.value); }

@@ -22,11 +22,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const HOME = process.env.USERPROFILE || os.homedir();
-const APPDATA = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
+const claudeHome = require('./claude-home');
 
-const CLAUDE_SESSIONS = path.join(APPDATA, 'Claude', 'claude-code-sessions');
-const CLAUDE_CONFIG = path.join(APPDATA, 'Claude', 'config.json');
+const HOME = process.env.USERPROFILE || os.homedir();
 const CLAUDE_CODE_CONFIG = path.join(HOME, '.claude.json');
 const GEMINI_HOME = path.join(HOME, '.gemini', 'antigravity');
 const GEMINI_CONVERSATIONS = path.join(GEMINI_HOME, 'conversations');
@@ -84,8 +82,11 @@ function listDirs(dir) {
 // account, so this is read from disk rather than guessed — and it is what makes
 // "the room list follows the account" possible at all.
 function currentAccount() {
-  const cfg = readJson(CLAUDE_CONFIG);
-  return (cfg && cfg.lastKnownAccountUuid) || null;
+  for (const file of claudeHome.configFiles()) {
+    const cfg = readJson(file);
+    if (cfg && cfg.lastKnownAccountUuid) return cfg.lastKnownAccountUuid;
+  }
+  return null;
 }
 
 // The address behind an account id, where this machine records one. Claude
@@ -105,7 +106,56 @@ function accountEmails() {
 }
 
 function claudeAccounts() {
-  return listDirs(CLAUDE_SESSIONS);
+  const out = new Set();
+  for (const root of claudeHome.sessionRoots()) for (const a of listDirs(root)) out.add(a);
+  return [...out];
+}
+
+// Every window record of one account, as the client wrote it, across every data
+// root. A window found in two roots (the app left an old folder behind when it
+// moved) is the one with the later activity.
+function claudeRecords(acct) {
+  const byId = new Map();
+  for (const root of claudeHome.sessionRoots()) {
+    const base = path.join(root, acct);
+    for (const ws of listDirs(base)) {
+      let files = [];
+      try {
+        files = fs.readdirSync(path.join(base, ws)).filter(f => f.startsWith('local_') && f.endsWith('.json'));
+      } catch (_) { continue; }
+      for (const f of files) {
+        const d = readJson(path.join(base, ws, f));
+        if (!d || !d.sessionId) continue;
+        const prev = byId.get(d.sessionId);
+        const at = Number(d.lastActivityAt || d.lastFocusedAt || 0);
+        if (!prev || at > Number(prev.d.lastActivityAt || prev.d.lastFocusedAt || 0)) byId.set(d.sessionId, { d, ws });
+      }
+    }
+  }
+  return [...byId.values()];
+}
+
+// The window a Claude Code run belongs to. The client gives every run of a
+// window a new id (cliSessionId) and that is what a session knows itself by, but
+// the window is what the owner sees and what a room holds. Without this step a
+// room was built around a run id: it looked like an unnamed Antigravity window
+// and stopped receiving the day the window restarted.
+let cliCache = { at: 0, map: new Map() };
+function claudeWindowOfCli(cliId) {
+  const id = String(cliId || '').trim();
+  if (!id) return null;
+  if (Date.now() - cliCache.at > 20000 || !cliCache.map.has(id)) {
+    const map = new Map();
+    for (const acct of claudeAccounts()) {
+      for (const { d } of claudeRecords(acct)) {
+        const card = { id: d.sessionId, name: d.title || '', account: acct, project: d.originCwd || d.cwd || '' };
+        if (d.cliSessionId) map.set(String(d.cliSessionId), card);
+        map.set(String(d.sessionId), card);
+      }
+    }
+    cliCache = { at: Date.now(), map };
+  }
+  return cliCache.map.get(id) || null;
 }
 
 // Every Claude window of one account, newest activity first. `account` defaults
@@ -114,33 +164,17 @@ function claudeAccounts() {
 function claudeCards(account) {
   const acct = account || currentAccount();
   if (!acct) return [];
-  const out = [];
-  const base = path.join(CLAUDE_SESSIONS, acct);
-  for (const ws of listDirs(base)) {
-    const wsDir = path.join(base, ws);
-    let files = [];
-    try {
-      files = fs.readdirSync(wsDir).filter(f => f.startsWith('local_') && f.endsWith('.json'));
-    } catch (_) {
-      continue;
-    }
-    for (const f of files) {
-      const d = readJson(path.join(wsDir, f));
-      if (!d || !d.sessionId) continue;
-      out.push({
-        agent: 'Claude',
-        id: d.sessionId,
-        name: d.title || '',
-        project: d.cwd || d.originCwd || '',
-        account: acct,
-        workspace: ws,
-        archived: Boolean(d.isArchived),
-        createdAt: asIso(d.createdAt),
-        activeAt: asIso(d.lastActivityAt || d.lastFocusedAt)
-      });
-    }
-  }
-  return out.sort(byActivity);
+  return claudeRecords(acct).map(({ d, ws }) => ({
+    agent: 'Claude',
+    id: d.sessionId,
+    name: d.title || '',
+    project: d.originCwd || d.cwd || '',
+    account: acct,
+    workspace: ws,
+    archived: Boolean(d.isArchived),
+    createdAt: asIso(d.createdAt),
+    activeAt: asIso(d.lastActivityAt || d.lastFocusedAt)
+  })).sort(byActivity);
 }
 
 // The first workspace a conversation was opened against, as a plain path. The
@@ -365,6 +399,8 @@ module.exports = {
   claudeAccounts,
   claudeCards,
   claudeCardsEverywhere,
+  claudeWindowOfCli,
+  claudeProblem: () => claudeHome.problem(),
   geminiCards,
   allCards
 };
