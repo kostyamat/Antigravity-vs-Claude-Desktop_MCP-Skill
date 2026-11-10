@@ -34,6 +34,7 @@ const supervisor = require('./supervisor').createSupervisor({
   bridgeDb, cardsLib, router, home: path.resolve(__dirname), wake: m => wakeAntigravity(m)
 });
 const ownerWaiting = require('./owner-waiting');
+const argonRoom = require('./argon-room').createArgonRoom({ bridgeDb, home: path.resolve(__dirname), post: d => apiPost(d) });
 const agQuota = require('./antigravity-quota');
 let quotaSeen = { at: 0, value: null };
 const updater = require('./updater').createUpdater({ home: path.resolve(__dirname), bridgeDb, dbBackup });
@@ -995,6 +996,7 @@ function listen(port, retries = 30) {
     }
     try { supervisor.start(); } catch (e) { console.error('Supervisor did not start: ' + e.message); }
     try { updater.start(); } catch (e) { console.error('Update check did not start: ' + e.message); }
+    try { argonRoom.start(); } catch (e) { console.error('Argon in rooms did not start: ' + e.message); }
   });
 }
 
