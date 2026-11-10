@@ -820,13 +820,19 @@ const TOOLS = [
       'the helper is told in it, and from then on: a helper\'s post that names nobody goes to its lead; a task to ' +
       'somebody else\'s helper, or a helper\'s answer to somebody who is not its lead, is refused. ' +
       'The pair survives compaction, restarts and account switches — it is printed at every session start and at ' +
-      'the top of get_messages. release: true ends it.',
+      'the top of get_messages. release: true ends it. ' +
+      'A lead with no helper starts one itself: set_helper({start: true, brief: "<the project, where it lives, what the helper will do, ' +
+      'what it must not touch>"}) opens a new Antigravity conversation, gives it that context, pairs it and makes the room.',
     inputSchema: {
       type: 'object',
       properties: {
         sender: { type: 'string', description: '"Claude" or "Gemini".' },
         sessionId: { type: 'string', description: 'Your own window id.' },
         helper: { type: 'string', description: 'The helper\'s window id (list_cards). Given by the lead.' },
+        start: { type: 'boolean', description: 'Lead only: start a new helper (an Antigravity conversation) instead of naming an existing window.' },
+        brief: { type: 'string', description: 'With start: the context the new helper begins with.' },
+        model: { type: 'string', description: 'With start: the helper\'s model (default "pro").' },
+        another: { type: 'boolean', description: 'With start: start one more helper although one is on record.' },
         lead: { type: 'string', description: 'The lead\'s window id or project name. Given by the helper.' },
         room: { type: 'string', description: 'The room the two talk in, if it is not the one they already share.' },
         release: { type: 'boolean', description: 'true = the pair is over.' }

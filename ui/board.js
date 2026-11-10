@@ -899,11 +899,12 @@ async function checkApps() {
   }
   const line = (name, up, app) => '<div><i class="' + (up ? 'up' : '') + '"></i>' + name + (up ? ' is running' :
     ' is closed <button type="button" class="link-btn" data-launch="' + app + '">Start</button>') + '</div>';
-  let sup = null, upd = null;
+  let sup = null, upd = null, quo = null;
   try { sup = await (await fetch('/api/supervisor')).json(); } catch (_) {}
   try { upd = await (await fetch('/api/update')).json(); } catch (_) {}
+  if (j.antigravity) { try { quo = await (await fetch('/api/quota')).json(); } catch (_) {} }
   $('#apps').innerHTML = line('Claude Desktop', j.claude, 'claude') + line('Antigravity', j.antigravity, 'antigravity') +
-    supervisorLine(sup) + updateLine(upd);
+    quotaLine(quo) + supervisorLine(sup) + updateLine(upd);
 }
 // The supervisor is the owner's to switch. The tooltip says what its last round saw.
 function supervisorLine(s) {
@@ -917,6 +918,16 @@ function supervisorLine(s) {
   ].filter(Boolean).join('\n');
   return '<div title="' + esc(tip) + '"><i class="' + (s.enabled ? 'up' : '') + '"></i>Supervisor is ' + (s.enabled ? 'on' : 'off') +
     ' <button type="button" class="link-btn" data-sup="' + (s.enabled ? 'off' : 'on') + '">' + (s.enabled ? 'Turn off' : 'Turn on') + '</button></div>';
+}
+// How much quota the signed-in Antigravity account has left; red when it is time to switch.
+function quotaLine(q) {
+  if (!q || q.error || !(q.pools || []).length) return '';
+  const low = q.pools[0].remaining;
+  const tip = ['Account: ' + q.account].concat(q.pools.map(p => Math.round(p.remaining * 100) + '% — ' + p.labels.join(', ') +
+    (p.reset ? ' — resets ' + fullDate(p.reset) : ''))).concat((q.unmetered || []).length ? ['No figure reported: ' + q.unmetered.join(', ')] : []).join('\n');
+  return '<div title="' + esc(tip) + '"' + (low <= 0.2 ? ' class="receipt late"' : '') + '><i class="' + (low > 0.05 ? 'up' : '') + '"></i>Quota: ' +
+    q.pools.map(p => Math.round(p.remaining * 100) + '% ' + esc(short(p.labels[0].replace(/\s*\(.*\)$/, ''), 18))).join(' · ') +
+    (low <= 0.05 ? ' — switch account' : '') + '</div>';
 }
 // A release newer than this board: the offer, what is new in the tooltip, and the button.
 // A git checkout is somebody's working copy and is never overwritten from here.

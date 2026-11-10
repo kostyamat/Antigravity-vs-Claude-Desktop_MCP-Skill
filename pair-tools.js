@@ -4,12 +4,49 @@
 // part that talks to the caller.
 
 const { isHuman } = require('./room-routing');
+const antigravity = require('./antigravity-api');
+const { projectName } = require('./project-line');
 
 function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, doPost, normAgent }) {
+
+  // A lead with no helper starts one itself: a new Antigravity conversation that is told
+  // whose helper it is and what the work is about, then paired like any other. The owner
+  // is asked only when Antigravity is not running.
+  async function startHelper(id, a, me) {
+    if (router.agentOf(me) !== 'Claude') return fail(id, 'set_helper: only a lead (a Claude project) starts a helper.');
+    const has = rules.describeHelpers(me);
+    if (has.length && a.another !== true) {
+      return fail(id, 'set_helper: you already have a helper — ' + has.join('; ') + '. Pass another: true to start one more.');
+    }
+    const brief = String(a.brief || '').trim();
+    if (brief.length < 40) {
+      return fail(id, 'set_helper: pass brief — what the project is, where it lives, what the helper will be doing and what it must not touch. ' +
+        'A helper started without context starts by guessing.');
+    }
+    const name = projectName(me) || router.nameOf(me);
+    let helper;
+    try {
+      helper = await antigravity.create({
+        model: /^[A-Za-z0-9_.-]{2,60}$/.test(String(a.model || '')) ? a.model : 'pro',
+        title: 'Helper: ' + name,
+        prompt: `You are the helper of the project "${name}", started through the agent-bridge board by its lead, a Claude session. ` +
+          'Read your skills agent-bridge (PROTOCOL) and agent-workflow (section "Working with a helper agent") now, completely. ' +
+          'The board is about to post your own id and your room to you; sign every bridge call with that id. ' +
+          'The lead gives you the routine of the project and reviews what you deliver; the owner may give you a task directly at any time. ' +
+          'Context from the lead:\n' + brief + '\n\nDo nothing else yet. Reply with the single word READY, then read your room with get_messages.'
+      });
+    } catch (e) {
+      return fail(id, 'set_helper: could not start a helper (' + e.message + '). Ask the owner to open Antigravity, or to give you a helper window.');
+    }
+    // The new conversation appears among the cards a moment after it is made.
+    for (let i = 0; i < 20 && !router.windowOf(helper); i++) await new Promise(r => setTimeout(r, 500));
+    return doSetHelper(id, Object.assign({}, a, { start: false, helper, lead: '' }));
+  }
 
   function doSetHelper(id, a) {
     const me = router.windowOf(a.canonicalId) || router.windowOf(a.sessionId);
     if (!me) return fail(id, 'set_helper: the board does not know which window you are — pass sessionId.');
+    if (a.start === true) return startHelper(id, a, me).catch(e => fail(id, 'set_helper: ' + e.message));
     const asHelper = Boolean(String(a.lead || '').trim());
     const otherRaw = String((asHelper ? a.lead : a.helper) || '').trim();
     if (!otherRaw) {

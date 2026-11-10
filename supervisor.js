@@ -33,6 +33,7 @@ const { projectName } = require('./project-line');
 const { STALE_HOURS } = require('./stands');
 const { createGuard } = require('./db-guard');
 const ownerWaiting = require('./owner-waiting');
+const quota = require('./antigravity-quota');
 
 const ME = 'supervisor/board';
 const DEFAULTS = { enabled: false, model: 'flash', everyMinutes: 10, nudgeAfterMinutes: 10, catchUpAfterMinutes: 30,
@@ -64,10 +65,10 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
   }
 
   // A line on the board from the supervisor itself (the rule half, not the model).
-  function say({ to, toSession, room, text, status: st, replyTo }) {
+  function say({ to, toSession, room, text, status: st, replyTo, priority }) {
     const rec = {
       ts: new Date().toISOString(), from: 'Supervisor', fromSession: ME, room: room || '', to: to || 'all',
-      toSession: toSession || '', replyTo: replyTo || null, topic: 'supervisor', priority: 'normal', status: st || 'info',
+      toSession: toSession || '', replyTo: replyTo || null, topic: 'supervisor', priority: priority || 'normal', status: st || 'info',
       progress: '', message: text, file: null, readBy: []
     };
     rec.id = bridgeDb.addMessage(rec).id;
@@ -218,6 +219,22 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
     return chased;
   }
 
+  // The helper's fuel. The signed-in Antigravity account is asked how much quota is left;
+  // at a fifth the owner is told to plan the switch, at a twentieth to switch now — urgent,
+  // so the board rings — with what the board remembers of his other accounts.
+  async function watchQuota(room) {
+    try {
+      const q = await quota.read();
+      const cfg = config();
+      const known = quota.remember(cfg.quotaKnown, q);
+      const w = quota.warning(q, known, cfg.quotaTold);
+      save(w ? { quotaKnown: known, quotaTold: w.told } : { quotaKnown: known });
+      if (w) say({ to: 'all', toSession: 'human/web', room, status: w.level === 2 ? 'blocked' : 'question',
+                   priority: w.level === 2 ? 'P0' : 'normal', text: 'Supervisor: ' + w.text });
+      return { account: q.account, pools: q.pools, unmetered: q.unmetered, warned: w ? w.level : 0 };
+    } catch (e) { return { error: e.message }; }
+  }
+
   function repairDatabase() {
     const r = guard.repair((config().guard || {}).since);
     if (!r.error) save({ guard: Object.assign({}, config().guard || {}, guard.live()) });
@@ -294,6 +311,7 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
     try {
       next.database = watchDatabase(cfg0.room || '');
       next.chased = chaseOwnersMail();
+      next.quota = await watchQuota(cfg0.room || '');
       const d = digest();
       next.sleepers = d.sleepers; next.stands = d.stands; next.describing = d.describing.length;
       next.rescues = d.rescues.map(r => ({ name: r.name, dirty: r.dirty, slice: r.slice, idleMinutes: r.idleMinutes }));

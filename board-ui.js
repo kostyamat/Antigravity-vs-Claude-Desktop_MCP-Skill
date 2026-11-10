@@ -34,6 +34,8 @@ const supervisor = require('./supervisor').createSupervisor({
   bridgeDb, cardsLib, router, home: path.resolve(__dirname), wake: m => wakeAntigravity(m)
 });
 const ownerWaiting = require('./owner-waiting');
+const agQuota = require('./antigravity-quota');
+let quotaSeen = { at: 0, value: null };
 const updater = require('./updater').createUpdater({ home: path.resolve(__dirname), bridgeDb, dbBackup });
 // The build this process was started from; the installer asks for it to know
 // whether the running dashboard is the code on disk.
@@ -534,6 +536,14 @@ const server = http.createServer((req, res) => {
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(apiBoard(opts)));
   }
   // What became of each message the owner wrote in the last day: read, answered, how fast.
+  // The signed-in Antigravity account's quota, asked at most once a minute.
+  if (req.method === 'GET' && req.url === '/api/quota') {
+    const answer = v => send(res, 200, 'application/json; charset=utf-8', JSON.stringify(v));
+    if (Date.now() - quotaSeen.at < 60000 && quotaSeen.value) return answer(quotaSeen.value);
+    agQuota.read().then(q => ({ account: q.account, pools: q.pools, unmetered: q.unmetered }), e => ({ error: e.message }))
+      .then(v => { quotaSeen = { at: Date.now(), value: v }; answer(v); });
+    return;
+  }
   if (req.method === 'GET' && req.url === '/api/receipts') {
     let out = {};
     try { out = ownerWaiting.receipts(bridgeDb.readAllMessages()); } catch (e) { out = { error: e.message }; }
