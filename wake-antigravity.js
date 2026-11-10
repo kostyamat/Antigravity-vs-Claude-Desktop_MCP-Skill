@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const { execSync, spawn } = require('child_process');
+const antigravity = require('./antigravity-api');
 
 const SCRIPTS_DIR = path.resolve(__dirname);
 let lastWokenId = 0;
@@ -116,20 +115,9 @@ function wakeAntigravity(rec) {
       } catch (_) {}
     };
 
-    // Extract CSRF token from language_server.exe
-    const cmd = "powershell -NoProfile -Command \"Get-WmiObject Win32_Process -Filter 'name = ''language_server.exe''' | Select-Object -ExpandProperty CommandLine\"";
-    const cmdline = execSync(cmd, { encoding: 'utf8', windowsHide: true });
-    const csrfMatch = cmdline.match(/--csrf_token\s+([0-9a-fA-F-]+)/);
-    if (!csrfMatch) return giveUp('no csrf token on the language_server command line');
-    const csrf = csrfMatch[1];
-
-    // Extract HTTP port from language_server.log
-    const logPath = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Antigravity', 'logs', 'language_server.log');
-    if (!fs.existsSync(logPath)) return giveUp('no language_server log at ' + logPath);
-    const log = fs.readFileSync(logPath, 'utf8');
-    const matches = [...log.matchAll(/listening on random port at (\d+) for HTTP$/gm)];
-    if (!matches.length) return giveUp('no HTTP port line in the language_server log');
-    const port = matches[matches.length - 1][1];
+    // Where the running Antigravity listens, and with which token (antigravity-api.js).
+    let where;
+    try { where = antigravity.locate(); } catch (e) { return giveUp(e.message); }
 
     const bodyText = rec.text || rec.message || '';
     // The old wording ended with "Give immediate ACK with status: working or
@@ -150,17 +138,7 @@ function wakeAntigravity(rec) {
           `then the result there, not only in this chat. ` +
           `Quote the point you answer with a "> " line and answer that point, not the whole message.`
         : `Do not reply to acknowledge - a receipt wakes the sender for nothing.`);
-    const lsExe = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'antigravity', 'resources', 'bin', 'language_server.exe');
-
-    const env = Object.assign({}, process.env, {
-      ANTIGRAVITY_LS_ADDRESS: `localhost:${port}`,
-      ANTIGRAVITY_CSRF_TOKEN: csrf
-    });
-
-    for (const convId of targetConvIds) {
-      const child = spawn(lsExe, ['agentapi', 'send-message', convId, prompt], { env, windowsHide: true, stdio: 'ignore' });
-      child.unref();
-    }
+    for (const convId of targetConvIds) antigravity.send(convId, prompt, where);
   } catch (e) {
     try {
       fs.appendFileSync(path.join(SCRIPTS_DIR, 'bridge_mcp.log'), `${new Date().toISOString()} wakeAntigravity error: ${e.message}\n`);
