@@ -959,22 +959,35 @@ function getBoardStatus(reader) {
 
 // ── Cleanup & Archiving ─────────────────────────────────────────────────────────────────
 
-function clearBoard(reason, archiveDir) {
+// Archives and removes the messages of ONE scope: the Square (scope "square",
+// messages with no room) or one room (its id). Never the whole board: on
+// 10.11.2026 one call from an agent emptied every room at once. The archive is
+// written first and must succeed; the removal is one transaction; ids keep
+// counting up, so read cursors stay valid. → { count, file } or { error }.
+function clearBoard(reason, archiveDir, scope) {
   const db = getDb();
-  const msgs = readAllMessages();
-  if (!msgs.length) return null;
-
-  if (archiveDir && fs.existsSync(archiveDir)) {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const dest = path.join(archiveDir, `board_${stamp}.json`);
-    fs.writeFileSync(dest, JSON.stringify({ archivedAt: new Date().toISOString(), reason: reason || '', messages: msgs }, null, 2), 'utf8');
+  scope = String(scope || '').trim();
+  if (!scope) return { error: 'name what to clear: scope "square" for the Square, or a room id' };
+  let where = "COALESCE(room, '') = ''", arg = [];
+  if (scope !== 'square') {
+    if (!getRoom(scope)) return { error: 'no room "' + scope + '"' };
+    where = 'room = ?'; arg = [scope];
   }
-
-  db.exec('DELETE FROM messages;');
-  db.exec('DELETE FROM sqlite_sequence WHERE name = "messages";');
-  db.exec('DELETE FROM cursors;');
-
-  return msgs.length;
+  const ids = db.prepare(`SELECT id FROM messages WHERE ${where} ORDER BY id`).all(...arg).map(r => r.id);
+  if (!ids.length) return { count: 0, file: '' };
+  if (!archiveDir) return { error: 'no archive folder: nothing is removed without an archive' };
+  fs.mkdirSync(archiveDir, { recursive: true });
+  const msgs = readAllMessages().filter(m => ids.includes(m.id));
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const file = path.join(archiveDir, `board_${scope.replace(/[^\w-]/g, '_')}_${stamp}.json`);
+  fs.writeFileSync(file, JSON.stringify({ archivedAt: new Date().toISOString(), scope, reason: reason || '', messages: msgs }, null, 2), 'utf8');
+  if (JSON.parse(fs.readFileSync(file, 'utf8')).messages.length !== msgs.length) return { error: 'the archive did not verify; nothing removed' };
+  db.exec('BEGIN');
+  try {
+    db.prepare(`DELETE FROM messages WHERE ${where} AND id <= ?`).run(...arg, ids[ids.length - 1]);
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); return { error: e.message }; }
+  return { count: msgs.length, file };
 }
 
 // ── Sessions ───────────────────────────────────────────────────────────────────────────

@@ -905,9 +905,11 @@ const TOOLS = [
   {
     name: 'clear_messages',
     description:
-      'Archive and clear board messages. Nothing is deleted: all messages are moved into a dated archive file. ' +
-      'Use when board history becomes excessively large.',
-    inputSchema: { type: 'object', properties: { reason: { type: 'string', description: 'Reason for archiving.' } } }
+      'Archive the messages of ONE scope into a dated file and REMOVE them from the board: the Square ' +
+      '(scope "square") or one room (its id). Never the whole board. Only on the owner\'s explicit order.',
+    inputSchema: { type: 'object', required: ['scope'], properties: {
+      scope: { type: 'string', description: '"square" or a room id.' },
+      reason: { type: 'string', description: 'Reason for archiving.' } } }
   }
 ];
 
@@ -2190,7 +2192,8 @@ function doLoadCtx(id, a) {
 
 function doClear(id, a) {
   ensureDir(ARCHIVE_DIR);
-  const count = bridgeDb.clearBoard(a.reason || '', ARCHIVE_DIR);
-  if (!count) return ok(id, 'Board is already empty.');
-  ok(id, `Board cleared. Nothing lost — ${count} messages archived into ${ARCHIVE_DIR}`);
+  const r = bridgeDb.clearBoard(a.reason || '', ARCHIVE_DIR, a.scope);
+  if (r.error) return fail(id, 'clear_messages: ' + r.error);
+  if (!r.count) return ok(id, `Nothing to clear in "${a.scope}".`);
+  ok(id, `${r.count} messages of "${a.scope}" archived into ${r.file} and removed from the board.`);
 }
