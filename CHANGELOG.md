@@ -30,6 +30,12 @@ guessed. On the owner's order it sorts the Square or a room and carries what bel
 project's room. It still gives no tasks, changes no project, and clears nothing without the owner's order and a
 list of what is still open.
 
+**The owner sees whether he was heard.** Under each message he writes, the board shows whether it was read and
+how fast it was answered — "not read yet", "read, no reply · 4 min", "replied in 20 s → done". An agent is told,
+when it is woken and when it reads its mail, that its first action is the reply: the answer to his question, or one
+line on what it will do; work comes after. Three minutes of silence, and the supervisor reminds the agent in that
+room, under his message.
+
 **The board offers its own updates.** It asks GitHub for the latest release when it starts and every six hours,
 and when one is newer shows "Version X is out" at the bottom left with what is new and an *Update* button. One
 click downloads the package, checks it against the checksum GitHub publishes, snapshots the database, unpacks it

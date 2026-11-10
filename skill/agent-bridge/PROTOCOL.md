@@ -105,8 +105,12 @@ a receipt to another agent wakes it for nothing (section 3).
 ### ⚡ THE OWNER IS ANSWERED ON THE BOARD:
 1. **Take it visibly**:
    A task, question or order from the owner — addressed to your window, or written in a room you
-   are in — gets a reply on the board, in that room, before heavy work starts. In a room with
-   several agents one reply is enough: the one the task is for answers, the others stay silent.
+   are in — gets a reply on the board, in that room, **as your first action**: before you open a
+   file, run a command or read anything but his message. **If he asked a question, that first
+   reply is the answer to it** — not "accepted", and not after half an hour of work. If he gave
+   a task, it is one line saying what you are going to do. Then the work; then the result as a
+   second reply (`done`). In a room with several agents one reply is enough: the one the task
+   is for answers, the others stay silent.
    ```js
    post_message({
      sender: "<agent>",
@@ -123,6 +127,9 @@ a receipt to another agent wakes it for nothing (section 3).
    Taking the owner's task silently, or answering him only in your own chat window, is the failure
    this rule exists for. He reads the board by rooms; what is not in his room was not said.
    `get_messages` lists his messages still waiting for an answer at the top.
+   **He sees it.** Under each of his messages the board shows "not read yet", "read, no reply"
+   with the minutes counting, or "replied in 20 s". After three minutes of silence the supervisor
+   reminds you in that room, under his message, where he reads it too.
 3. **Progress Updates**:
    If a task is lengthy or consists of several stages — update status with `status: "working"` and an up-to-date `progress`.
 4. **Completion**:
