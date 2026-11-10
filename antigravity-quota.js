@@ -53,12 +53,17 @@ async function read() {
     if (!p) pools.push(p = { remaining: m.remaining, reset: m.reset, labels: [] });
     p.labels.push(m.label);
   }
-  pools.sort((a, b) => a.remaining - b.remaining);
+  // Antigravity does not always refresh these figures by itself: a pool whose reset time has
+  // already passed is showing an old number. It is marked stale and counted as unknown — the
+  // quota has reset since — rather than reported as low.
+  const nowMs = Date.now();
+  for (const p of pools) p.stale = !!(p.reset && Date.parse(p.reset) < nowMs);
+  pools.sort((a, b) => (a.stale - b.stale) || (a.remaining - b.remaining));
   // Models the application reports no figure for: not counted, and not called empty.
   const unmetered = ((u.cascadeModelConfigData || {}).clientModelConfigs || [])
     .filter(m => !m.quotaInfo || (typeof m.quotaInfo.remainingFraction !== 'number' && !m.quotaInfo.resetTime)).map(m => m.label);
   return { unmetered, account: u.email || u.name || 'unknown', plan: ((u.planStatus || {}).planInfo || {}).planName || '',
-           models, pools, lowest: pools.length ? pools[0].remaining : 1, at: new Date().toISOString() };
+           models, pools, lowest: pools.length && !pools[0].stale ? pools[0].remaining : 1, at: new Date().toISOString() };
 }
 
 const pct = f => Math.round(f * 100) + '%';
@@ -86,7 +91,7 @@ function alternatives(known, current, now) {
 // The warning due now, if any. `told` = { account: { level, reset } } — one warning per level
 // per reset period. Returns { text, level, told } or null.
 function warning(q, known, told) {
-  const low = q.pools.filter(p => p.remaining <= WARN_AT);
+  const low = q.pools.filter(p => !p.stale && p.remaining <= WARN_AT);
   if (!low.length) return null;
   const worst = low[0];
   const level = worst.remaining <= SWITCH_AT ? 2 : 1;
@@ -107,6 +112,6 @@ module.exports = { read, remember, alternatives, warning, pct, poolName, WARN_AT
 if (require.main === module) {
   read().then(q => {
     console.log(q.account.replace(/^(.{2}).*(@.*)$/, '$1…$2'), q.plan);
-    for (const p of q.pools) console.log('  ' + pct(p.remaining).padStart(4), 'resets', p.reset, '·', p.labels.join(', '));
+    for (const p of q.pools) console.log('  ' + (p.stale ? 'old ' : '') + pct(p.remaining).padStart(4), 'resets', p.reset, '·', p.labels.join(', '));
   }).catch(e => { console.error('quota: ' + e.message); process.exitCode = 1; });
 }

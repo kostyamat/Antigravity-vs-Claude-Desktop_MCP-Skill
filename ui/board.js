@@ -922,11 +922,12 @@ function supervisorLine(s) {
 // How much quota the signed-in Antigravity account has left; red when it is time to switch.
 function quotaLine(q) {
   if (!q || q.error || !(q.pools || []).length) return '';
-  const low = q.pools[0].remaining;
+  const fresh = q.pools.filter(p => !p.stale);
+  const low = fresh.length ? fresh[0].remaining : 1;
   const tip = ['Account: ' + q.account].concat(q.pools.map(p => Math.round(p.remaining * 100) + '% — ' + p.labels.join(', ') +
     (p.reset ? ' — resets ' + fullDate(p.reset) : ''))).concat((q.unmetered || []).length ? ['No figure reported: ' + q.unmetered.join(', ')] : []).join('\n');
   return '<div title="' + esc(tip) + '"' + (low <= 0.2 ? ' class="receipt late"' : '') + '><i class="' + (low > 0.05 ? 'up' : '') + '"></i>Quota: ' +
-    q.pools.map(p => Math.round(p.remaining * 100) + '% ' + esc(short(p.labels[0].replace(/\s*\(.*\)$/, ''), 18))).join(' · ') +
+    q.pools.map(p => (p.stale ? 'old ' : '') + Math.round(p.remaining * 100) + '% ' + esc(short(p.labels[0].replace(/\s*\(.*\)$/, ''), 18))).join(' · ') +
     (low <= 0.05 ? ' — switch account' : '') + '</div>';
 }
 // A release newer than this board: the offer, what is new in the tooltip, and the button.

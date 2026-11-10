@@ -101,7 +101,7 @@ function createArgonRoom({ bridgeDb, home, post }) {
 
   const say = (m, text, status) => post({
     from: NAME, fromSession: SESSION, room: m.room || '', to: m.from, toSession: /^human/i.test(m.fromSession || '') ? '' : (m.fromSession || ''),
-    replyTo: m.id, status, topic: m.topic || 'argon', text });
+    replyTo: m.id, status, topic: m.topic || 'argon', priority: 'normal', text });
 
   async function work() {
     if (busy) return;
@@ -118,7 +118,14 @@ function createArgonRoom({ bridgeDb, home, post }) {
             { prompt: prompt(m), project: 'Board room: ' + (room ? room.name : 'Square'), timeout_seconds: TIMEOUT_S }, (TIMEOUT_S + 60) * 1000);
           say(m, answer || '(Argon returned an empty answer.)', 'answer');
         } catch (e) {
-          say(m, 'Argon did not answer: ' + e.message + '. Is Gemini Desktop running from its "Gemini (Argon)" shortcut?', 'blocked');
+          // Out of quota is the owner's to fix, and only by switching the account: he is told so, urgently.
+          if (/out of quota|LIMIT:/i.test(e.message)) {
+            say(m, 'Argon is out of quota on the account Gemini Desktop is signed in with: ' + e.message + ' Nothing was sent.', 'blocked');
+            post({ from: 'Supervisor', fromSession: 'supervisor/board', room: m.room || '', to: 'all', toSession: 'human/web', priority: 'P0',
+                   status: 'blocked', topic: 'supervisor', text: 'Supervisor: switch the Gemini Desktop account — Argon is out of quota (' + e.message + ').' });
+          } else {
+            say(m, 'Argon did not answer: ' + e.message + '. Is Gemini Desktop running from its "Gemini (Argon)" shortcut?', 'blocked');
+          }
         }
       }
     } finally { busy = false; }
