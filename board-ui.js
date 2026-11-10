@@ -31,7 +31,7 @@ const { projectName } = require('./project-line');
 const dbBackup = require('./db-backup');
 const attachments = require('./attachments').createAttachments(bridgeDb, path.resolve(__dirname));
 const supervisor = require('./supervisor').createSupervisor({
-  bridgeDb, cardsLib, router, home: path.resolve(__dirname), wake: m => wakeAntigravity(m)
+  bridgeDb, cardsLib, router, home: path.resolve(__dirname), wake: m => wakeAntigravity(m), launch: app => launchApp(app)
 });
 const ownerWaiting = require('./owner-waiting');
 const argonRoom = require('./argon-room').createArgonRoom({ bridgeDb, home: path.resolve(__dirname), post: d => apiPost(d) });
@@ -818,11 +818,13 @@ function isClaudeDesktopRunning() {
 }
 
 function launchApp(app) {
+  const started = [];
   if (app === 'antigravity' || app === 'all') {
     if (!isProcessRunning('Antigravity.exe')) {
       const antPath = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'antigravity', 'Antigravity.exe');
       if (fs.existsSync(antPath)) {
         spawn('cmd.exe', ['/c', 'start', '""', antPath], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+        started.push('antigravity');
       }
     }
   }
@@ -833,8 +835,10 @@ function launchApp(app) {
         stdio: 'ignore',
         windowsHide: true
       }).unref();
+      started.push('claude');
     }
   }
+  return started;
 }
 
 // A closed environment is usually closed on purpose. Starting both of them
@@ -852,7 +856,16 @@ function raiseTargetEnvironment(m) {
     const toSession = String(m.toSession || m.to_session || '').trim();
     const directed = to === 'claude' || to === 'gemini';
     if (!directed && !toSession) {
-      if (String(m.priority || '').toUpperCase() !== 'P0') return;
+      // What the owner says in a room is for its members: whichever of their applications is
+      // closed is brought up. Agents talking to the room at large raise nobody.
+      if (m.room && /^human/i.test(String(m.fromSession || ''))) {
+        const started = [];
+        const members = ((bridgeDb.getRoom(m.room) || {}).members || []).map(x => String(x.agent || '').toLowerCase());
+        if (members.includes('gemini')) started.push(...launchApp('antigravity'));
+        if (members.includes('claude')) started.push(...launchApp('claude'));
+        return started;
+      }
+      if (String(m.priority || '').toUpperCase() !== 'P0') return [];
     }
 
     let agent = directed ? to : '';
@@ -874,7 +887,7 @@ function raiseTargetEnvironment(m) {
 
     if (agent === 'gemini') return launchApp('antigravity');
     if (agent === 'claude') return launchApp('claude');
-    if (String(m.priority || '').toUpperCase() === 'P0') launchApp('all');
+    if (String(m.priority || '').toUpperCase() === 'P0') return launchApp('all');
   } catch (_) {}
 }
 
@@ -1016,12 +1029,25 @@ setInterval(() => {
     if (top > lastSeenId) {
       for (const m of board) {
         if ((m.id || 0) <= lastSeenId) continue;
-        wakeAntigravity(m);
-        raiseTargetEnvironment(m);
+        const started = raiseTargetEnvironment(m) || [];
+        if (started.includes('antigravity')) wakeWhenUp.push({ m, until: Date.now() + 4 * 60000 });
+        else wakeAntigravity(m);
       }
       lastSeenId = top;
     }
   } catch (_) {}
 }, 3000);
+
+// A message that started Antigravity cannot be delivered into a conversation until the
+// application listens: it waits here and is delivered then. Four minutes, then it is left
+// to the agent's next get_messages.
+const wakeWhenUp = [];
+setInterval(() => {
+  if (!wakeWhenUp.length) return;
+  let up = false;
+  try { require('./antigravity-api').locate(); up = true; } catch (_) {}
+  if (up) { for (const p of wakeWhenUp.splice(0)) { try { wakeAntigravity(p.m); } catch (_) {} } return; }
+  while (wakeWhenUp.length && wakeWhenUp[0].until < Date.now()) wakeWhenUp.shift();
+}, 5000).unref();
 
 listen(PORT_FROM);

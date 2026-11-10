@@ -44,7 +44,7 @@ const ACK_AFTER_MIN = 3;      // the owner's message with no reply this long is 
 const ACK_UNTIL_MIN = 60;
 const DAY = 24 * 3600e3;
 
-function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
+function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
   const configFile = path.join(home, 'bridge_config.json');
   const mailbox = createMailbox(bridgeDb, router);
   const guard = createGuard({ bridgeDb, home });
@@ -319,7 +319,11 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
       let cfg = cfg0;
       if (tasks.length || d.sleepers.length) {
         try { cfg = await ensureConversation(); }
-        catch (e) { next.lastError = 'Antigravity: ' + e.message; }
+        catch (e) {
+          next.lastError = 'Antigravity: ' + e.message;
+          // There is work for the model and its application is closed: start it; the next round delivers.
+          try { if (launch && launch('antigravity').length) next.lastError += ' — Antigravity was started, the tasks go out next round'; } catch (_) {}
+        }
       }
       next.nudged = nudge(d.sleepers, cfg.room || '');
       next.catchups = d.catchups.map(c => ({ name: c.name, into: c.into, unread: c.ids.length, minutes: c.minutes }));

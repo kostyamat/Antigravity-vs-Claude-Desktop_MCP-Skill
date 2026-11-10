@@ -82,6 +82,20 @@ function callTool(cfg, name, args, timeoutMs) {
   });
 }
 
+// Argon's application is closed: start it from the owner's own shortcut. bridge_config.json →
+// argon.launch names it; otherwise a "Gemini (Argon)" shortcut is looked for on the desktop.
+function launcher(home) {
+  try {
+    const own = JSON.parse(fs.readFileSync(path.join(home, 'bridge_config.json'), 'utf8')).argon;
+    if (own && own.launch && fs.existsSync(own.launch)) return own.launch;
+  } catch (_) {}
+  const roots = [path.join(os.homedir(), 'Desktop'), process.env.OneDrive && path.join(process.env.OneDrive, 'Desktop')].filter(Boolean);
+  try { for (const d of fs.readdirSync(process.env.OneDrive || '')) roots.push(path.join(process.env.OneDrive, d)); } catch (_) {}
+  for (const r of roots) { const f = path.join(r, 'Gemini (Argon).lnk'); if (fs.existsSync(f)) return f; }
+  return '';
+}
+const DOWN = /fetch failed|offline|ECONNREFUSED|not running/i;
+
 function createArgonRoom({ bridgeDb, home, post }) {
   let cursor = 0, busy = false, timer = null;
   const queue = [];
@@ -114,8 +128,23 @@ function createArgonRoom({ bridgeDb, home, post }) {
         say(m, 'Argon has the question; the answer will be posted here.', 'working');
         try {
           const room = m.room ? bridgeDb.getRoom(m.room) : null;
-          const answer = await callTool(cfg, 'ask_argon',
+          const ask = () => callTool(cfg, 'ask_argon',
             { prompt: prompt(m), project: 'Board room: ' + (room ? room.name : 'Square'), timeout_seconds: TIMEOUT_S }, (TIMEOUT_S + 60) * 1000);
+          let answer;
+          try { answer = await ask(); }
+          catch (e) {
+            // Its application is closed: start it, wait until it answers, ask once more.
+            const lnk = DOWN.test(e.message) ? launcher(home) : '';
+            if (!lnk) throw e;
+            spawn('cmd.exe', ['/c', 'start', '""', lnk], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+            let up = false;
+            for (let i = 0; i < 18 && !up; i++) {
+              await new Promise(r => setTimeout(r, 5000));
+              try { await callTool(cfg, 'argon_status', {}, 20000); up = true; } catch (_) {}
+            }
+            if (!up) throw new Error('Gemini Desktop was started but did not come up in 90 s');
+            answer = await ask();
+          }
           say(m, answer || '(Argon returned an empty answer.)', 'answer');
         } catch (e) {
           // Out of quota is the owner's to fix, and only by switching the account: he is told so, urgently.
