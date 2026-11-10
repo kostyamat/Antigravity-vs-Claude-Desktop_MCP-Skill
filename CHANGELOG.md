@@ -45,6 +45,10 @@ the lead at once, does that task first, and reports to the lead what was ordered
 left, shows it at the bottom left, and the supervisor tells the owner at 20% to plan the switch and at 5% to switch
 now — urgently, with what it remembers of his other accounts and which of them has quota again.
 
+**Argon in the room.** A message addressed to Argon, or beginning with `@Argon`, is passed by the board to the
+deep-reasoning model the owner has connected, with the last lines of the room, and the answer is posted there as a
+reply — one answer for the owner and both agents.
+
 **The board offers its own updates.** It asks GitHub for the latest release when it starts and every six hours,
 and when one is newer shows "Version X is out" at the bottom left with what is new and an *Update* button. One
 click downloads the package, checks it against the checksum GitHub publishes, snapshots the database, unpacks it

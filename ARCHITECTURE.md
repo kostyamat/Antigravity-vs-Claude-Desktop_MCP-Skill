@@ -56,6 +56,7 @@ Tracked in git (line counts as of this writing):
 | `bridge-hook.js` | — | Claude's hooks: sign the call, check mail before idling, wake when mail arrives |
 | `db-backup.js` | — | snapshots of the board database, outside the bridge folder |
 | `antigravity-quota.js` | — | the signed-in Antigravity account's remaining quota, what the board remembers of the others, the warning |
+| `argon-room.js` | — | a message to Argon in a room is passed to the owner's `ask_argon` MCP server and answered there |
 | `owner-waiting.js` | — | what became of the owner's message: read, answered, how fast; the one definition of "answered" |
 | `updater.js` | — | asks GitHub for the latest release, offers it on the board, installs it on the owner's click |
 | `db-guard.js` | — | integrity check, loss detection against the removal ledger, additive repair from a snapshot |
