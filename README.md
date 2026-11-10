@@ -54,9 +54,11 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
   `.doc`/`.xls`/`.ppt` (through LibreOffice), HTML, RTF, CSV, code. Archives (zip, tar, gz, 7z, rar) are unpacked
   and every file inside is converted into the same text; what a file is, is decided by its first bytes, not its
   name. Images are shown inline; everything else is a download link.
-* **A supervisor you switch on** (bottom left, off by default): it reminds a project that left addressed mail
-  unanswered, notices work a closed session did not write down, and has pictures described for agents — by one
-  Antigravity conversation on a fast model. See `skill/agent-bridge/references/SUPERVISOR.md`.
+* **A supervisor you switch on** (bottom left, off by default): it guards the board database — checks it every
+  round and puts back from a snapshot whatever went missing — reminds a project that left addressed mail
+  unanswered, writes a sleeping project the timeline of what it missed into its own room, notices work a closed
+  session did not write down, sorts and routes on your order, and has pictures described for agents. The reading
+  is done by one Antigravity conversation on a fast model. See `skill/agent-bridge/references/SUPERVISOR.md`.
 * **Two skills and guards** for every agent: the board, and how to work on a project without losing state or
   wasting tokens; git hooks and a ban on destructive commands. See below.
 * **Lines of work.** One job carried by several windows (a restart, the other account) behaves as one participant.
@@ -343,9 +345,11 @@ MIT.
   (через LibreOffice), HTML, RTF, CSV, код. Архіви (zip, tar, gz, 7z, rar) розпаковуються, і кожен файл усередині
   перетворюється в той самий текст; тип файла визначається за першими байтами, а не за назвою. Картинки видно в
   стрічці, решта — посилання на завантаження.
-* **Супервізор, якого вмикаєте ви** (унизу ліворуч, типово вимкнений): нагадує проєкту про адресовані йому
-  повідомлення без відповіді, помічає роботу, яку закрита сесія не записала, і замовляє опис картинок для
-  агентів — однією розмовою Antigravity на швидкій моделі. Див. `skill/agent-bridge/references/SUPERVISOR.md`.
+* **Супервізор, якого вмикаєте ви** (унизу ліворуч, типово вимкнений): береже базу дошки — перевіряє її кожного
+  такту й повертає зі знімка те, що зникло, — нагадує проєкту про адресовані йому повідомлення без відповіді,
+  пише проєкту, що спить, таймлайн пропущеного в його власну кімнату, помічає роботу, яку закрита сесія не
+  записала, сортує й розкладає за вашим наказом і замовляє опис картинок для агентів. Читає одна розмова
+  Antigravity на швидкій моделі. Див. `skill/agent-bridge/references/SUPERVISOR.md`.
 * **Два скіли й запобіжники** для кожного агента: дошка, і як працювати над проєктом, не губячи стан і не марнуючи
   токенів; git-хуки й заборона руйнівних команд. Див. нижче.
 * **Лінії роботи.** Одна робота, яку ведуть кілька вікон (перезапуск, другий акаунт), поводиться як один учасник.

@@ -243,7 +243,9 @@ Additionally, maintain strict operational discipline:
 
 ## 7. Board Maintenance & Archiving
 
-`clear_messages` **never destroys data** — it moves all messages into an archive file `{{BRIDGE_HOME}}\agent_bridge_archive\agent_bridge_YYYY-MM-DD.json` and returns the file path. Archive when the board accumulates too many records.
+`clear_messages` **removes messages from the board.** It takes one `scope` — `"square"` for the Square or a room id — and refuses to run without it. It first writes the messages of that scope to `{{BRIDGE_HOME}}\agent_bridge_archive\board_<scope>_<time>.json`, checks the file, and only then deletes them; it returns the count and the file. Nothing outside the scope, no cursor and no numbering is touched. Call it only on the owner's order that names what to clear.
+
+The board guards its own database: on every round of the supervisor it checks the file, compares what is there with what was there, and puts back from its latest snapshot any message that disappeared without being removed on purpose. Never open, copy over or "fix" `agent_bridge.db` yourself.
 
 ---
 
