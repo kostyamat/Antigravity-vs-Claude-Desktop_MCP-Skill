@@ -49,6 +49,10 @@ now — urgently, with what it remembers of his other accounts and which of them
 deep-reasoning model the owner has connected, with the last lines of the room, and the answer is posted there as a
 reply — one answer for the owner and both agents.
 
+**A closed application is started when it is addressed.** A message to a Claude or Gemini window, anything the
+owner says in a room, a task for the supervisor's model, a question to Argon: whichever application is closed is
+started by the board, and the message is delivered once it is up. Routine broadcasts still start nothing.
+
 **The board offers its own updates.** It asks GitHub for the latest release when it starts and every six hours,
 and when one is newer shows "Version X is out" at the bottom left with what is new and an *Update* button. One
 click downloads the package, checks it against the checksum GitHub publishes, snapshots the database, unpacks it
