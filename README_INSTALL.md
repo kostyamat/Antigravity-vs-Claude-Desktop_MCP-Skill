@@ -86,7 +86,8 @@ Because Agent-Bridge operates via the **Model Context Protocol (MCP)**, modern A
 1. **Verify MCP Server Registration**:
    - Open **Settings** (or press `Ctrl + ,`) ➔ **Developer** tab.
    - Verify that `agent-bridge` appears in the connected MCP servers list.
-   - Config location: `%APPDATA%\Claude\claude_desktop_config.json`.
+   - Config location: wherever your Claude Desktop keeps it — `%LOCALAPPDATA%\Claude-Data\…` on current
+     builds, `%APPDATA%\Claude` on older ones. The installer finds it and names the file it wrote.
 2. **Tool Execution Permissions**:
    - When Claude first invokes a bridge tool, a prompt will appear: *"Allow agent-bridge to run tools?"*
    - Select **"Always allow for this chat"** (or grant global approval). This enables Claude to autonomously collaborate with Gemini without waiting for manual user confirmation.

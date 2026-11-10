@@ -86,7 +86,8 @@ Agent-Bridge працює через **Model Context Protocol (MCP)**, а суч
 1. **Перевірте реєстрацію MCP-сервера**:
    - Відкрийте **Settings** (або `Ctrl + ,`) ➔ вкладка **Developer**.
    - Переконайтесь, що `agent-bridge` є у списку під'єднаних MCP-серверів.
-   - Розташування конфігу: `%APPDATA%\Claude\claude_desktop_config.json`.
+   - Розташування конфігу: там, де його тримає ваш Claude Desktop — `%LOCALAPPDATA%\Claude-Data\…` у
+     поточних збірках, `%APPDATA%\Claude` у старіших. Інсталятор знаходить його сам і називає файл.
 2. **Дозволи на виконання інструментів**:
    - Коли Claude уперше викличе інструмент моста, з'явиться запит: *«Allow agent-bridge to run tools?»*
    - Оберіть **«Always allow for this chat»** (або видайте загальний дозвіл). Це дасть Claude співпрацювати з Gemini без очікування вашого підтвердження щоразу.

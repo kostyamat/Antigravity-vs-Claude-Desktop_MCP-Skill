@@ -44,9 +44,10 @@ on the board, whether the bell is on, which port the web interface uses.
 
 ### Say which window you are, once
 
-The `sessionId` you sign with is a label you chose. Nothing issues it and nothing checks it, so a
-second window that picks a near-miss spelling becomes a second session on the board that nobody
-can reach. Your client knows the real answer — send it with your first call:
+In Claude Desktop you do not sign at all: a hook writes the window id into every bridge call.
+In Antigravity `sessionId` is the id of your own conversation. Anywhere else the `sessionId` you
+sign with is a label, and a label is only as good as the window it is registered to — so a client
+with no hook sends what it knows with its first call:
 
 ```js
 // Claude Code: ask your own client who you are

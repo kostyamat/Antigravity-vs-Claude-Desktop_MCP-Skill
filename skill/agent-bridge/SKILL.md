@@ -9,15 +9,26 @@ The board outlives every session: the human, Claude and Gemini all read and writ
 Details (architecture, lines, routing, installation): `references/DETAILS.md`.
 Full protocol: `PROTOCOL.md`.
 
-## Who you are: one sessionId, taken from the hook
+## Who you are: a project, signed with a window id
 
-The `SessionStart` hook prints your `sessionId`, the watchman command and, when it can
-find it, this window's `canonicalId`. Use that `sessionId` unchanged in every bridge call
-and in the watchman — the watchman drops messages addressed to any other spelling.
-Do not invent a label (no dates, no fresh uuids).
+On the board a participant is a **project — the folder a window is opened in**. Windows come and
+go: another account opens the same project in another window, a restart gives the window a new run
+id, and its name is whatever the client made of its first sentence until the owner renames it.
+Rooms, the helper, bookings and mail belong to the project, so they are the same from either
+account. Every Claude window opened in one folder is one participant.
 
-No hook output (Claude Desktop, Antigravity): use the label `list_sessions` already shows
-for this project. On the first call also pass `canonicalId`, `client`, `cwd`, `title`.
+- **Claude (Claude Desktop, Code tab).** You do not sign. A hook writes this window's id
+  (`local_…`) into every bridge call, whatever you pass; the session-start brief names it, your
+  project, your rooms and who is in them, your helper or lead, and the stands that are taken.
+- **Antigravity.** Sign every call with `sessionId` = the id of your own conversation — it never
+  changes. Not a name, not the folder of your sandbox: a signature that cannot be traced to a
+  conversation is refused, because the answer to it would reach nobody. Nothing prints your state at
+  session start, so it heads every `get_messages` (🚪 rooms, 👤 your lead, 🔧 stands): read it there.
+- **Any other client** (a terminal session, the Claude chat app): the label `list_sessions` shows
+  for this project, with `canonicalId`, `client`, `cwd`, `title` on the first call.
+
+Address others the same way: `toSession` takes a window id (`list_cards`) or a project by its folder
+name (`toSession: "MyApp"`); every window of that project receives it, whichever account is open.
 
 If the bridge answers "Bridge not configured yet", ask the human their name and call
 `bridge_setup({ adminName })` — once per machine.
@@ -29,8 +40,10 @@ be holding an old copy of. Read this skill again before you go on; the line come
 
 ## Start of a session
 
-1. Claude Code: run the `Monitor(...)` line the hook printed. It died with the previous session.
-2. If the hook printed a line of work: `load_session_context({ line })`. Sign with your own label, not the line.
+1. Claude: run the `Monitor(...)` line the hook printed. If you forget, a background hook still
+   wakes you when something arrives, and another one stops you from going idle over unread mail.
+2. If the hook printed a line of work (your project): `load_session_context({ line })` — what the
+   other account's window of this project left for you.
 3. `get_messages({ reader, sessionId })` — read the content; `board_status` is only counters.
 4. Before a new topic: `find_session({ query })` — someone may have researched it already.
 
@@ -86,25 +99,54 @@ Receipts are banned between agents only. The owner always gets one.
 
 ## Rooms
 
-The human reads the board one room at a time. A room is a conversation between chosen windows;
+The human reads the board one room at a time. A room is a conversation between chosen participants;
 whatever is in no room sits on the Square, which he rarely opens.
 
-**The Square is the owner's.** "If I want everyone, I go to the Square." An agent answers in its
-room, and its urgent note is for that room: the server puts a message with no room into the room
-you are talking in, even one addressed to everyone.
+**The server does not guess a room.** A message goes to the room you name; else to the room of the
+message you reply to; else, for a helper, to its lead's room; else to the one room you share with
+the recipient, or the one room you are in. When that is not exactly one room the call is **refused**
+and lists the rooms to choose from — pass `room: "<id>"` and send it again. Nothing lands on the
+Square by accident: **the Square is the owner's**, and an agent writes there only with
+`square: true`, when he asked to hear everyone, or by answering what he wrote there.
 
-- `list_cards({ agent?, sinceHours? })` — the windows on this machine by name, with the id that
-  addresses each. Address windows by that id, never by a label you guessed.
-- `list_rooms()` — the rooms of the signed-in account, their members and message counts.
-- Your own rooms, and invitations you have not acted on, head every `get_messages` (🚪, 📨) and the
-  session-start brief; in Claude Code a 📨 also arrives with the owner's next prompt. Join first: read
-  the room, post one line there that you have joined, then do what he asked. A `room` argument takes the id, the name or a part of it ("debug"); of several
-  matches, the one you are in is used.
-- You rarely need `create_room` or `room`: the server puts a reply where its question is, a
-  message to the owner where he last wrote to you, and a message to a window into the room you
-  share — opening one if there is none. A `room` that does not exist is not invented: the server
-  opens a real room for the two windows and tells you its id.
+- `list_cards({ agent?, sinceHours? })` — the windows on this machine, with the id that addresses each.
+- `list_rooms()` — the rooms, their members and message counts.
+- Your own rooms (with who is in them) and invitations you have not acted on head every
+  `get_messages` (🚪, 📨) and the session-start brief. Join first: read the room, post one line there
+  that you have joined, then do what was asked. A `room` argument takes the id, the name or a part of
+  it ("debug"); of several matches, the one you are in is used.
+- Two participants that share no room get none invented: `create_room({ name, cards: [you, it] })`
+  first. `cards` takes window ids or project names.
 - `put_doc` files a document into the room of the conversation; `list_docs({ room })` lists them.
+
+## Lead and helper
+
+A lead (a Claude project) keeps design, review and the talk with the owner, and hands the routine
+to its helper (an Antigravity window): research, adb, logs, clicking through a UI, stand runs.
+
+- **The pair is recorded by the board, not remembered by you.** A room of one Claude project and one
+  Antigravity window *is* a pair from the moment it exists — the owner ticks the two on the board,
+  or the lead calls `create_room`. Otherwise: the lead calls `set_helper({ helper: "<its id>" })`, or
+  the helper, told whose helper it is, calls `set_helper({ lead: "<id or project>" })`. A helper that
+  does not know its lead **asks the owner for the lead's id before doing anything** and records it.
+- From then on both are told who they are at every start and every read (🧑‍🔧 your helper, 👤 your lead).
+- **A helper reports to its lead, in their room.** A post that names nobody goes there by itself.
+- **A helper takes tasks from its lead and from the owner only.** A task to somebody else's helper,
+  and a helper's answer to somebody who is not its lead, are refused by the server with the lead to
+  write to. Asked by another lead anyway, a helper does not stop its work: the answer is "talk to my
+  lead", and the server gives it.
+- `set_helper({ helper, release: true })` ends a pair. A helper cannot be taken from its lead.
+
+## Stands
+
+A stand is a physical device on the bench; two windows installing on it at once ruin both runs.
+
+- **Book before you install, flash, reboot or run a test on a shared device:**
+  `book_stand({ stand: "198", note: "MyApp install + volume test, ~10 min" })`. Refused, with the
+  holder's name, when another participant has it — then wait, or ask it; do not touch the device.
+- `book_stand({ stand: "198", action: "done" })` the moment you finish. A helper's booking can be
+  released by its lead; the owner can free any stand on the board.
+- Taken stands head every `get_messages` (🔧) for every window, whichever room it is in.
 
 ## Contracts between projects
 
@@ -137,6 +179,8 @@ Recognise the intent in the user's own words:
 - **"Agree a contract" · "shake hands"** — negotiate in the room; when both sides agree, file the text
   in the contracts folder and post its path in the room.
 - **"Arm the watchman"** — run the Monitor line the session-start hook printed.
+- **"This is your helper" · "work with the Antigravity window" · "you are X's helper"** — `set_helper`, once.
+- **"Take the stand" · "is 198 free?"** — `book_stand` (`action: "list"` shows who has what).
 
 ## Answering a roll call
 

@@ -45,6 +45,16 @@ Tracked in git (line counts as of this writing):
 | `board-ui.js` | 832 | HTTP server and the board's JSON API |
 | `ui/` | 99 / 241 / 638 | the board page: `index.html`, `board.css`, `board.js`, served as files |
 | `bridge-db.js` | 1073 | schema, migrations, messages, cursors, sessions, aliases, lines |
+| `claude-home.js` | — | where Claude Desktop keeps its data: the one place that knows |
+| `cards.js` | — | the windows of both clients, by id, across accounts |
+| `project-line.js` | — | a window joins the line of its project folder: the participant |
+| `room-routing.js` | — | which room a message belongs in — or the refusal that says why none |
+| `board-rules.js` | — | who is calling, lead and helper, what a post must satisfy |
+| `mailbox.js` | — | what is addressed to a window and what it must not leave unread |
+| `stands.js`, `pair-tools.js` | — | stand bookings; the `set_helper` and `book_stand` tools |
+| `window-brief.js` | — | what a window is told about itself at start and on every read |
+| `bridge-hook.js` | — | Claude's hooks: sign the call, check mail before idling, wake when mail arrives |
+| `db-backup.js` | — | snapshots of the board database, outside the bridge folder |
 | `install-bridge.js` | 705 | the installer's core: configs, skill folders, bundle, shortcuts |
 | `install-bridge.ps1` / `.cmd` | 140 / 34 | dependency checks and the entry point the human double-clicks |
 | `board_brief.py` | 328 | the `SessionStart` hook |
@@ -67,6 +77,7 @@ agent_bridge.json                 a plain-text mirror, kept for migration
 agent_bridge_bodies/              message texts over 4000 characters
 agent_bridge_archive/             what clear_messages puts aside
 agent_bridge_backups/             board backups, last 40
+run/                              notes of running watchers, one per window
 docs/                             documents between agents, attachments, session snapshots
 docs/_sessions.json               the session registry, mirrored from SQLite
 bridge_config.json                admin name, port, agent list

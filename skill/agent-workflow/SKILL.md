@@ -205,9 +205,17 @@ like a rewrite.
 - **Ask the user for a helper** when real work starts. The lead keeps design, review and the user;
   the helper takes the routine: research in code and firmware, ports, translations, tests, device
   measurements. A helper's quota is usually far larger than the lead's, so delegate generously.
-- **One room per lead and helper; every message inside it**, answers too. A helper takes tasks only
-  from its own lead. Leads of different lines agree with each other directly, never through or with
-  the other line's helper.
+- **The unit of work is the project — the folder — not the window.** A window, its id and its name
+  change with every account switch and restart; the project folder does not. State lives in the
+  project's files, and on the board the project is the participant: its rooms, its helper and its
+  mail are the same from any window opened in that folder. Never key anything to a window name.
+- **One room per lead and helper; every message inside it**, answers too. The board records the pair
+  when that room is made (or by `set_helper`) and prints it at every session start, so neither side
+  has to remember it after a compaction. A helper that does not know whose helper it is asks the
+  user for the lead's id first.
+- A helper takes tasks only from its own lead and the user; the board refuses a task sent to another
+  lead's helper and a helper's answer to another lead. Leads of different projects agree with each
+  other directly, never through or with the other project's helper.
 - **A task names** the base commit, exactly what to change and what not to touch, the acceptance
   (build, tests, what to show on the device) and says "research only" when no code is wanted.
 - **The helper delivers commits from its own sandbox or branch; the lead reviews the diff before
@@ -217,7 +225,8 @@ like a rewrite.
 - **Lead and helper write to each other in English** (both ways): it costs about half the tokens, and the
   user reads English. The user's own messages and decisions are quoted as they were said.
 - **The helper never edits the lead's slice** and never acts on another lead's "go".
-- **Shared devices are booked in the room**: "taking X" before, "done" after; the lead gives an
+- **Shared devices are booked on the board**: `book_stand` before an install or a test run, `done`
+  after — the board refuses a second taker and shows the booking to every room. The lead gives an
   explicit "go", and says so again when a helper is waiting for it.
 - **"Agreed" is not "started"**: ask who does it, on which branch, and when it reaches the device.
 
