@@ -33,6 +33,7 @@ const attachments = require('./attachments').createAttachments(bridgeDb, path.re
 const supervisor = require('./supervisor').createSupervisor({
   bridgeDb, cardsLib, router, home: path.resolve(__dirname), wake: m => wakeAntigravity(m)
 });
+const updater = require('./updater').createUpdater({ home: path.resolve(__dirname), bridgeDb, dbBackup });
 // The build this process was started from; the installer asks for it to know
 // whether the running dashboard is the code on disk.
 const BUILD = require('./build-print').modulesPrint(path.resolve(__dirname));
@@ -740,6 +741,23 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // A new release: what GET shows is the offer; installing it is the owner's click. The
+  // header keeps a foreign web page from starting an install, as with /api/shutdown.
+  if (req.url === '/api/update' && req.method === 'GET') {
+    return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(updater.view()));
+  }
+  if (req.url === '/api/update' && req.method === 'POST') {
+    if (req.headers['x-board-control'] !== 'update') return send(res, 403, 'text/plain; charset=utf-8', 'Forbidden');
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e4) req.destroy(); });
+    req.on('end', async () => {
+      let out;
+      try { out = JSON.parse(body || '{}').install === true ? await updater.install() : await updater.check(); }
+      catch (e) { out = { error: e.message }; }
+      send(res, out.error ? 400 : 200, 'application/json; charset=utf-8', JSON.stringify(out));
+    });
+    return;
+  }
   if (req.method === 'GET' && req.url === '/api/version') {
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ build: BUILD }));
   }
@@ -956,6 +974,7 @@ function listen(port, retries = 30) {
       openAppWindow(url);
     }
     try { supervisor.start(); } catch (e) { console.error('Supervisor did not start: ' + e.message); }
+    try { updater.start(); } catch (e) { console.error('Update check did not start: ' + e.message); }
   });
 }
 

@@ -786,9 +786,11 @@ async function checkApps() {
   }
   const line = (name, up, app) => '<div><i class="' + (up ? 'up' : '') + '"></i>' + name + (up ? ' is running' :
     ' is closed <button type="button" class="link-btn" data-launch="' + app + '">Start</button>') + '</div>';
-  let sup = null;
+  let sup = null, upd = null;
   try { sup = await (await fetch('/api/supervisor')).json(); } catch (_) {}
-  $('#apps').innerHTML = line('Claude Desktop', j.claude, 'claude') + line('Antigravity', j.antigravity, 'antigravity') + supervisorLine(sup);
+  try { upd = await (await fetch('/api/update')).json(); } catch (_) {}
+  $('#apps').innerHTML = line('Claude Desktop', j.claude, 'claude') + line('Antigravity', j.antigravity, 'antigravity') +
+    supervisorLine(sup) + updateLine(upd);
 }
 // The supervisor is the owner's to switch. The tooltip says what its last round saw.
 function supervisorLine(s) {
@@ -803,7 +805,27 @@ function supervisorLine(s) {
   return '<div title="' + esc(tip) + '"><i class="' + (s.enabled ? 'up' : '') + '"></i>Supervisor is ' + (s.enabled ? 'on' : 'off') +
     ' <button type="button" class="link-btn" data-sup="' + (s.enabled ? 'off' : 'on') + '">' + (s.enabled ? 'Turn off' : 'Turn on') + '</button></div>';
 }
+// A release newer than this board: the offer, what is new in the tooltip, and the button.
+// A git checkout is somebody's working copy and is never overwritten from here.
+function updateLine(u) {
+  if (!u || !u.available) return '';
+  const tip = ['This board: ' + u.current].concat(u.notes || []).join('\n');
+  const notes = u.page ? ' <a href="' + esc(u.page) + '" target="_blank" rel="noopener">What is new</a>' : '';
+  return '<div title="' + esc(tip) + '"><i class="up"></i>Version ' + esc(u.latest) + ' is out.' + notes +
+    (u.checkout ? ' This folder is a git checkout: update with git pull.'
+                : ' <button type="button" class="link-btn" data-update="' + esc(u.latest) + '">Update</button>') + '</div>';
+}
 $('#apps').addEventListener('click', async e => {
+  const u = e.target.closest('[data-update]');
+  if (u) {
+    if (!confirm('Install version ' + u.dataset.update + '? The board database is snapshotted first, then the board restarts.')) return;
+    u.disabled = true; u.textContent = 'Installing…';
+    const r = await fetch('/api/update', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Board-Control': 'update' },
+      body: JSON.stringify({ install: true }) }).then(x => x.json()).catch(x => ({ error: x.message }));
+    if (r.error) { alert('Not updated: ' + r.error); return checkApps(); }
+    u.textContent = 'Installed ' + r.to + ' — the board is restarting; restart Claude Desktop and Antigravity too';
+    return;
+  }
   const s = e.target.closest('[data-sup]');
   if (s) {
     s.disabled = true;
