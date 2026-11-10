@@ -24,6 +24,7 @@ const cardsLib = require('./cards');
 const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
 const { workflowHint } = require('./workflow-hint');
 const { pendingP0 } = require('./p0');
+const { RULE: OWNER_RULE } = require('./owner-waiting');
 const { wakeAntigravity } = require('./wake-antigravity');
 const { inviteText } = require('./room-invite');
 const { isHuman } = require('./room-routing');
@@ -1449,7 +1450,7 @@ function doGet(id, a) {
       if (owed.length) {
         header.push(`👤 The owner is waiting for an answer on the board: ` +
           owed.map(m => '#' + m.id + (m.room ? ` (room ${m.room})` : '')).join(', ') +
-          ` — reply with replyTo, in that room: take the task (working), then report the result (done) there, not only in your own chat.`);
+          ` — reply with replyTo, in that room. ` + OWNER_RULE + ` Not only in your own chat.`);
       }
     }
   }

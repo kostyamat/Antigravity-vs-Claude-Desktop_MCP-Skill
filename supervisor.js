@@ -32,12 +32,15 @@ const { createMailbox } = require('./mailbox');
 const { projectName } = require('./project-line');
 const { STALE_HOURS } = require('./stands');
 const { createGuard } = require('./db-guard');
+const ownerWaiting = require('./owner-waiting');
 
 const ME = 'supervisor/board';
 const DEFAULTS = { enabled: false, model: 'flash', everyMinutes: 10, nudgeAfterMinutes: 10, catchUpAfterMinutes: 30,
                    conversation: '', room: '', rulesSeen: '', guard: null, handled: {} };
 const NUDGE_EVERY_MIN = 30;
 const NUDGE_MAX = 3;
+const ACK_AFTER_MIN = 3;      // the owner's message with no reply this long is chased, once
+const ACK_UNTIL_MIN = 60;
 const DAY = 24 * 3600e3;
 
 function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
@@ -61,10 +64,10 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
   }
 
   // A line on the board from the supervisor itself (the rule half, not the model).
-  function say({ to, toSession, room, text, status: st }) {
+  function say({ to, toSession, room, text, status: st, replyTo }) {
     const rec = {
       ts: new Date().toISOString(), from: 'Supervisor', fromSession: ME, room: room || '', to: to || 'all',
-      toSession: toSession || '', replyTo: null, topic: 'supervisor', priority: 'normal', status: st || 'info',
+      toSession: toSession || '', replyTo: replyTo || null, topic: 'supervisor', priority: 'normal', status: st || 'info',
       progress: '', message: text, file: null, readBy: []
     };
     rec.id = bridgeDb.addMessage(rec).id;
@@ -195,6 +198,26 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
     return { ok: g.ok, problem: g.problem, lost: g.lost, repaired: g.repaired, snapshot: g.snapshot };
   }
 
+  // The owner wrote to somebody and has had no word back. One reminder, in the room where
+  // he is waiting, as a reply to his message — so he sees there that the agent was chased,
+  // and the agent is woken a second time with the rule in front of it.
+  function chaseOwnersMail() {
+    const handled = Object.assign({}, config().handled || {});
+    const chased = [];
+    const rc = ownerWaiting.receipts(bridgeDb.readAllMessages());
+    for (const [id, r] of Object.entries(rc)) {
+      if (r.first || r.waitingMin < ACK_AFTER_MIN || r.waitingMin > ACK_UNTIL_MIN || handled['ack:' + id]) continue;
+      if (!r.asked && !r.toSession) continue;          // said to a room at large: nobody in particular to chase
+      say({ to: r.asked || 'all', toSession: r.toSession, room: r.room, replyTo: Number(id), status: 'question',
+        text: `Supervisor: the owner has had no reply to #${id} for ${r.waitingMin} min (` +
+          (r.read ? 'it was read' : 'it has not been read') + '). ' + ownerWaiting.RULE });
+      handled['ack:' + id] = 1;
+      chased.push(Number(id));
+    }
+    if (chased.length) save({ handled });
+    return chased;
+  }
+
   function repairDatabase() {
     const r = guard.repair((config().guard || {}).since);
     if (!r.error) save({ guard: Object.assign({}, config().guard || {}, guard.live()) });
@@ -270,6 +293,7 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
     const next = { lastTick: new Date().toISOString(), sleepers: [], stands: [], describing: 0, rescues: [], catchups: [], lastError: '', sent: '' };
     try {
       next.database = watchDatabase(cfg0.room || '');
+      next.chased = chaseOwnersMail();
       const d = digest();
       next.sleepers = d.sleepers; next.stands = d.stands; next.describing = d.describing.length;
       next.rescues = d.rescues.map(r => ({ name: r.name, dirty: r.dirty, slice: r.slice, idleMinutes: r.idleMinutes }));

@@ -33,6 +33,7 @@ const attachments = require('./attachments').createAttachments(bridgeDb, path.re
 const supervisor = require('./supervisor').createSupervisor({
   bridgeDb, cardsLib, router, home: path.resolve(__dirname), wake: m => wakeAntigravity(m)
 });
+const ownerWaiting = require('./owner-waiting');
 const updater = require('./updater').createUpdater({ home: path.resolve(__dirname), bridgeDb, dbBackup });
 // The build this process was started from; the installer asks for it to know
 // whether the running dashboard is the code on disk.
@@ -528,6 +529,12 @@ const server = http.createServer((req, res) => {
       opts.since = Number(sinceParam) || 0;
     }
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(apiBoard(opts)));
+  }
+  // What became of each message the owner wrote in the last day: read, answered, how fast.
+  if (req.method === 'GET' && req.url === '/api/receipts') {
+    let out = {};
+    try { out = ownerWaiting.receipts(bridgeDb.readAllMessages()); } catch (e) { out = { error: e.message }; }
+    return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(out));
   }
   if (req.method === 'GET' && req.url.startsWith('/api/cards')) {
     const q = new URL(req.url, 'http://x').searchParams;

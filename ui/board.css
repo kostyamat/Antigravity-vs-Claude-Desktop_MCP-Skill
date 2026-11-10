@@ -252,3 +252,9 @@ code { font-family: var(--mono); font-size: .92em; }
   border-bottom: 1px solid var(--line, #8884); background: color-mix(in srgb, #e0a020 12%, transparent); }
 .stand-bar[hidden] { display: none; }
 .hint.warn { color: #b25e00; }
+
+/* What became of the owner's message: read, answered, or silence. */
+.receipt { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+.receipt.ok { cursor: pointer; }
+.receipt.ok:hover { color: var(--ink); }
+.receipt.late { color: var(--danger); font-weight: 600; }

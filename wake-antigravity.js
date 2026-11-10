@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const antigravity = require('./antigravity-api');
+const { RULE: OWNER_RULE } = require('./owner-waiting');
 
 const SCRIPTS_DIR = path.resolve(__dirname);
 let lastWokenId = 0;
@@ -133,9 +134,9 @@ function wakeAntigravity(rec) {
       `"${bodyText.slice(0, 300)}"\n` +
       `Read it with get_messages. Act on it if it is yours. ` +
       (fromOwner
-        ? `This is from the owner: if it is for you, answer him on the board with replyTo #${rec.id} - ` +
-          `first a one-line ack of what you will do ("taken, doing X", "preparing the answer"), ` +
-          `then the result there, not only in this chat. ` +
+        ? `This is from the owner. If it is for you: post_message with replyTo #${rec.id}` +
+          `${rec.room ? ', room "' + rec.room + '"' : ''} is your FIRST action, before you read files or run anything. ` +
+          OWNER_RULE + ` He watches the board, not this chat. ` +
           `Quote the point you answer with a "> " line and answer that point, not the whole message.`
         : `Do not reply to acknowledge - a receipt wakes the sender for nothing.`);
     for (const convId of targetConvIds) antigravity.send(convId, prompt, where);

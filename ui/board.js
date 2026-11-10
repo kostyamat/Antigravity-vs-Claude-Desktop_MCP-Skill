@@ -492,6 +492,7 @@ function messageHTML(m, prev, prevShown) {
       '<div class="msg-text' + (long ? ' clip' : '') + '">' + richText(m.text) + '</div>' +
       ((m.text || '').length > 900 ? '<button type="button" class="more" data-more="' + m.id + '">' + (long ? 'Show more' : 'Show less') + '</button>' : '') +
       img +
+      receiptHTML(m) +
     '</div>' +
     '<div class="msg-tools">' +
       '<button type="button" data-act="reply">Reply</button>' +
@@ -500,6 +501,34 @@ function messageHTML(m, prev, prevShown) {
       (isHuman(m) ? '<button type="button" data-act="edit">Edit</button>' : '') +
     '</div>' +
   '</article>';
+}
+
+// Under each message of the owner's: was it read, was it answered, how fast. The rule is the
+// server's (owner-waiting.js); this only draws it. Silence past two minutes is shown as such.
+let RECEIPTS = {};
+function span(sec) { return sec < 90 ? sec + ' s' : sec < 5400 ? Math.round(sec / 60) + ' min' : Math.round(sec / 3600) + ' h'; }
+function receiptHTML(m) {
+  const r = isHuman(m) && RECEIPTS[m.id];
+  if (!r) return '';
+  const who = r.asked || (r.readBy || []).join(', ') || 'anyone';
+  if (r.first) {
+    return '<div class="receipt ok" data-jump="' + (r.last || r.first).id + '">✓ ' + esc(r.first.from) + ' replied in ' + span(r.first.afterSec) +
+      (r.first.status !== 'info' ? ' · ' + esc(r.first.status) : '') + (r.last ? ' → ' + esc(r.last.status) : '') + '</div>';
+  }
+  const late = r.waitingMin >= 2;
+  return '<div class="receipt' + (late ? ' late' : '') + '">' +
+    (r.read ? '👁 read by ' + esc(who) + ', no reply' : '… not read by ' + esc(who) + ' yet') +
+    (r.waitingMin ? ' · ' + span(r.waitingMin * 60) : '') + '</div>';
+}
+async function loadReceipts() {
+  let j;
+  try { j = await (await fetch('/api/receipts')).json(); } catch (_) { return; }
+  if (!j || j.error) return;
+  const before = RECEIPTS;
+  RECEIPTS = j;
+  for (const id of new Set([...Object.keys(before), ...Object.keys(j)])) {
+    if (JSON.stringify(before[id]) !== JSON.stringify(j[id])) redraw(Number(id));
+  }
 }
 
 let SHOWN_LAST = null;   // the last message drawn, for grouping and day breaks
@@ -857,6 +886,8 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
   enterRoom(last != null && (last === SQUARE || roomById(last)) ? last : (ROOMS[0] ? ROOMS[0].id : SQUARE));
   checkApps();
   setInterval(() => load(false), 2000);
+  loadReceipts();
+  setInterval(loadReceipts, 5000);
   setInterval(loadRooms, 45000);
   setInterval(loadDocs, 30000);
   setInterval(checkApps, 10000);

@@ -31,6 +31,7 @@
 const { projectName, ensureLine } = require('./project-line');
 
 const OWNER_WINDOW_HOURS = 48;
+const { answersTo } = require('./owner-waiting');
 
 function isWindowId(s) {
   return /^local_/.test(s) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
@@ -253,7 +254,7 @@ function createRouter(bridgeDb, cardsLib) {
       const later = board.slice(i + 1);
       const answered = toMe
         ? later.some(n => isMyOwn(n) && (n.replyTo === m.id || !m.room || n.room === m.room))
-        : later.some(n => !isHuman(n.fromSession) && (n.replyTo === m.id || n.room === m.room));
+        : later.some(n => answersTo(m, n));
       if (!answered) out.push(m);
     }
     return out;
