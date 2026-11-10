@@ -40,6 +40,7 @@ const DEFAULTS = { enabled: false, model: 'flash', everyMinutes: 10, nudgeAfterM
                    conversation: '', room: '', rulesSeen: '', guard: null, handled: {} };
 const NUDGE_EVERY_MIN = 30;
 const NUDGE_MAX = 3;
+const RESCUE_QUIET_MIN = 30;   // no commit, no slice, no changed file younger than this: the project is really quiet
 const ACK_AFTER_MIN = 3;      // the owner's message with no reply this long is chased, once
 const ACK_UNTIL_MIN = 60;
 const DAY = 24 * 3600e3;
@@ -134,7 +135,7 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
 
       // Work the slice does not cover, in a project whose session went quiet.
       const idle = now - lastActive;
-      if (idle > 30 * 60000 && idle < DAY && fs.existsSync(path.join(line, '.git'))) {
+      if (idle > RESCUE_QUIET_MIN * 60000 && idle < DAY && fs.existsSync(path.join(line, '.git'))) {
         const r = rescueState(line);
         if (r && cfg.handled['rescue:' + line] !== r.key) rescues.push(Object.assign({ line, name: projectName(line) || line,
           idleMinutes: Math.round(idle / 60000) }, r));
@@ -162,7 +163,11 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
     catch (_) { return ''; }
   }
 
-  // Dirty files, or commits made after the handover slice was last written.
+  // Dirty files, or commits made after the handover slice was last written — in a project
+  // nobody is working in. A project's windows can all look idle while it is being worked on
+  // from a window opened in another folder (the parent folder, another account's copy), so
+  // the files are asked too: a commit, a slice or a changed file younger than the quiet
+  // period means somebody is there, and there is nothing to rescue yet.
   function rescueState(folder) {
     const git = (...args) => {
       const r = spawnSync('git', ['-C', folder, ...args], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
@@ -174,9 +179,18 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
     const [sha, when] = head.split(' ');
     let sliceAt = 0;
     try { sliceAt = fs.statSync(path.join(folder, '.agents', 'HANDOFF.md')).mtimeMs; } catch (_) {}
-    const files = dirty ? dirty.split('\n').length : 0;
+    // Untracked files are not work a session left unwritten: strays and build output sit there for weeks.
+    const changed = dirty ? dirty.split('\n').filter(l => l && !l.startsWith('??')) : [];
+    const files = changed.length;
     const lagging = sliceAt > 0 && Number(when) * 1000 > sliceAt + 60000;
     if (!files && !lagging) return null;
+    const quietSince = Date.now() - RESCUE_QUIET_MIN * 60000;
+    if (Number(when) * 1000 > quietSince || sliceAt > quietSince) return null;
+    for (const l of changed) {
+      // The status letters and then the name; the first line has lost its leading space to trim().
+      const name = l.replace(/^\s*\S+\s+/, '').split(' -> ').pop().replace(/^"|"$/g, '');
+      try { if (fs.statSync(path.join(folder, name)).mtimeMs > quietSince) return null; } catch (_) {}
+    }
     return { key: sha.slice(0, 12) + ':' + files, dirty: files, slice: sliceAt ? (lagging ? 'older than the last commit' : 'current') : 'none' };
   }
 
