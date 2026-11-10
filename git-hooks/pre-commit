@@ -9,7 +9,11 @@ staged=$(git diff --cached --name-only --diff-filter=ACMR)
 fail=0
 
 # Junk that must never be a return point: logs, dumps, backups, build output.
-junk=$(printf '%s\n' "$staged" | grep -iE '(\.log|\.tmp|\.hprof|\.bak[^/]*|\.orig|\.rej)$|(^|/)logcat[^/]*$|(^|/)(build|\.gradle|captures)/|(^|/)local\.properties$')
+# A folder named build/ or captures/ is build output — except under references/ or docs/,
+# where it is documentation about building (Google's Android docs live in android/build/).
+junk_files=$(printf '%s\n' "$staged" | grep -iE '(\.log|\.tmp|\.hprof|\.bak[^/]*|\.orig|\.rej)$|(^|/)logcat[^/]*$|(^|/)local\.properties$')
+junk_dirs=$(printf '%s\n' "$staged" | grep -iE '(^|/)(build|\.gradle|captures)/' | grep -ivE '(^|/)(references|docs?)/(.*/)?(build|captures)/')
+junk=$(printf '%s\n%s\n' "$junk_files" "$junk_dirs" | grep -v '^$' | sort -u)
 if [ -n "$junk" ]; then
     echo "✖ Junk in the commit — unstage it (git restore --staged <file>) and add it to .gitignore:" >&2
     printf '%s\n' "$junk" | sed 's/^/    /' >&2
