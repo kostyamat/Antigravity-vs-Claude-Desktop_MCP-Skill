@@ -672,12 +672,15 @@ function renderChips() {
   if (REPLY) chips.push(['reply', 'Replying to ' + senderName(REPLY) + ': ' + short(REPLY.text.replace(/\s+/g, ' '), 60)]);
   if (EDIT) chips.push(['edit', 'Editing your message. The original is kept.']);
   if (FILE) chips.push(['file', FILE.uploading ? 'Uploading ' + FILE.name + '…' : 'File: ' + FILE.name]);
+  const many = EDIT ? [] : quotedAuthors($('#text').value);
+  if (many.length > 1) chips.push(['many', 'Goes to everyone you quoted: ' + many.map(a => short(a.name, 28)).join(', ')]);
   $('#chips').innerHTML = chips.map(([k, t]) =>
     '<span class="chip"><span>' + esc(t) + '</span><button type="button" data-cancel="' + k + '" title="Cancel">✕</button></span>').join('');
 }
 $('#chips').addEventListener('click', e => {
   const b = e.target.closest('[data-cancel]'); if (!b) return;
   if (b.dataset.cancel === 'reply') REPLY = null;
+  if (b.dataset.cancel === 'many') QUOTED.clear();
   if (b.dataset.cancel === 'edit') { EDIT = null; $('#text').value = ''; grow(); }
   if (b.dataset.cancel === 'file') { FILE = null; $('#fileInput').value = ''; }
   renderChips();
@@ -685,16 +688,91 @@ $('#chips').addEventListener('click', e => {
 
 // A quote of one message as the start of a message to anyone: what one agent
 // said, carried to another. It is not a reply — no thread, no addressee change.
-function quoteInto(m, selected) {
+// Whose words are quoted in the message being written. Two agents quoted in one answer:
+// the answer goes to both, not to whichever was picked first or last.
+const QUOTED = new Map();      // message id → { card, agent, name }
+function quotedAuthors(text) {
+  const out = new Map();
+  const add = m => { if (m && !isHuman(m) && m.fromSession) out.set(m.fromSession, { card: m.fromSession, agent: m.from, name: senderName(m) }); };
+  if (REPLY) add(REPLY);
+  for (const [id, a] of QUOTED) if (text.includes('> #' + id + ' ')) out.set(a.card, a);
+  return [...out.values()];
+}
+
+function quoteInto(m, selected, comment) {
+  if (!isHuman(m) && m.fromSession) QUOTED.set(m.id, { card: m.fromSession, agent: m.from, name: senderName(m) });
   const t = $('#text');
   const body = (selected || m.text || '').trim().split(/\r?\n/);
   const head = '#' + m.id + ' ' + senderName(m) + ':';
   const block = ['> ' + head].concat(body.map(l => '> ' + l)).join('\n');
-  t.value = (t.value.trim() ? t.value.replace(/\s+$/, '') + '\n\n' : '') + block + '\n\n';
+  t.value = (t.value.trim() ? t.value.replace(/\s+$/, '') + '\n\n' : '') + block + '\n' +
+    (comment ? comment.trim() + '\n\n' : '\n');
   grow();
-  t.focus();
-  t.setSelectionRange(t.value.length, t.value.length);
+  t.scrollTop = t.scrollHeight;
+  renderChips();
+  if (comment === undefined) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
 }
+
+// Select text in a message and the quote is offered right there, at the selection: no
+// reaching for a button elsewhere. Quote opens a line to write the answer to that passage;
+// Enter puts the passage and the answer into the message being written below, and the
+// next passage can be picked at once. Reply does the same and makes the message a reply.
+const SELPOP = document.createElement('div');
+SELPOP.id = 'selpop'; SELPOP.hidden = true;
+document.body.appendChild(SELPOP);
+let PICK = null;      // { m, text }
+function closeSelpop() { SELPOP.hidden = true; SELPOP.innerHTML = ''; PICK = null; }
+function placeSelpop(rect) {
+  SELPOP.hidden = false;
+  const w = SELPOP.offsetWidth, h = SELPOP.offsetHeight;
+  let x = Math.min(Math.max(8, rect.left + rect.width / 2 - w / 2), window.innerWidth - w - 8);
+  let y = rect.bottom + 6;
+  if (y + h > window.innerHeight - 8) y = Math.max(8, rect.top - h - 6);
+  SELPOP.style.left = x + 'px'; SELPOP.style.top = y + 'px';
+}
+document.addEventListener('mouseup', e => {
+  if (SELPOP.contains(e.target)) return;
+  setTimeout(() => {
+    const sel = window.getSelection();
+    const text = sel ? String(sel).trim() : '';
+    const node = text && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
+    const body = node && node.closest('.msg-text');
+    const end = text && sel.focusNode ? (sel.focusNode.nodeType === 1 ? sel.focusNode : sel.focusNode.parentElement) : null;
+    if (!body || !end || !body.contains(end)) { if (!SELPOP.querySelector('textarea')) closeSelpop(); return; }
+    const m = DATA.find(x => x.id === Number(body.closest('.msg').dataset.id));
+    if (!m) return;
+    PICK = { m, text, rect: sel.getRangeAt(0).getBoundingClientRect() };
+    SELPOP.innerHTML = '<button type="button" data-pick="quote">❝ Quote</button><button type="button" data-pick="reply">↩ Reply</button>' +
+      '<button type="button" data-pick="copy">Copy</button>';
+    placeSelpop(PICK.rect);
+  }, 0);
+});
+SELPOP.addEventListener('mousedown', e => { if (e.target.tagName !== 'TEXTAREA') e.preventDefault(); });   // keep the selection
+SELPOP.addEventListener('click', e => {
+  const b = e.target.closest('[data-pick]');
+  if (!b || !PICK) return;
+  if (b.dataset.pick === 'copy') { navigator.clipboard.writeText(PICK.text).catch(() => {}); return closeSelpop(); }
+  const how = b.dataset.pick;
+  SELPOP.innerHTML = '<div class="selpop-quote">' + esc(short(PICK.text.replace(/\s+/g, ' '), 140)) + '</div>' +
+    '<textarea rows="2" placeholder="' + (how === 'reply' ? 'Your reply to this' : 'Your answer to this') + ' — Enter adds it to your message below"></textarea>';
+  SELPOP.dataset.how = how;
+  placeSelpop(PICK.rect);
+  SELPOP.querySelector('textarea').focus();
+});
+SELPOP.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeSelpop(); return; }
+  if (e.key !== 'Enter' || e.shiftKey || e.target.tagName !== 'TEXTAREA' || !PICK) return;
+  e.preventDefault();
+  const comment = e.target.value;
+  if (SELPOP.dataset.how === 'reply' && (!REPLY || REPLY.id !== PICK.m.id)) startReply(PICK.m, '');
+  quoteInto(PICK.m, PICK.text, comment);
+  window.getSelection().removeAllRanges();
+  closeSelpop();
+});
+document.addEventListener('mousedown', e => {
+  if (!SELPOP.hidden && !SELPOP.contains(e.target) && SELPOP.querySelector('textarea') && !SELPOP.querySelector('textarea').value.trim()) closeSelpop();
+});
+$('#feed').addEventListener('scroll', () => { if (!SELPOP.hidden && !SELPOP.querySelector('textarea')) closeSelpop(); });
 
 function startReply(m, quote) {
   EDIT = null; REPLY = m;
@@ -747,8 +825,13 @@ $('#compose').addEventListener('submit', async e => {
   if (EDIT) {
     j = await post('/api/edit', { id: EDIT.id, text, editedBy: ME });
   } else {
-    const t = target();
-    j = await post('/api/post', {
+    const many = quotedAuthors(text);
+    const inRoom = ROOM && ROOM !== SQUARE;
+    // Several agents quoted. In a room the message is addressed to the room — every member
+    // is woken by what the owner says there. Outside a room each quoted agent gets it by name.
+    const targets = many.length > 1 ? (inRoom ? [{ to: 'all', toSession: '' }] : many.map(a => ({ to: a.agent, toSession: a.card }))) : [target()];
+    for (const t of targets) j = await post('/api/post', {
+      toRoom: many.length > 1,
       from: ME, room: ROOM || '', to: t.to, toSession: t.toSession,
       priority: $('#urgent').checked ? 'P0' : 'normal',
       status: REPLY ? 'answer' : (text.includes('?') ? 'question' : 'info'),
@@ -762,6 +845,7 @@ $('#compose').addEventListener('submit', async e => {
   $('#text').value = ''; grow();
   $('#urgent').checked = false;
   REPLY = null; EDIT = null; FILE = null; $('#fileInput').value = '';
+  QUOTED.clear();
   renderChips();
   fillTo(kept);
   OPEN.clear();

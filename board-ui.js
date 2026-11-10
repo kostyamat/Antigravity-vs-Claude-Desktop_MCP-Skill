@@ -190,10 +190,12 @@ function apiPost(data) {
   const room = (data.room || '').trim();
 
   // 🧵 Preserve conversation thread context when replying from UI
+  // toRoom: the owner quoted several agents and the answer is for all of them — it stays
+  // addressed to the room and is not narrowed to the author of the message replied to.
   if (replyTo) {
     const parent = bridgeDb.getMessageById(replyTo);
     if (parent) {
-      if (!to || to === 'all') to = parent.from;
+      if ((!to || to === 'all') && !data.toRoom) to = parent.from;
       if (!toSession && to === parent.from) toSession = parent.fromSession || '';
       if (!topic && parent.topic) topic = parent.topic;
     }
@@ -233,8 +235,9 @@ function apiPost(data) {
   if (bad) return { error: 'Message rejected: ' + bad };
 
   // 🛡️ Guard against duplicate posts within 60 seconds (Claude #119)
+  // …unless it is the same words sent on purpose to another addressee (several agents quoted).
   const dup = bridgeDb.findRecentDuplicate(from, rec.message, 60);
-  if (dup) return { ok: true, id: dup.id, duplicate: true };
+  if (dup && !(data.toRoom && (dup.toSession || '') !== (rec.toSession || ''))) return { ok: true, id: dup.id, duplicate: true };
 
   const saved = bridgeDb.addMessage(rec);
   const nextId = saved.id;
