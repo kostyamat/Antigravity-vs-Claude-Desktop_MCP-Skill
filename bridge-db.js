@@ -239,6 +239,11 @@ function initSchema(db) {
       since TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_helpers_lead ON helpers(lead);
+    CREATE TABLE IF NOT EXISTS removed_messages (
+      id INTEGER PRIMARY KEY,
+      at TEXT,
+      how TEXT DEFAULT ''
+    );
     CREATE TABLE IF NOT EXISTS describe_queue (
       md TEXT PRIMARY KEY,
       source TEXT NOT NULL,
@@ -984,10 +989,25 @@ function clearBoard(reason, archiveDir, scope) {
   if (JSON.parse(fs.readFileSync(file, 'utf8')).messages.length !== msgs.length) return { error: 'the archive did not verify; nothing removed' };
   db.exec('BEGIN');
   try {
+    noteRemoved(ids, 'clear:' + scope);
     db.prepare(`DELETE FROM messages WHERE ${where} AND id <= ?`).run(...arg, ids[ids.length - 1]);
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); return { error: e.message }; }
   return { count: msgs.length, file };
+}
+
+// The ledger of messages taken off the board on purpose. Every path that deletes a
+// message writes here in the same transaction, so that a message missing from the
+// board and missing from this ledger is a loss, and the guard (db-guard.js) may put
+// it back from a snapshot without resurrecting what the owner had removed.
+function noteRemoved(ids, how) {
+  const ins = getDb().prepare('INSERT OR REPLACE INTO removed_messages (id, at, how) VALUES (?, ?, ?)');
+  const at = new Date().toISOString();
+  for (const id of ids) ins.run(Number(id), at, String(how || ''));
+}
+
+function removedIds() {
+  return new Set(getDb().prepare('SELECT id FROM removed_messages').all().map(r => r.id));
 }
 
 // ── Sessions ───────────────────────────────────────────────────────────────────────────
@@ -1514,6 +1534,8 @@ module.exports = {
   markRead,
   getBoardStatus,
   clearBoard,
+  noteRemoved,
+  removedIds,
   readSessions,
   renameSession,
   saveSession,

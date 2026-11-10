@@ -14,9 +14,11 @@
 // What needs reading and judgement goes to one Antigravity conversation on a
 // fast, cheap model (Gemini Flash by default), started by the board itself and
 // held to a short written rule sheet (SUPERVISOR.md): describe a picture, write
-// a rescue note for a project whose session died at its limits, answer the owner
-// in its own room. It is told what to do by the board, task by task; it does not
-// roam.
+// a rescue note for a project whose session died at its limits, write a sleeping
+// project the timeline of what arrived while it slept — into that project's own
+// room, so a waking session reads one message instead of the whole backlog —
+// answer the owner in its own room. It reads every room and may post a timeline
+// or a routing note into any of them; it hands out no tasks and changes no project.
 //
 // All of it is the owner's to switch: bridge_config.json → supervisor, and the
 // switch on the board. Off means off — no tick, no conversation, no nudge.
@@ -29,9 +31,11 @@ const antigravity = require('./antigravity-api');
 const { createMailbox } = require('./mailbox');
 const { projectName } = require('./project-line');
 const { STALE_HOURS } = require('./stands');
+const { createGuard } = require('./db-guard');
 
 const ME = 'supervisor/board';
-const DEFAULTS = { enabled: false, model: 'flash', everyMinutes: 10, nudgeAfterMinutes: 10, conversation: '', room: '', handled: {} };
+const DEFAULTS = { enabled: false, model: 'flash', everyMinutes: 10, nudgeAfterMinutes: 10, catchUpAfterMinutes: 30,
+                   conversation: '', room: '', rulesSeen: '', guard: null, handled: {} };
 const NUDGE_EVERY_MIN = 30;
 const NUDGE_MAX = 3;
 const DAY = 24 * 3600e3;
@@ -39,8 +43,10 @@ const DAY = 24 * 3600e3;
 function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
   const configFile = path.join(home, 'bridge_config.json');
   const mailbox = createMailbox(bridgeDb, router);
+  const guard = createGuard({ bridgeDb, home });
+  let lastAlarm = '';
   const nudged = new Map();            // project → { at, count, top }
-  let status = { lastTick: '', sleepers: [], stands: [], describing: 0, rescues: [], lastError: '', sent: '' };
+  let status = { lastTick: '', sleepers: [], stands: [], describing: 0, rescues: [], catchups: [], lastError: '', sent: '' };
   let timer = null;
 
   const readAll = () => { try { return JSON.parse(fs.readFileSync(configFile, 'utf8')) || {}; } catch (_) { return {}; } };
@@ -78,7 +84,10 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
       floor = Math.max(0, (r.n || 1) - 1);
     } catch (_) {}
 
-    const sleepers = [], rescues = [];
+    // What the supervisor itself wrote (its reminders, its timelines) is never a reason to
+    // call a project asleep: it would otherwise feed on its own mail.
+    const own = m => m.fromSession === ME || (cfg.conversation && m.fromSession === cfg.conversation);
+    const sleepers = [], rescues = [], catchups = [];
     let lines = new Map();
     try { lines = bridgeDb.readLines(); } catch (_) {}
     for (const [line, members] of lines) {
@@ -95,7 +104,7 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
       for (const w of live) {
         const box = mailbox.open('Claude', w, w);
         const ids = new Map(mailbox.urgentFor('Claude', w, w, Math.max(box.cursor, floor))
-          .filter(m => m.fromSession !== ME && (m.room || m.toSession)).map(m => [m.id, m]));
+          .filter(m => !own(m) && (m.room || m.toSession)).map(m => [m.id, m]));
         if (unread === null) unread = ids;
         else for (const id of [...unread.keys()]) if (!ids.has(id)) unread.delete(id);
         if (!unread.size) break;
@@ -104,8 +113,16 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
         const list = [...unread.values()].sort((a, b) => a.id - b.id);
         const minutes = Math.round((now - Date.parse(list[0].ts)) / 60000);
         if (minutes >= cfg.nudgeAfterMinutes) {
-          sleepers.push({ line, name: projectName(line) || line, ids: list.map(m => m.id), minutes,
-                          rooms: [...new Set(list.map(m => m.room).filter(Boolean))] });
+          const s = { line, name: projectName(line) || line, ids: list.map(m => m.id), minutes,
+                      rooms: [...new Set(list.map(m => m.room).filter(Boolean))] };
+          sleepers.push(s);
+          // Asleep long enough that a reminder is not going to do it: the project gets a
+          // timeline of what it missed, once per batch of new mail.
+          const top = s.ids[s.ids.length - 1];
+          if (minutes >= cfg.catchUpAfterMinutes && !(Number(cfg.handled['catchup:' + line]) >= top)) {
+            catchups.push({ line, name: s.name, ids: s.ids, minutes, rooms: s.rooms, top,
+                            into: list[list.length - 1].room || s.rooms[s.rooms.length - 1] || '' });
+          }
         }
       }
 
@@ -128,7 +145,15 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
       if (written) bridgeDb.setDescriptionState(q.md, 'done');
     }
     const describing = bridgeDb.readDescriptions('pending');
-    return { sleepers, rescues, stands, describing };
+    return { sleepers, rescues, catchups, stands, describing };
+  }
+
+  // The rule sheet as the conversation last read it: a changed sheet is read again
+  // before anything else is asked of it.
+  const rulesFile = path.join(home, 'skill', 'agent-bridge', 'references', 'SUPERVISOR.md');
+  function rulesPrint() {
+    try { return require('crypto').createHash('sha1').update(fs.readFileSync(rulesFile)).digest('hex').slice(0, 12); }
+    catch (_) { return ''; }
   }
 
   // Dirty files, or commits made after the handover slice was last written.
@@ -150,6 +175,29 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
   }
 
   // ── what a rule can do ─────────────────────────────────────────────────────────────────
+
+  // The database first, before anything is read from it: see db-guard.js. A loss or a
+  // damaged file is told to the owner once, in the supervisor's room; a large loss is
+  // already put back by the time he reads it.
+  function watchDatabase(room) {
+    const g = guard.check(config().guard);
+    if (g.seen) save({ guard: g.seen });
+    if (g.problem && g.problem !== lastAlarm) {
+      const r = g.repaired;
+      say({ to: 'all', toSession: 'human/web', room, status: r && !r.error ? 'done' : 'blocked',
+        text: 'Supervisor, database guard: ' + g.problem + '.' +
+          (r ? (r.error ? ' Repair failed: ' + r.error : ` Restored ${r.restored} message(s), #${r.first}–#${r.last}, from that snapshot.`)
+             : (g.lost ? ' Too few to restore unasked: POST /api/supervisor {"repair":true} puts them back.' : '')) });
+    }
+    lastAlarm = g.problem;
+    return { ok: g.ok, problem: g.problem, lost: g.lost, repaired: g.repaired, snapshot: g.snapshot };
+  }
+
+  function repairDatabase() {
+    const r = guard.repair((config().guard || {}).since);
+    if (!r.error) save({ guard: Object.assign({}, config().guard || {}, guard.live()) });
+    return r;
+  }
 
   function nudge(sleepers, room) {
     const now = Date.now();
@@ -178,14 +226,14 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
     let cfg = config();
     const known = id => { try { return cardsLib.geminiCards().some(c => c.id === id); } catch (_) { return false; } };
     if (!cfg.conversation || !known(cfg.conversation)) {
-      const rules = path.join(home, 'skill', 'agent-bridge', 'references', 'SUPERVISOR.md');
+      const print = rulesPrint();
       const id = await antigravity.create({
         model: cfg.model || 'flash', title: 'Board supervisor',
-        prompt: 'You are the supervisor of the agent-bridge board on this machine. Read the file ' + rules +
+        prompt: 'You are the supervisor of the agent-bridge board on this machine. Read the file ' + rulesFile +
           ' now, completely, and follow it exactly from here on. Do nothing else yet: the board will send you your ' +
           'conversation id, your room and your first tasks in the next message. Reply with the single word READY.'
       });
-      cfg = save({ conversation: id, room: '' });
+      cfg = save({ conversation: id, room: '', rulesSeen: print });
     }
     if (!cfg.room || !bridgeDb.getRoom(cfg.room)) {
       const room = bridgeDb.createRoom('Supervisor', [{ card: cfg.conversation, agent: 'Gemini' }], '');
@@ -204,14 +252,21 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
         text: `RESCUE — project "${r.name}" — folder: ${r.line} — toSession: ${r.line} — its session has been silent for ` +
           `${r.idleMinutes} min; uncommitted files: ${r.dirty}; handover slice: ${r.slice}` });
     }
+    for (const c of d.catchups.slice(0, 2)) {
+      tasks.push({ kind: 'catchup', key: 'catchup:' + c.line, value: c.top,
+        text: `CATCH-UP — project "${c.name}" — toSession: ${c.line} — post into room: ${c.into || '(none — use your own room)'} — ` +
+          `asleep for ${c.minutes} min; unread: ${c.ids.slice(-40).map(i => '#' + i).join(', ')}` +
+          (c.rooms.length ? `; rooms to read: ${c.rooms.join(', ')}` : '') });
+    }
     return tasks;
   }
 
   async function tick(force) {
     const cfg0 = config();
     if (!cfg0.enabled && !force) return status;
-    const next = { lastTick: new Date().toISOString(), sleepers: [], stands: [], describing: 0, rescues: [], lastError: '', sent: '' };
+    const next = { lastTick: new Date().toISOString(), sleepers: [], stands: [], describing: 0, rescues: [], catchups: [], lastError: '', sent: '' };
     try {
+      next.database = watchDatabase(cfg0.room || '');
       const d = digest();
       next.sleepers = d.sleepers; next.stands = d.stands; next.describing = d.describing.length;
       next.rescues = d.rescues.map(r => ({ name: r.name, dirty: r.dirty, slice: r.slice, idleMinutes: r.idleMinutes }));
@@ -222,17 +277,27 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
         catch (e) { next.lastError = 'Antigravity: ' + e.message; }
       }
       next.nudged = nudge(d.sleepers, cfg.room || '');
+      next.catchups = d.catchups.map(c => ({ name: c.name, into: c.into, unread: c.ids.length, minutes: c.minutes }));
+      // A conversation that read an older rule sheet reads the new one first — also when
+      // there is no task, because the owner may write to it at any moment.
+      const print = rulesPrint();
+      const reread = cfg.conversation && print && cfg.rulesSeen !== print && !next.lastError
+        ? `Your rules changed. Read ${rulesFile} again now, completely; it replaces what you read before. ` : '';
+      if (reread && !tasks.length) {
+        antigravity.send(cfg.conversation, reread + 'Then stop; reply with nothing.');
+        save({ rulesSeen: print });
+      }
       if (tasks.length && cfg.conversation && !next.lastError) {
-        antigravity.send(cfg.conversation,
+        antigravity.send(cfg.conversation, reread +
           `Board supervisor tasks. Your sessionId: ${cfg.conversation}. Your room: ${cfg.room}. ` +
           'Do these in order, exactly as SUPERVISOR.md says, then stop.\n' +
           tasks.map((t, i) => `${i + 1}. ${t.text}`).join('\n'));
         const handled = Object.assign({}, cfg.handled || {});
         for (const t of tasks) {
           if (t.kind === 'describe') bridgeDb.setDescriptionState(t.key, 'asked');
-          if (t.kind === 'rescue') handled[t.key] = t.value;
+          if (t.kind === 'rescue' || t.kind === 'catchup') handled[t.key] = t.value;
         }
-        save({ handled });
+        save(reread ? { handled, rulesSeen: print } : { handled });
         next.sent = `${tasks.length} task(s) to the supervisor conversation`;
       }
     } catch (e) {
@@ -259,6 +324,7 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
     if (typeof patch.model === 'string' && /^[A-Za-z0-9_.-]{2,60}$/.test(patch.model)) clean.model = patch.model;
     if (Number(patch.everyMinutes) >= 2) clean.everyMinutes = Math.round(Number(patch.everyMinutes));
     if (Number(patch.nudgeAfterMinutes) >= 1) clean.nudgeAfterMinutes = Math.round(Number(patch.nudgeAfterMinutes));
+    if (Number(patch.catchUpAfterMinutes) >= 5) clean.catchUpAfterMinutes = Math.round(Number(patch.catchUpAfterMinutes));
     if (patch.newConversation === true) { clean.conversation = ''; clean.room = ''; }
     const cfg = save(clean);
     schedule();
@@ -271,7 +337,9 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake }) {
              conversation: cfg.conversation, room: cfg.room, status };
   }
 
-  return { start: schedule, tick, digest, configure, view, ME };
+  const checkDatabase = () => Object.assign({ sound: guard.sound() || 'ok' }, guard.live());
+
+  return { start: schedule, tick, digest, configure, view, repairDatabase, checkDatabase, ME };
 }
 
 module.exports = { createSupervisor, ME };

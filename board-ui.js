@@ -706,6 +706,8 @@ const server = http.createServer((req, res) => {
       try {
         const data = JSON.parse(body || '{}');
         if (data.dryRun) out = { digest: supervisor.digest() };
+        else if (data.repair) out = { repair: supervisor.repairDatabase(), database: supervisor.checkDatabase() };
+        else if (data.check) out = { database: supervisor.checkDatabase() };
         else {
           supervisor.configure(data);
           if (data.tickNow) await supervisor.tick(true);

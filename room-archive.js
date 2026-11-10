@@ -106,6 +106,7 @@ function createArchiver(bridgeDb, bridgeDir) {
     for (const d of docs) if (d.file && fs.existsSync(d.file)) files.push(d.file);
     db.exec('BEGIN');
     try {
+      bridgeDb.noteRemoved([...ids], 'room:' + room.id);
       const delMsg = db.prepare('DELETE FROM messages WHERE id = ?');
       for (const id of ids) delMsg.run(id);
       const delDoc = db.prepare('DELETE FROM docs_index WHERE name = ?');
