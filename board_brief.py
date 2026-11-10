@@ -308,6 +308,43 @@ def prompt_invites():
     return 0
 
 
+def canon_review():
+    """Findings waiting for the lead's review, where the owner keeps one verified canon.
+
+    bridge_config.json -> "canonReview": {"inbox": "<folder>", "repos": ["<repo>", ...]}. A helper may
+    not commit into those repositories: it leaves a finding in the inbox, or an edit uncommitted. Both
+    are shown to every Claude session at its start, so that the work the helper did is checked and
+    committed instead of being walked past. Nothing configured, nothing waiting - no line.
+    """
+    try:
+        with open(os.path.join(_bridge_home(), "bridge_config.json"), encoding="utf-8") as f:
+            cfg = (json.load(f) or {}).get("canonReview") or {}
+    except Exception:
+        return []
+    waiting = []
+    inbox = cfg.get("inbox") or ""
+    if inbox and os.path.isdir(inbox):
+        files = sorted(f for f in os.listdir(inbox) if f.lower().endswith(".md") and f.lower() != "readme.md")
+        if files:
+            waiting.append("%d finding(s) in %s: %s" % (len(files), inbox, ", ".join(files[:6]) + (" ..." if len(files) > 6 else "")))
+    for repo in cfg.get("repos") or []:
+        try:
+            out = subprocess.run(["git", "-C", repo, "-c", "core.quotepath=off", "status", "--porcelain"],
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10).stdout
+        except Exception:
+            continue
+        changed = [l[3:].strip().strip('"') for l in out.splitlines()
+                   if l.strip() and not l[3:].strip().strip('"').replace("\\", "/").startswith(os.path.basename(inbox.rstrip("/\\")) + "/")]
+        if changed:
+            waiting.append("%d uncommitted change(s) in %s: %s" % (len(changed), repo, ", ".join(changed[:5]) + (" ..." if len(changed) > 5 else "")))
+    if not waiting or ME != "Claude":
+        return []
+    return ["Canon review is waiting - the owner's rule: what the helper found is verified and committed by Claude, never walked past:"] + \
+           ["  " + w for w in waiting] + \
+           ["  Before platform work in this session: check each against its evidence, write what holds into the canon in your own words, "
+            "commit, delete the inbox file; answer what does not hold in the helper's room."]
+
+
 def main():
     if "--prompt" in sys.argv:
         return prompt_invites()
@@ -465,6 +502,8 @@ def main():
     hint = workflow_hint(os.getcwd())
     if hint:
         lines.append(hint)
+
+    lines += canon_review()
 
     text = "\n".join(lines)
 
