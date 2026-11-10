@@ -38,7 +38,10 @@ const OPEN = new Set();
 
 function kind(agent) { return agent === 'Claude' ? 'Claude' : agent === 'Gemini' ? 'Gemini' : 'human'; }
 function clientName(agent) { return agent === 'Gemini' ? 'Antigravity' : agent === 'Claude' ? 'Claude' : agent; }
-function isHuman(m) { return kind(m.from) === 'human' || String(m.fromSession || '').toLowerCase().startsWith('human'); }
+function isHuman(m) {
+  if (String(m.fromSession || '') === 'supervisor/board') return false;
+  return kind(m.from) === 'human' || String(m.fromSession || '').toLowerCase().startsWith('human');
+}
 
 function ago(ts) {
   const t = new Date(ts).getTime();
@@ -468,7 +471,9 @@ function messageHTML(m, prev, prevShown) {
   const parent = m.replyTo ? DATA.find(x => x.id === m.replyTo) : null;
   const long = (m.text || '').length > 900 && !OPEN.has(m.id);
   const img = m.file && /\.(png|jpe?g|webp|gif)$/i.test(m.file)
-    ? '<img src="/api/attachment/' + encodeURIComponent(m.file) + '" alt="Attached image" loading="lazy">' : '';
+    ? '<img src="/api/attachment/' + encodeURIComponent(m.file) + '" alt="Attached image" loading="lazy">'
+    : m.file && /^att_\d+_[^\\/]+$/.test(m.file)
+      ? '<a class="attached" href="/api/attachment/' + encodeURIComponent(m.file) + '" download>' + esc(m.file.replace(/^att_\d+_/, '')) + '</a>' : '';
   return '<article class="msg' + (cont ? ' cont' : '') + (m.priority === 'P0' ? ' urgent' : '') + '" id="m' + m.id + '" data-id="' + m.id + '">' +
     '<div class="avatar c-' + k + '" aria-hidden="true">' + esc((who || '?').trim().charAt(0).toUpperCase()) + '</div>' +
     '<div>' +
@@ -490,6 +495,7 @@ function messageHTML(m, prev, prevShown) {
     '</div>' +
     '<div class="msg-tools">' +
       '<button type="button" data-act="reply">Reply</button>' +
+      '<button type="button" data-act="quote" title="Put this message (or the text selected in it) into your message as a quote. It does not become a reply and does not change the addressee.">Quote</button>' +
       '<button type="button" data-act="copy">Copy</button>' +
       (isHuman(m) ? '<button type="button" data-act="edit">Edit</button>' : '') +
     '</div>' +
@@ -545,6 +551,7 @@ $('#feed').addEventListener('click', e => {
   const id = Number(act.closest('.msg').dataset.id);
   const m = DATA.find(x => x.id === id); if (!m) return;
   if (act.dataset.act === 'reply') startReply(m, SELECTED && SELECTED.id === id ? SELECTED.text : '');
+  if (act.dataset.act === 'quote') quoteInto(m, SELECTED && SELECTED.id === id ? SELECTED.text : '');
   if (act.dataset.act === 'edit') startEdit(m);
   if (act.dataset.act === 'copy') {
     navigator.clipboard.writeText(m.text).then(() => { act.textContent = 'Copied'; setTimeout(() => { act.textContent = 'Copy'; }, 1200); })
@@ -557,7 +564,7 @@ $('#feed').addEventListener('click', e => {
 // Taken on mousedown, before the click can clear the selection.
 let SELECTED = null;
 document.addEventListener('mousedown', e => {
-  const b = e.target.closest && e.target.closest('[data-act="reply"]');
+  const b = e.target.closest && e.target.closest('[data-act="reply"], [data-act="quote"]');
   if (!b) return;
   const sel = window.getSelection(), msg = b.closest('.msg');
   const text = sel ? String(sel).trim() : '';
@@ -635,7 +642,7 @@ function renderChips() {
   const chips = [];
   if (REPLY) chips.push(['reply', 'Replying to ' + senderName(REPLY) + ': ' + short(REPLY.text.replace(/\s+/g, ' '), 60)]);
   if (EDIT) chips.push(['edit', 'Editing your message. The original is kept.']);
-  if (FILE) chips.push(['file', FILE.uploading ? 'Uploading ' + FILE.name + '…' : 'Image: ' + FILE.name]);
+  if (FILE) chips.push(['file', FILE.uploading ? 'Uploading ' + FILE.name + '…' : 'File: ' + FILE.name]);
   $('#chips').innerHTML = chips.map(([k, t]) =>
     '<span class="chip"><span>' + esc(t) + '</span><button type="button" data-cancel="' + k + '" title="Cancel">✕</button></span>').join('');
 }
@@ -646,6 +653,19 @@ $('#chips').addEventListener('click', e => {
   if (b.dataset.cancel === 'file') { FILE = null; $('#fileInput').value = ''; }
   renderChips();
 });
+
+// A quote of one message as the start of a message to anyone: what one agent
+// said, carried to another. It is not a reply — no thread, no addressee change.
+function quoteInto(m, selected) {
+  const t = $('#text');
+  const body = (selected || m.text || '').trim().split(/\r?\n/);
+  const head = '#' + m.id + ' ' + senderName(m) + ':';
+  const block = ['> ' + head].concat(body.map(l => '> ' + l)).join('\n');
+  t.value = (t.value.trim() ? t.value.replace(/\s+$/, '') + '\n\n' : '') + block + '\n\n';
+  grow();
+  t.focus();
+  t.setSelectionRange(t.value.length, t.value.length);
+}
 
 function startReply(m, quote) {
   EDIT = null; REPLY = m;
@@ -692,7 +712,7 @@ $('#text').addEventListener('keydown', e => {
 $('#compose').addEventListener('submit', async e => {
   e.preventDefault();
   const text = $('#text').value.trim();
-  if (FILE && FILE.uploading) { alert('The image is still uploading — send again in a moment, or remove it (✕).'); return; }
+  if (FILE && FILE.uploading) { alert('The file is still uploading — send again in a moment, or remove it (✕).'); return; }
   if (!text && !FILE) return;
   let j;
   if (EDIT) {
@@ -704,7 +724,7 @@ $('#compose').addEventListener('submit', async e => {
       priority: $('#urgent').checked ? 'P0' : 'normal',
       status: REPLY ? 'answer' : (text.includes('?') ? 'question' : 'info'),
       replyTo: REPLY ? REPLY.id : '',
-      text: text || '[Attached image: ' + FILE.stored + ']',
+      text: FILE ? (text ? text + '\n\n' : '') + (FILE.line || '[Attached: ' + FILE.stored + ']') : text,
       file: FILE ? FILE.stored : null
     });
   }
@@ -720,17 +740,22 @@ $('#compose').addEventListener('submit', async e => {
   markSeen();
 });
 
-// ── images ──────────────────────────────────────────────────────────────────
+// ── attachments ─────────────────────────────────────────────────────────────
+// Any file. The board keeps it and writes a text copy for the agents; the line
+// it returns says where both are, and goes into the message.
 
+const MAX_FILE = 40 * 1024 * 1024;
 function upload(file) {
-  if (!file || !file.type.startsWith('image/')) return;
+  if (!file) return;
+  if (file.size > MAX_FILE) { alert('The file is larger than 40 MB.'); return; }
   FILE = { name: file.name || 'pasted image', uploading: true };
   renderChips();
   const reader = new FileReader();
   reader.onload = async () => {
-    const j = await post('/api/upload', { filename: file.name || 'pasted.png', data: reader.result }).catch(err => ({ error: err.message }));
-    if (j.error) { FILE = null; renderChips(); alert('The image was not attached: ' + j.error); return; }
-    FILE = { name: file.name || 'pasted image', stored: j.filename };
+    const j = await post('/api/upload', { filename: file.name || 'pasted.png', data: reader.result, room: ROOM || '', from: ME })
+      .catch(err => ({ error: err.message }));
+    if (j.error) { FILE = null; renderChips(); alert('The file was not attached: ' + j.error); return; }
+    FILE = { name: file.name || 'pasted image', stored: j.filename, line: j.line || '' };
     renderChips();
   };
   reader.readAsDataURL(file);
@@ -749,7 +774,7 @@ document.addEventListener('paste', e => {
 const box = $('#compose');
 ['dragenter', 'dragover'].forEach(n => box.addEventListener(n, e => { e.preventDefault(); box.classList.add('drag'); }));
 ['dragleave', 'drop'].forEach(n => box.addEventListener(n, e => { e.preventDefault(); box.classList.remove('drag'); }));
-box.addEventListener('drop', e => { const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('image/')); if (f) upload(f); });
+box.addEventListener('drop', e => { const f = (e.dataTransfer.files || [])[0]; if (f) upload(f); });
 
 // ── the two apps ────────────────────────────────────────────────────────────
 
@@ -761,9 +786,30 @@ async function checkApps() {
   }
   const line = (name, up, app) => '<div><i class="' + (up ? 'up' : '') + '"></i>' + name + (up ? ' is running' :
     ' is closed <button type="button" class="link-btn" data-launch="' + app + '">Start</button>') + '</div>';
-  $('#apps').innerHTML = line('Claude Desktop', j.claude, 'claude') + line('Antigravity', j.antigravity, 'antigravity');
+  let sup = null;
+  try { sup = await (await fetch('/api/supervisor')).json(); } catch (_) {}
+  $('#apps').innerHTML = line('Claude Desktop', j.claude, 'claude') + line('Antigravity', j.antigravity, 'antigravity') + supervisorLine(sup);
+}
+// The supervisor is the owner's to switch. The tooltip says what its last round saw.
+function supervisorLine(s) {
+  if (!s || s.error) return '';
+  const st = s.status || {};
+  const tip = [
+    'Model: ' + s.model + ' · every ' + s.everyMinutes + ' min',
+    st.lastTick ? 'Last round: ' + fullDate(st.lastTick) : 'No round yet',
+    (st.sleepers || []).length ? 'Unanswered: ' + st.sleepers.map(x => x.name || x).join(', ') : '',
+    st.sent || '', st.lastError ? 'Error: ' + st.lastError : ''
+  ].filter(Boolean).join('\n');
+  return '<div title="' + esc(tip) + '"><i class="' + (s.enabled ? 'up' : '') + '"></i>Supervisor is ' + (s.enabled ? 'on' : 'off') +
+    ' <button type="button" class="link-btn" data-sup="' + (s.enabled ? 'off' : 'on') + '">' + (s.enabled ? 'Turn off' : 'Turn on') + '</button></div>';
 }
 $('#apps').addEventListener('click', async e => {
+  const s = e.target.closest('[data-sup]');
+  if (s) {
+    s.disabled = true;
+    await post('/api/supervisor', { enabled: s.dataset.sup === 'on' }).catch(() => ({}));
+    return checkApps();
+  }
   const b = e.target.closest('[data-launch]'); if (!b) return;
   b.disabled = true; b.textContent = 'Starting…';
   await fetch('/api/agents/launch?app=' + encodeURIComponent(b.dataset.launch), { method: 'POST' });

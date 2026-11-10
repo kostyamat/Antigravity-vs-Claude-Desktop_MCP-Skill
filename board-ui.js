@@ -29,6 +29,10 @@ const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
 const rules = require('./board-rules').createRules(bridgeDb, cardsLib, router);
 const { projectName } = require('./project-line');
 const dbBackup = require('./db-backup');
+const attachments = require('./attachments').createAttachments(bridgeDb, path.resolve(__dirname));
+const supervisor = require('./supervisor').createSupervisor({
+  bridgeDb, cardsLib, router, home: path.resolve(__dirname), wake: m => wakeAntigravity(m)
+});
 // The build this process was started from; the installer asks for it to know
 // whether the running dashboard is the code on disk.
 const BUILD = require('./build-print').modulesPrint(path.resolve(__dirname));
@@ -56,9 +60,9 @@ process.on('beforeExit', code => {
 const BRIDGE_FILE = path.join(SCRIPTS_DIR, 'agent_bridge.json');
 const BODIES_DIR = path.join(SCRIPTS_DIR, 'agent_bridge_bodies');
 const ATTACHMENTS_DIR = path.join(SCRIPTS_DIR, 'docs', 'attachments');
-// Image types the board accepts and serves. Anything else is stored under a
-// .png name and served as an opaque download, so nothing uploaded here can be
-// executed by the browser in the board's own origin.
+// Image types the board shows in place. Anything else is served as an opaque
+// download, so nothing uploaded here can be executed by the browser in the
+// board's own origin.
 const IMAGE_EXT = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
 const MIME_BY_EXT = {
   '.png': 'image/png',
@@ -654,55 +658,72 @@ const server = http.createServer((req, res) => {
     return send(res, out.error ? 404 : 200, 'application/json; charset=utf-8', JSON.stringify(out));
   }
   if (req.method === 'POST' && req.url === '/api/upload') {
-    let body = '';
-    req.on('data', c => { body += c; if (body.length > 25e6) req.destroy(); });
+    // Any file. The board keeps the original, writes a text copy an agent can
+    // read cheaply, and says in the message where both are (attachments.js).
+    const parts = [];
+    let size = 0;
+    req.on('data', c => { parts.push(c); size += c.length; if (size > 60e6) req.destroy(); });
     req.on('end', () => {
+      let out;
       try {
-        const { filename, data } = JSON.parse(body || '{}');
-        if (!data) return send(res, 400, 'application/json; charset=utf-8', JSON.stringify({ error: 'Data is required' }));
-        if (!fs.existsSync(ATTACHMENTS_DIR)) fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true });
-        const base64Data = data.replace(/^data:[^;]+;base64,/, '');
-        const buf = Buffer.from(base64Data, 'base64');
-        // Only image types the board renders are accepted. An arbitrary
-        // extension would be stored and later served from the board's own
-        // origin; an SVG in particular can carry script, and this origin
-        // exposes APIs that post messages and launch agents.
-        let ext = path.extname(filename || '').toLowerCase();
-        if (!IMAGE_EXT.includes(ext)) ext = '.png';
-        const cleanBase = slug(path.basename(filename || 'image', ext), 'image');
-        const safeName = `att_${Date.now()}_${cleanBase}${ext}`;
-        const savePath = path.join(ATTACHMENTS_DIR, safeName);
-        fs.writeFileSync(savePath, buf);
-        return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({
-          ok: true,
-          filename: safeName,
-          file: savePath,
-          url: '/api/attachment/' + safeName
-        }));
-      } catch (e) {
-        return send(res, 400, 'application/json; charset=utf-8', JSON.stringify({ error: e.message }));
-      }
+        const { filename, data, room, from } = JSON.parse(Buffer.concat(parts).toString('utf8') || '{}');
+        out = data ? attachments.store({ filename, data, room, from: from || ownerName() }) : { error: 'Data is required' };
+        if (out.ok) out.line = attachments.line(out);
+      } catch (e) { out = { error: e.message }; }
+      send(res, out.error ? 400 : 200, 'application/json; charset=utf-8', JSON.stringify(out));
     });
     return;
   }
   if (req.method === 'GET' && req.url.startsWith('/api/attachment/')) {
-    const safeName = path.basename(req.url.slice('/api/attachment/'.length));
+    let safeName = '';
+    try { safeName = path.basename(decodeURIComponent(req.url.slice('/api/attachment/'.length).split('?')[0])); } catch (_) {}
     const fullPath = path.join(ATTACHMENTS_DIR, safeName);
-    if (!fs.existsSync(fullPath)) return send(res, 404, 'text/plain; charset=utf-8', 'Attachment not found');
+    if (!safeName || !fs.existsSync(fullPath)) return send(res, 404, 'text/plain; charset=utf-8', 'Attachment not found');
     const ext = path.extname(safeName).toLowerCase();
-    const mime = MIME_BY_EXT[ext] || 'application/octet-stream';
+    const mime = MIME_BY_EXT[ext];
     try {
-      const imgData = fs.readFileSync(fullPath);
-      res.writeHead(200, {
-        'Content-Type': mime,
+      const head = {
+        'Content-Type': mime || 'application/octet-stream',
         'Cache-Control': 'public, max-age=86400',
         // Never let the browser second-guess the type of a stored file.
         'X-Content-Type-Options': 'nosniff'
-      });
-      return res.end(imgData);
+      };
+      // Only the image types above are shown in place; the rest is a download,
+      // never a page in this origin.
+      if (!mime) head['Content-Disposition'] = 'attachment; filename="' + safeName.replace(/[^\w.\-]/g, '_') + '"';
+      res.writeHead(200, head);
+      return res.end(fs.readFileSync(fullPath));
     } catch (e) {
       return send(res, 500, 'text/plain; charset=utf-8', e.message);
     }
+  }
+  if (req.url === '/api/supervisor' && (req.method === 'GET' || req.method === 'POST')) {
+    if (req.method === 'GET') return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(supervisor.view()));
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
+    req.on('end', async () => {
+      let out;
+      try {
+        const data = JSON.parse(body || '{}');
+        if (data.dryRun) out = { digest: supervisor.digest() };
+        else {
+          supervisor.configure(data);
+          if (data.tickNow) await supervisor.tick(true);
+          out = supervisor.view();
+        }
+      } catch (e) { out = { error: e.message }; }
+      send(res, out.error ? 400 : 200, 'application/json; charset=utf-8', JSON.stringify(out));
+    });
+    return;
+  }
+  // One board per machine: a new instance started with --replace asks the old
+  // one to leave. The header cannot be sent by a foreign web page (it would need
+  // a CORS preflight this server never grants), so only local tools can do this.
+  if (req.method === 'POST' && req.url === '/api/shutdown') {
+    if (req.headers['x-board-control'] !== 'replace') return send(res, 403, 'text/plain; charset=utf-8', 'Forbidden');
+    send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ ok: true, pid: process.pid }));
+    setTimeout(() => process.exit(0), 150);
+    return;
   }
   if (req.method === 'POST' && (req.url === '/api/post' || req.url === '/api/edit')) {
     let body = '';
@@ -841,10 +862,66 @@ function openAppWindow(url) {
 // The board database is the only store of everything said here; see db-backup.js.
 dbBackup.start(bridgeDb, path.resolve(__dirname));
 
+// --replace: the instance already on the port is asked to leave, and killed if it
+// does not answer (a build older than /api/shutdown). Only the process that
+// LISTENS on this port is touched, and only when it is a node running board-ui.js.
+const REPLACE = process.argv.includes('--replace');
+let replaceTried = false;
+
+function askOldBoardToLeave(port, done) {
+  const rq = http.request({ host: HOST, port, path: '/api/shutdown', method: 'POST', timeout: 1500,
+                            headers: { 'X-Board-Control': 'replace', 'Content-Length': 0 } }, res => {
+    res.resume();
+    res.on('end', () => done(res.statusCode === 200));
+  });
+  rq.on('timeout', () => rq.destroy());
+  rq.on('error', () => done(false));
+  rq.end();
+}
+
+function killOldBoard(port) {
+  const { spawnSync } = require('child_process');
+  try {
+    // netstat, not Get-NetTCPConnection: that one comes back empty in some shells.
+    const net = spawnSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
+    const row = String(net.stdout || '').split(/\r?\n/).find(l => /LISTENING/.test(l) && new RegExp('[:.]' + Number(port) + '\\s').test(l));
+    let pid = row ? parseInt(row.trim().split(/\s+/).pop(), 10) : 0;
+    const ask = filter => String(spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      `Get-CimInstance Win32_Process -Filter "${filter}" | ForEach-Object { [string]$_.ProcessId + '|' + $_.Name + '|' + $_.CommandLine }`],
+      { encoding: 'utf8', windowsHide: true, timeout: 15000 }).stdout || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const mine = path.join(SCRIPTS_DIR, 'board-ui.js').split(path.sep).join('/').toLowerCase();
+    if (!pid) {
+      // The port lookup is empty in some shells; then the old board is the other
+      // node that runs THIS folder's board-ui.js by its full path, nothing looser.
+      const hit = ask("Name='node.exe'").map(l => l.split('|')).find(f =>
+        Number(f[0]) !== process.pid && f.slice(2).join('|').split('\\').join('/').toLowerCase().includes(mine));
+      pid = hit ? Number(hit[0]) : 0;
+    }
+    if (!pid) return 'no old board found';
+    if (pid === process.pid) return 'it is this process';
+    const line = ask('ProcessId=' + pid)[0] || '';
+    if (!/^\d+\|node\.exe\|/i.test(line) || !/board-ui\.js/i.test(line)) return 'pid ' + pid + ' is not a board, left alone';
+    spawnSync('taskkill', ['/PID', String(pid), '/F'], { stdio: 'ignore', windowsHide: true, timeout: 15000 });
+    return 'killed pid ' + pid;
+  } catch (e) { return 'error ' + e.message; }
+}
+
 function listen(port, retries = 30) {
   const onError = err => {
     if (err.code === 'EADDRINUSE') {
-      const http = require('http');
+      if (REPLACE && !replaceTried) {
+        replaceTried = true;
+        return askOldBoardToLeave(port, left => {
+          if (!left) console.log('📡 Old board did not leave by itself: ' + killOldBoard(port));
+          else console.log('📡 Old board left; taking the port.');
+          setTimeout(() => listen(port, retries), left ? 600 : 1200);
+        });
+      }
+      if (REPLACE) {
+        if (retries > 0) return void setTimeout(() => listen(port, retries - 1), 500);
+        console.log('📡 Port ' + port + ' is still busy; the old board could not be replaced.');
+        process.exit(1);
+      }
       const req = http.get(`http://${HOST}:${port}/api/board`, res => {
         console.log('📡 Visualizer already active on port ' + port + '.');
         process.exit(0);
@@ -876,6 +953,7 @@ function listen(port, retries = 30) {
     if (!process.argv.includes('--no-open')) {
       openAppWindow(url);
     }
+    try { supervisor.start(); } catch (e) { console.error('Supervisor did not start: ' + e.message); }
   });
 }
 

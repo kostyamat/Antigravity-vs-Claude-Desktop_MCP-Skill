@@ -6,6 +6,6 @@ rem  To stop - press Ctrl+C in this window or close the window.
 rem ===============================================================================
 title Agent-Bridge Board
 cd /d "%~dp0"
-node board-ui.js
+node board-ui.js --replace
 pause
 

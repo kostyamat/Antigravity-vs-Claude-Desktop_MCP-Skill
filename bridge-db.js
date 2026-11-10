@@ -239,6 +239,15 @@ function initSchema(db) {
       since TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_helpers_lead ON helpers(lead);
+    CREATE TABLE IF NOT EXISTS describe_queue (
+      md TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      kind TEXT DEFAULT '',
+      room TEXT DEFAULT '',
+      state TEXT DEFAULT 'pending',
+      created TEXT,
+      asked_at TEXT
+    );
     CREATE TABLE IF NOT EXISTS stand_bookings (
       stand TEXT PRIMARY KEY,
       holder TEXT NOT NULL,
@@ -1443,6 +1452,28 @@ function releaseStand(stand) {
   return getDb().prepare('DELETE FROM stand_bookings WHERE stand = ?').run(String(stand)).changes > 0;
 }
 
+// ── Files waiting for a description ─────────────────────────────────────────────────────
+// A picture or a recording the owner attached: nothing in it can be parsed as
+// text, so the supervisor is asked to describe it into the .md beside it.
+
+function queueDescription(md, source, kind, room) {
+  getDb().prepare('INSERT OR IGNORE INTO describe_queue (md, source, kind, room, state, created) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(String(md), String(source), String(kind || ''), String(room || ''), 'pending', new Date().toISOString());
+}
+
+function readDescriptions(state) {
+  try {
+    return state
+      ? getDb().prepare('SELECT * FROM describe_queue WHERE state = ? ORDER BY created').all(String(state))
+      : getDb().prepare('SELECT * FROM describe_queue ORDER BY created').all();
+  } catch (_) { return []; }
+}
+
+function setDescriptionState(md, state) {
+  getDb().prepare('UPDATE describe_queue SET state = ?, asked_at = ? WHERE md = ?')
+    .run(String(state), new Date().toISOString(), String(md));
+}
+
 function seenVersion(window) {
   if (!window) return '';
   const r = getDb().prepare('SELECT version FROM window_versions WHERE window = ?').get(String(window));
@@ -1499,6 +1530,9 @@ module.exports = {
   readStands,
   takeStand,
   releaseStand,
+  queueDescription,
+  readDescriptions,
+  setDescriptionState,
   seenVersion,
   setSeenVersion
 };
