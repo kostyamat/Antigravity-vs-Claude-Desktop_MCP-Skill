@@ -47,7 +47,9 @@ now — urgently, with what it remembers of his other accounts and which of them
 
 **Argon in the room.** A message addressed to Argon, or beginning with `@Argon`, is passed by the board to the
 deep-reasoning model the owner has connected, with the last lines of the room, and the answer is posted there as a
-reply — one answer for the owner and both agents.
+reply — one answer for the owner and both agents. `@Argon research: <topic>` orders a deep research: the room is told
+at once and nobody waits; the board keeps the wait and posts the report into the room the order came from, addressed
+to whoever ordered it, when it is ready.
 
 **A closed application is started when it is addressed.** A message to a Claude or Gemini window, anything the
 owner says in a room, a task for the supervisor's model, a question to Argon: whichever application is closed is

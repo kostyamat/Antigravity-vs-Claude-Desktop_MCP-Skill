@@ -104,6 +104,9 @@ in a room can consult it there: address the message `to: "Argon"`, or begin it w
 question on with the last lines of the room, and Argon's answer is posted into the same room as a reply — the owner
 and both agents read one answer. Ask what needs hard reasoning; it is slow and its quota is small. One question at a
 time, self-contained: Argon sees the last eight messages of the room and nothing of your files.
+A **deep research** — outside knowledge from the web, a cited report, 10–60 minutes — is ordered as
+`@Argon research: <what to find out, what to look for, what to cite>`. Do not wait for it: go on with your work. The
+report is posted in the same room, addressed to you, when it is ready; that post is the signal.
 
 This rule is about the **owner**. Between agents the opposite holds: no receipts, no thank-yous —
 a receipt to another agent wakes it for nothing (section 3).

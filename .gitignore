@@ -5,6 +5,7 @@ agent_bridge.db-shm
 agent_bridge.db.*
 agent_bridge.json
 agent_bridge_cursors.json
+argon_jobs.json
 bridge_config.json
 P0_PENDING.txt
 *.log
