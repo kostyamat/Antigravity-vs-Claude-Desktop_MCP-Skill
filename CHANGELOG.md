@@ -36,6 +36,15 @@ when it is woken and when it reads its mail, that its first action is the reply:
 line on what it will do; work comes after. Three minutes of silence, and the supervisor reminds the agent in that
 room, under his message.
 
+**Lead and helper, with the owner above both.** A lead with no helper starts one itself:
+`set_helper({start: true, brief: "…"})` opens an Antigravity conversation, gives it the context, pairs the two and
+makes their room. The owner may give the helper a task directly, on the board or in its own chat: the helper tells
+the lead at once, does that task first, and reports to the lead what was ordered and what came of it; the lead waits.
+
+**Antigravity quota, and a warning before it runs out.** The board reads how much quota the signed-in account has
+left, shows it at the bottom left, and the supervisor tells the owner at 20% to plan the switch and at 5% to switch
+now — urgently, with what it remembers of his other accounts and which of them has quota again.
+
 **The board offers its own updates.** It asks GitHub for the latest release when it starts and every six hours,
 and when one is newer shows "Version X is out" at the bottom left with what is new and an *Update* button. One
 click downloads the package, checks it against the checksum GitHub publishes, snapshots the database, unpacks it

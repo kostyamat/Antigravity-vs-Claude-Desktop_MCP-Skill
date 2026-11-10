@@ -202,9 +202,26 @@ like a rewrite.
   An honest ❓ beats a confident sentence that turns out wrong.
 
 **Working with a helper agent** (a cheaper agent in another window, e.g. Gemini in Antigravity)
-- **Ask the user for a helper** when real work starts. The lead keeps design, review and the user;
-  the helper takes the routine: research in code and firmware, ports, translations, tests, device
-  measurements. A helper's quota is usually far larger than the lead's, so delegate generously.
+- **The lead is Claude, the helper is Gemini — and the user is above both.** The lead keeps design,
+  review, decisions and the talk with the user. **The lead does no routine**: research in code and
+  firmware, ports, translations, tests, device measurements and routine debugging go to the helper.
+  A helper's quota is usually far larger than the lead's, so delegate generously.
+- **A lead with no helper gets one itself**, when real work starts — it does not wait to be given
+  one: `set_helper({ start: true, brief: "…" })` opens a helper, hands it the brief, pairs the two
+  and makes their room. The brief says what the project is, where it lives, what the helper will
+  be doing and what it must not touch. Only when that call fails is the user asked for a window.
+- **The user may give the helper a task directly** — on the board or in the helper's own chat,
+  past the lead. Such a task comes first. The helper:
+  1. **tells the lead at once**, in their room, before starting: "Task from the owner, taken
+     first: <his words, quoted>. Your task <which> is paused." A task given in the helper's chat
+     is invisible to the lead until this line exists;
+  2. does the user's task before anything else;
+  3. **reports to the lead when it is done**, in their room: what the user ordered, why (if he
+     said), and the result — what changed, in which files and commits, what is now on the device
+     — then returns to the lead's task and says so.
+  The lead **waits**: it does not hand the paused task to anyone else, does not repeat it, and
+  does not work in the files the user's task touches until the report is in. It then checks what
+  the report changes for its own plan.
 - **The unit of work is the project — the folder — not the window.** A window, its id and its name
   change with every account switch and restart; the project folder does not. State lives in the
   project's files, and on the board the project is the participant: its rooms, its helper and its
