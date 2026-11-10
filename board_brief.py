@@ -88,6 +88,51 @@ def _client_session_id():
         return ""
 
 
+def _claude_session_roots():
+    """Every folder Claude Desktop may keep its window records in, the live one first.
+
+    The same list as claude-home.js, which explains why there is a list at all: the
+    app has moved its data folder more than once, and a path written down here left
+    every window unrecognised on the day it moved. Kept in Python too because this
+    hook runs on every session start and cannot wait for node to tell it a path.
+    """
+    home = os.path.expanduser("~")
+    appdata = os.environ.get("APPDATA") or os.path.join(home, "AppData", "Roaming")
+    local = os.environ.get("LOCALAPPDATA") or os.path.join(home, "AppData", "Local")
+    cands = []
+    forced = os.environ.get("AGENT_BRIDGE_CLAUDE_DATA", "")
+    cands += [p for p in forced.split(os.pathsep) if p]
+
+    def subdirs(d):
+        try:
+            return [os.path.join(d, n) for n in os.listdir(d) if os.path.isdir(os.path.join(d, n))]
+        except OSError:
+            return []
+
+    cands += subdirs(os.path.join(local, "Claude-Data"))
+    cands.append(os.path.join(appdata, "Claude"))
+    for pkg in subdirs(os.path.join(local, "Packages")):
+        if os.path.basename(pkg).lower().startswith("claude_"):
+            cands.append(os.path.join(pkg, "LocalCache", "Roaming", "Claude"))
+    cands.append(os.path.join(home, "Library", "Application Support", "Claude"))
+    cands.append(os.path.join(home, ".config", "Claude"))
+
+    def stamp(root):
+        try:
+            return os.path.getmtime(os.path.join(root, "config.json"))
+        except OSError:
+            return 0
+
+    roots, seen = [], set()
+    for root in sorted(cands, key=stamp, reverse=True):
+        sess = os.path.join(root, "claude-code-sessions")
+        key = os.path.normcase(os.path.abspath(sess))
+        if key not in seen and os.path.isdir(sess):
+            seen.add(key)
+            roots.append(sess)
+    return roots
+
+
 def _find_window(cli_id):
     """The Claude Desktop window this session runs in, and the account it lives under.
 
@@ -96,44 +141,56 @@ def _find_window(cli_id):
     session belongs to can be looked up instead of asked for: the agent does not
     have to remember a label, or call anything, to be recognised as that window.
     """
-    if not cli_id:
+    # Claude Desktop hands the window id to everything it starts. That is the
+    # answer whenever it is there; the folder scan below only adds the title, and
+    # is the whole answer for a client that sets nothing.
+    env_window = os.environ.get("CLAUDE_CODE_HOST_SESSION_ID", "").strip()
+    if not env_window.startswith("local_"):
+        env_window = ""
+    if not cli_id and not env_window:
         return None
-    root = os.path.join(os.environ.get("APPDATA", ""), "Claude", "claude-code-sessions")
-    try:
-        accounts = [d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))]
-    except OSError:
-        return None
-    for acc in accounts:
-        acc_dir = os.path.join(root, acc)
+    for root in _claude_session_roots():
         try:
-            subs = [d for d in os.listdir(acc_dir) if os.path.isdir(os.path.join(acc_dir, d))]
+            accounts = [d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))]
         except OSError:
             continue
-        for sub in subs:
-            sub_dir = os.path.join(acc_dir, sub)
+        for acc in accounts:
+            acc_dir = os.path.join(root, acc)
             try:
-                names = [f for f in os.listdir(sub_dir) if f.startswith("local_") and f.endswith(".json")]
+                subs = [d for d in os.listdir(acc_dir) if os.path.isdir(os.path.join(acc_dir, d))]
             except OSError:
                 continue
-            for name in names:
+            for sub in subs:
+                sub_dir = os.path.join(acc_dir, sub)
                 try:
-                    with open(os.path.join(sub_dir, name), encoding="utf-8") as fh:
-                        raw = fh.read()
-                except (OSError, UnicodeDecodeError):
+                    names = [f for f in os.listdir(sub_dir) if f.startswith("local_") and f.endswith(".json")]
+                except OSError:
                     continue
-                if cli_id not in raw:
-                    continue
-                try:
-                    rec = json.loads(raw)
-                except ValueError:
-                    continue
-                if str(rec.get("cliSessionId", "")).strip() != cli_id:
-                    continue
-                return {
-                    "window": str(rec.get("sessionId") or name[:-5]),
-                    "account": acc,
-                    "title": str(rec.get("title") or ""),
-                }
+                for name in names:
+                    if env_window and name[:-5] != env_window:
+                        continue
+                    try:
+                        with open(os.path.join(sub_dir, name), encoding="utf-8") as fh:
+                            raw = fh.read()
+                    except (OSError, UnicodeDecodeError):
+                        continue
+                    if not env_window and cli_id not in raw:
+                        continue
+                    try:
+                        rec = json.loads(raw)
+                    except ValueError:
+                        continue
+                    if not env_window and str(rec.get("cliSessionId", "")).strip() != cli_id:
+                        continue
+                    return {
+                        "window": str(rec.get("sessionId") or name[:-5]),
+                        "account": acc,
+                        "title": str(rec.get("title") or ""),
+                        "project": str(rec.get("originCwd") or rec.get("cwd") or ""),
+                    }
+    if env_window:
+        return {"window": env_window, "account": os.environ.get("CLAUDE_CODE_ACCOUNT_UUID", ""),
+                "title": "", "project": ""}
     return None
 
 
@@ -188,9 +245,8 @@ def rooms_of_window(sid, win):
     one rule in room-invite.js. A window that was closed when the owner invited it
     finds the invitation here, so "go to the room you were invited to" is enough."""
     try:
-        args = ["node", os.path.join(_bridge_home(), "room-invite.js"), ME, sid or ""]
-        if win:
-            args.append(win)
+        args = ["node", os.path.join(_bridge_home(), "window-brief.js"), ME, sid or "", win or "",
+                os.environ.get("CLAUDE_CODE_ACCOUNT_UUID", "")]
         out = subprocess.run(args, capture_output=True, timeout=15)
         return [l for l in out.stdout.decode("utf-8", "replace").splitlines() if l.strip()]
     except Exception:
@@ -325,11 +381,15 @@ def main():
                      or os.environ.get("BRIDGE_SESSION")
                      or _client_session_id())
 
+        # Which window this is. When the client can say, that id is the signature:
+        # a label guessed from the folder name was shared by every window of the
+        # project, and the id of a run dies with the run.
+        window = _find_window(client_id)
+        if window and window.get("window"):
+            hook_session = window["window"]
         if not hook_session:
             hook_session = client_id
 
-        # Which window this is, and whether that window carries a line of work.
-        window = _find_window(client_id)
         try:
             names = [n for n in (hook_session, client_id, window and window["window"]) if n]
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='line_members'")
@@ -380,7 +440,10 @@ def main():
     if window:
         # the window from the first second: its line resolves before any label is registered
         cmd_str += " --window %s" % window["window"]
-    if hook_session:
+    if window:
+        lines.append("Your board sessionId: %s — this window%s. A hook signs your bridge calls with it;"
+                     " never sign with anything else." % (hook_session, (" «%s»" % window["title"]) if window.get("title") else ""))
+    elif hook_session:
         lines.append("Your board sessionId: %s — sign every bridge call with it; do not invent another."
                      % hook_session)
     else:
@@ -389,6 +452,7 @@ def main():
     lines += [
         "First action (the watchman died with the previous session):",
         '  Monitor({command: "%s", persistent: true})' % cmd_str,
+        "Before you go idle a hook checks the board for you; unread mail addressed to you is read first, not later.",
     ]
     if line:
         lines.append('Line of work «%s» (%d windows): load_session_context({line: "%s"}) before reading;'

@@ -7,6 +7,7 @@ Each stdout line = one alert, kept concise to highlight items requiring response
 """
 import argparse
 import ctypes
+import json
 import os
 import sqlite3
 import sys
@@ -224,6 +225,25 @@ def parent_alive(pid):
         kernel32.CloseHandle(handle)
 
 
+def _announce(window):
+    """Leave a note that a watchman listens for this window.
+
+    The Stop hook starts a background watcher of its own (bridge-hook.js watch) for
+    sessions that never started this one. Two listeners would wake the session twice
+    for every message, so that watcher looks for this note and stands down.
+    """
+    if not window:
+        return
+    try:
+        run = os.path.join(_bridge_home(), "run")
+        os.makedirs(run, exist_ok=True)
+        safe = "".join(c if (c.isalnum() or c in "_-") else "_" for c in window)
+        with open(os.path.join(run, "monitor_%s.json" % safe), "w", encoding="utf-8") as fh:
+            json.dump({"pid": os.getpid()}, fh)
+    except Exception:
+        pass                           # a note, never a reason to fail
+
+
 def main():
     parser = argparse.ArgumentParser(description="Watch agent-bridge board")
     parser.add_argument("--session", default=os.environ.get("BRIDGE_SESSION", ""), help="Current session identifier")
@@ -240,6 +260,7 @@ def main():
         my_session = detect_session(args.agent)
 
     parent_pid = os.getppid()
+    _announce(args.window)
     my_names = names_of(my_session, args.window, args.agent, True)
     my_window = names_of(my_session, args.window, args.agent, False)
     last = None
@@ -320,7 +341,7 @@ def main():
                         # it is not woken, whoever wrote and however urgent.
                         if broadcast and room:
                             members = room_members(room)
-                            if members is not None and not (members & set(my_window)):
+                            if members is not None and not (members & (set(my_window) | set(my_names))):
                                 continue
                             # Inside the room: the owner always, an agent when it
                             # asks, is stuck, answers or finishes — not for notes.

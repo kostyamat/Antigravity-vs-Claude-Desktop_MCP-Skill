@@ -61,10 +61,14 @@ try {
   if (fs.existsSync(CONFIG_FILE)) previousConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) || {};
 } catch (_) { previousConfig = {}; }
 
+// The server and the dashboard are both built from the modules beside them, so
+// "did it change" is asked of all of them: a release that touched only the
+// routing rules used to leave the old dashboard running.
+const modulesPrint = require('./build-print').modulesPrint(SCRIPTS_DIR);
 const fingerprints = {
-  server: fingerprintFile('agent-bridge-mcp.js'),
+  server: modulesPrint,
   db: fingerprintFile('bridge-db.js'),
-  ui: fingerprintFile('board-ui.js'),
+  ui: modulesPrint + fingerprintTree('ui'),
   skill: fingerprintTree('skill')
 };
 const lastTime = previousConfig.installedFingerprints || {};
@@ -250,49 +254,62 @@ if (!roomsFromHistoryDone) {
 
 // 4. Configure Claude Desktop
 console.log('\n[4/8] Configuring MCP for Claude Desktop...');
-const claudeConfigPath = path.join(APPDATA, 'Claude', 'claude_desktop_config.json');
-try {
-  let claudeCfg = {}, parsed = true;
-  if (fs.existsSync(claudeConfigPath)) {
+// The app has moved its data folder more than once, and reads its MCP servers
+// from wherever it lives now: claude-home.js knows the candidates. Every file
+// that exists is brought up to date; when none does, the classic one is made.
+const claudeHome = require('./claude-home');
+{
+  const all = claudeHome.desktopConfigFiles();
+  const present = all.filter(f => fs.existsSync(f));
+  const targets = present.length ? present : all.slice(-1);
+  const targetMcp = path.join(SCRIPTS_DIR, 'agent-bridge-mcp.js');
+  for (const claudeConfigPath of targets) {
     try {
-      claudeCfg = JSON.parse(fs.readFileSync(claudeConfigPath, 'utf8')) || {};
-    } catch (e) {
-      parsed = false;
-    }
-  }
-  if (!parsed) {
-    warnCount++;
-    console.warn(`  ⚠️ ${claudeConfigPath} contains invalid JSON — NOT overwriting.`);
-    console.warn('     Please fix the file or add agent-bridge manually.');
-  } else {
-    if (!claudeCfg.mcpServers) claudeCfg.mcpServers = {};
-    const targetMcp = path.join(SCRIPTS_DIR, 'agent-bridge-mcp.js');
-    const currMcp = claudeCfg.mcpServers['agent-bridge'];
-    const needsUpdate = !currMcp ||
-      currMcp.command !== process.execPath ||
-      !currMcp.args ||
-      currMcp.args[0] !== targetMcp;
-
-    if (needsUpdate) {
-      claudeCfg.mcpServers['agent-bridge'] = {
-        command: process.execPath,
-        args: [targetMcp]
-      };
-      const claudeDir = path.dirname(claudeConfigPath);
-      if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
+      let claudeCfg = {}, parsed = true;
       if (fs.existsSync(claudeConfigPath)) {
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        fs.copyFileSync(claudeConfigPath, `${claudeConfigPath}.bak-${stamp}`);
+        try {
+          claudeCfg = JSON.parse(fs.readFileSync(claudeConfigPath, 'utf8').replace(/^\uFEFF/, '')) || {};
+        } catch (e) {
+          parsed = false;
+        }
       }
-      fs.writeFileSync(claudeConfigPath, JSON.stringify(claudeCfg, null, 2), 'utf8');
-      console.log(`  ✅ Claude Desktop configured (${claudeConfigPath})`);
-    } else {
-      console.log(`  ✅ Claude Desktop configuration is up to date (${claudeConfigPath})`);
+      if (!parsed) {
+        warnCount++;
+        console.warn(`  ⚠️ ${claudeConfigPath} contains invalid JSON — NOT overwriting.`);
+        console.warn('     Please fix the file or add agent-bridge manually.');
+        continue;
+      }
+      if (!claudeCfg.mcpServers) claudeCfg.mcpServers = {};
+      const currMcp = claudeCfg.mcpServers['agent-bridge'];
+      const needsUpdate = !currMcp ||
+        currMcp.command !== process.execPath ||
+        !currMcp.args ||
+        currMcp.args[0] !== targetMcp;
+
+      if (needsUpdate) {
+        claudeCfg.mcpServers['agent-bridge'] = {
+          command: process.execPath,
+          args: [targetMcp]
+        };
+        const claudeDir = path.dirname(claudeConfigPath);
+        if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
+        if (fs.existsSync(claudeConfigPath)) {
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+          fs.copyFileSync(claudeConfigPath, `${claudeConfigPath}.bak-${stamp}`);
+        }
+        fs.writeFileSync(claudeConfigPath, JSON.stringify(claudeCfg, null, 2), 'utf8');
+        console.log(`  ✅ Claude Desktop configured (${claudeConfigPath})`);
+      } else {
+        console.log(`  ✅ Claude Desktop configuration is up to date (${claudeConfigPath})`);
+      }
+    } catch (e) {
+      errorCount++;
+      console.error(`  ❌ Failed to update Claude configuration (${claudeConfigPath}): ${e.message}`);
     }
   }
-} catch (e) {
-  errorCount++;
-  console.error(`  ❌ Failed to update Claude configuration: ${e.message}`);
+  const roots = claudeHome.dataRoots();
+  if (roots.length) console.log(`  ✅ Claude Desktop data found: ${roots.join('; ')}`);
+  else console.log('  ℹ️ Claude Desktop has no data folder yet; its windows appear on the board once it has run.');
 }
 
 // 4b. Configure SessionStart hook for Claude Code
@@ -344,6 +361,7 @@ try {
     //                          a room: a Claude window cannot be woken from outside, so
     //                          the owner's next word, whatever it is, carries the invitation.
     const posix = p => p.replace(/\\/g, '/');
+    const hookCmd = mode => `"${process.execPath}" "${posix(path.join(SCRIPTS_DIR, 'bridge-hook.js'))}" ${mode}`;
     const wanted = [
       { event: 'SessionStart', needle: 'board_brief', matcher: null,
         hook: { type: 'command', command: briefCmd } },
@@ -353,8 +371,24 @@ try {
       { event: 'PreCompact', needle: 'pre_compact', matcher: null,
         hook: { type: 'command', command: `${pyCmd} "${posix(path.join(SCRIPTS_DIR, 'pre_compact.py'))}"`,
                 timeout: 20, statusMessage: 'Context guard: is the slice current?' } },
-      { event: 'UserPromptSubmit', needle: 'board_brief', matcher: null,
-        hook: { type: 'command', command: briefCmd + ' --prompt', timeout: 10 } }
+      // The Claude side of the board, done by the client instead of by the
+      // agent's memory — see bridge-hook.js for each of them.
+      //   stamp  — signs every bridge call with this window's id.
+      //   prompt — every prompt: one line when unread mail waits (it replaces the
+      //            older board_brief --prompt, found here by its old name).
+      //   stop   — a session about to go idle over unread mail reads it first.
+      //   watch  — in the background from session start and from every stop:
+      //            wakes the idle session when something arrives for it.
+      { event: 'PreToolUse', needle: 'bridge-hook.js" stamp', matcher: 'mcp__agent-bridge__.*',
+        hook: { type: 'command', command: hookCmd('stamp'), timeout: 10 } },
+      { event: 'UserPromptSubmit', needle: 'bridge-hook.js" prompt', also: ['board_brief'], matcher: null,
+        hook: { type: 'command', command: hookCmd('prompt'), timeout: 10 } },
+      { event: 'Stop', needle: 'bridge-hook.js" stop', matcher: null,
+        hook: { type: 'command', command: hookCmd('stop'), timeout: 15 } },
+      { event: 'Stop', needle: 'bridge-hook.js" watch', matcher: null,
+        hook: { type: 'command', command: hookCmd('watch'), async: true, asyncRewake: true, timeout: 86700 } },
+      { event: 'SessionStart', needle: 'bridge-hook.js" watch', matcher: null,
+        hook: { type: 'command', command: hookCmd('watch'), async: true, asyncRewake: true, timeout: 86700 } }
     ];
     if (!settings.hooks) settings.hooks = {};
     let changed = false;
@@ -362,8 +396,9 @@ try {
       if (!Array.isArray(settings.hooks[w.event])) settings.hooks[w.event] = [];
       let found = null;
       for (const entry of settings.hooks[w.event]) {
+        const needles = [w.needle].concat(w.also || []);
         const h = entry && Array.isArray(entry.hooks)
-          ? entry.hooks.find(x => x && typeof x.command === 'string' && x.command.includes(w.needle)) : null;
+          ? entry.hooks.find(x => x && typeof x.command === 'string' && needles.some(n => x.command.includes(n))) : null;
         if (h) { found = { entry, h }; break; }
       }
       if (!found) {
@@ -393,6 +428,65 @@ try {
 } catch (e) {
   warnCount++;
   console.error(`  ⚠️ Failed to configure SessionStart hook: ${e.message}`);
+}
+
+// 4e. One board for every account: projects, pairs, and what each account still holds apart
+console.log('\n[4e/8] One environment for every account...');
+try {
+  const bridgeDb = require('./bridge-db');
+  const cardsLib = require('./cards');
+  const projectLine = require('./project-line');
+  const dbBackup = require('./db-backup');
+  const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
+  const rules = require('./board-rules').createRules(bridgeDb, cardsLib, router);
+
+  // Before anything is rewritten: a copy of the board as it is.
+  try { console.log(`  ✅ Board database snapshot: ${dbBackup.snapshot(bridgeDb, SCRIPTS_DIR)}`); }
+  catch (e) { warnCount++; console.warn(`  ⚠️ Board snapshot failed (${e.message}); nothing below is destructive.`); }
+
+  // Rooms built around the id of one run of a window get the window itself.
+  for (const r of projectLine.adoptRunIds(bridgeDb, cardsLib)) {
+    console.log(`  ✅ Room member ${r.from.slice(0, 8)}… is the window "${r.name}" — fixed.`);
+  }
+  // Every Claude window joins the line of the folder it is opened in.
+  const by = new Map();
+  for (const l of projectLine.adoptAll(bridgeDb, cardsLib)) by.set(l.line, (by.get(l.line) || 0) + 1);
+  for (const [line, n] of by) console.log(`  ✅ Project "${projectLine.projectName(line) || line}": ${n} window(s) are now one participant.`);
+  if (!by.size) console.log('  ✅ Projects: every window already answers for its project folder.');
+
+  // A room of one project and one Antigravity window is a pair; the liveliest room wins a helper.
+  // Only rooms used in the last two weeks: an old room is history, not a working pair.
+  const fresh = new Date(Date.now() - 14 * 86400e3).toISOString();
+  const rooms = bridgeDb.readRooms().filter(r => String(r.last_activity || '') > fresh)
+    .sort((x, y) => String(y.last_activity || '').localeCompare(String(x.last_activity || '')));
+  for (const room of rooms) {
+    const p = rules.autoPair(room.id);
+    if (p) console.log(`  ✅ Pair on record: "${router.nameOf(p.helper)}" helps "${router.nameOf(p.lead)}" (room "${room.name}").`);
+  }
+
+  // What still differs between accounts, and what does not.
+  const accounts = cardsLib.claudeAccounts();
+  const globalMd = path.join(USER_PROFILE, '.claude', 'CLAUDE.md');
+  console.log(`  ✅ Claude accounts on this machine: ${accounts.length}. They share one settings folder (${path.join(USER_PROFILE, '.claude')}): ` +
+    `hooks, skills on disk${fs.existsSync(globalMd) ? ' and the global CLAUDE.md' : ''} are the same file for all of them.`);
+  const { staleAccountSkills } = require('./window-brief');
+  const emails = cardsLib.accountEmails();
+  let staleAny = false;
+  for (const acct of [...new Set(claudeHome.accountSkillDirs().map(x => x.account))]) {
+    const stale = staleAccountSkills(acct);
+    if (!stale.length) continue;
+    staleAny = true;
+    warnCount++;
+    console.warn(`  ⚠️ Account ${emails[acct] || acct.slice(0, 8)} holds its own uploaded copies of: ${stale.join(', ')}.`);
+  }
+  if (staleAny) {
+    console.warn('     These were uploaded through Claude Desktop (Settings → Capabilities → Skills) and are kept per account,');
+    console.warn('     so the accounts drift apart. The copy on disk is the same for every account and is the one to use:');
+    console.warn('     delete the uploaded copies in each account. Sessions are told at start to prefer the disk copy.');
+  }
+} catch (e) {
+  warnCount++;
+  console.warn(`  ⚠️ Could not finish the account check: ${e.message}`);
 }
 
 // 4c. Install the Skill into every agent's skill directory
@@ -877,14 +971,33 @@ function printNextSteps() {
 // restart it instead of asking. A client holding a conversation is a different
 // matter and is only ever asked for.
 function restartDashboardIfChanged() {
-  if (!uiChanged) return;
   try {
     const port = Number(previousConfig.uiPort || 8787);
+    // What is running is asked, not remembered: the dashboard names the build it
+    // was started from. One that cannot say is older than this question.
+    const asked = spawnSync(process.execPath, ['-e',
+      `fetch('http://127.0.0.1:${port}/api/version',{signal:AbortSignal.timeout(4000)}).then(r=>r.json())` +
+      `.then(j=>process.stdout.write(String(j.build||''))).catch(()=>{})`],
+      { encoding: 'utf8', windowsHide: true, timeout: 15000 });
+    if (String(asked.stdout || '').trim() === modulesPrint) return;
     const query = spawnSync('powershell', ['-NoProfile', '-Command',
       `try { (Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction Stop | Select-Object -First 1).OwningProcess } catch { '' }`],
       { encoding: 'utf8', windowsHide: true });
-    const pid = parseInt(String(query.stdout || '').trim(), 10);
-    if (!pid) return;
+    let pid = parseInt(String(query.stdout || '').trim(), 10);
+    if (!pid) {
+      // The port lookup comes back empty in some shells (it needs rights the
+      // installer may not have); the dashboard is then found by what it runs.
+      const script = path.join(SCRIPTS_DIR, 'board-ui.js').split(path.sep).join('/').toLowerCase().replace(/'/g, "''");
+      const byName = spawnSync('powershell', ['-NoProfile', '-Command',
+        `(Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -and ` +
+        `$_.CommandLine.Replace([string][char]92, '/').ToLower().Contains('${script}') } | Select-Object -First 1).ProcessId`],
+        { encoding: 'utf8', windowsHide: true });
+      pid = parseInt(String(byName.stdout || '').trim(), 10);
+    }
+    if (!pid) {
+      console.log('  ℹ️ The dashboard is not running; start it with the Agent-Bridge shortcut.');
+      return;
+    }
     spawnSync('taskkill', ['/PID', String(pid), '/F'], { stdio: 'ignore', windowsHide: true });
     const vbs = path.join(SCRIPTS_DIR, 'board-ui-hidden.vbs');
     if (!fs.existsSync(vbs)) return;
