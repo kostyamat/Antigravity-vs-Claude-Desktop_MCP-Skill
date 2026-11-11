@@ -81,6 +81,10 @@ const MIME_BY_EXT = {
 // neighbour, on /api/peer/ alone: every other route stays this machine's.
 const peerLink = require('./peer-link');
 const HOST = peerLink.enabled() ? '0.0.0.0' : '127.0.0.1';
+// Where this machine itself reaches its board, whatever the board listens on. Asking
+// the old board to leave at 0.0.0.0 reached nobody on Windows, so once a neighbour
+// was linked a restart could not replace the running board and it never opened to the network.
+const LOCAL = '127.0.0.1';
 // The port is fixed so that a neighbour machine and every client know where the
 // board is; the variable is for a second board on one machine, which only a test needs.
 const PORT_FROM = Number(process.env.AGENT_BRIDGE_PORT) || 8787;
@@ -913,7 +917,7 @@ const REPLACE = process.argv.includes('--replace');
 let replaceTried = false;
 
 function askOldBoardToLeave(port, done) {
-  const rq = http.request({ host: HOST, port, path: '/api/shutdown', method: 'POST', timeout: 1500,
+  const rq = http.request({ host: LOCAL, port, path: '/api/shutdown', method: 'POST', timeout: 1500,
                             headers: { 'X-Board-Control': 'replace', 'Content-Length': 0 } }, res => {
     res.resume();
     res.on('end', () => done(res.statusCode === 200));
@@ -966,7 +970,7 @@ function listen(port, retries = 30) {
         console.log('📡 Port ' + port + ' is still busy; the old board could not be replaced.');
         process.exit(1);
       }
-      const req = http.get(`http://${HOST}:${port}/api/board`, res => {
+      const req = http.get(`http://${LOCAL}:${port}/api/board`, res => {
         console.log('📡 Visualizer already active on port ' + port + '.');
         process.exit(0);
       });
@@ -991,8 +995,9 @@ function listen(port, retries = 30) {
   server.once('error', onError);
   server.listen(port, HOST, () => {
     server.removeListener('error', onError);
-    const url = `http://${HOST}:${port}/`;
+    const url = `http://${LOCAL}:${port}/`;
     console.log('📡 Board visualizer: ' + url);
+    if (HOST !== LOCAL) console.log('   Open to the linked machine(s) on port ' + port + ': ' + peerLink.peers().map(p => p.name).join(', ') + '.');
     console.log('   Ctrl+C to stop.');
     if (!process.argv.includes('--no-open')) {
       openAppWindow(url);
