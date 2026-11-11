@@ -783,10 +783,10 @@ const server = http.createServer((req, res) => {
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ build: BUILD }));
   }
   if (req.method === 'GET' && req.url === '/api/agents') {
-    return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({
-      antigravity: presence.current().antigravity,
-      claude: presence.current().claude
-    }));
+    presence.fresh().then(st => send(res, 200, 'application/json; charset=utf-8',
+      JSON.stringify({ antigravity: st.antigravity, claude: st.claude })))
+      .catch(e => send(res, 500, 'application/json; charset=utf-8', JSON.stringify({ error: e.message })));
+    return;
   }
   if (req.method === 'POST' && req.url.startsWith('/api/agents/launch')) {
     const q = new URL(req.url, 'http://x').searchParams;

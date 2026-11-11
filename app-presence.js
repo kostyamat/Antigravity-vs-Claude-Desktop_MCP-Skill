@@ -89,23 +89,32 @@ function launch(app, log) {
 
 // For a page that asks every few seconds: the last known state, refreshed in
 // the background so a request never waits on PowerShell.
-const cached = { antigravity: false, claude: false, at: 0, busy: false };
-async function refresh() {
-  if (cached.busy) return;
-  cached.busy = true;
-  try {
-    const [a, c] = await Promise.all([antigravityRunningAsync(), claudeDesktopRunningAsync()]);
+const cached = { antigravity: false, claude: false, at: 0 };
+// One look at a time; whoever asks while it runs waits for the same answer.
+let pending = null;
+function refresh() {
+  if (pending) return pending;
+  pending = Promise.all([antigravityRunningAsync(), claudeDesktopRunningAsync()]).then(([a, c]) => {
     if (a !== null) cached.antigravity = a;
     if (c !== null) cached.claude = c;
     cached.at = Date.now();
-  } finally { cached.busy = false; }
+  }).finally(() => { pending = null; });
+  return pending;
 }
+function snapshot() { return { antigravity: cached.antigravity, claude: cached.claude, checkedAt: cached.at }; }
+// Without waiting: the last known state (and a look in the background when it is old).
 function current() {
   if (Date.now() - cached.at > 4000) refresh();
-  return { antigravity: cached.antigravity, claude: cached.claude, checkedAt: cached.at };
+  return snapshot();
+}
+// Waiting for a look no older than two seconds. Handing out the last known state
+// instead showed a closed Antigravity as open for up to twenty seconds (owner, 11.11).
+async function fresh() {
+  if (Date.now() - cached.at > 2000) await refresh();
+  return snapshot();
 }
 
 module.exports = {
   hasMainProcess, claudeDesktopFromTasklist,
-  antigravityRunning, claudeDesktopRunning, launch, refresh, current, ANTIGRAVITY_EXE
+  antigravityRunning, claudeDesktopRunning, launch, refresh, current, fresh, ANTIGRAVITY_EXE
 };
