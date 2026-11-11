@@ -235,6 +235,21 @@ def window_state():
         return 0, None
 
 
+def window_mail(window):
+    """What waits on the board for this window, by the one rule in mailbox.js:
+    {"fresh", "cursor", "unread", "urgent", "last"} or None when it cannot be asked.
+    Counted here from the agent-wide cursor it was "1006 unread" for a window that
+    had nothing of its own: that cursor stops moving once windows keep theirs, and
+    the count took the whole board, other projects' rooms included."""
+    try:
+        out = subprocess.run(["node", os.path.join(_bridge_home(), "mailbox.js"), "brief", ME, window],
+                             capture_output=True, timeout=15)
+        data = json.loads(out.stdout.decode("utf-8", "replace") or "{}")
+        return data if "unread" in data else None
+    except Exception:
+        return None
+
+
 def previous_window(sid):
     """How the previous window of this project ended, when it went on after the slice
     was written: an account switch or a cut-off session leaves the slice behind, and the
@@ -585,11 +600,26 @@ def main():
     # must still leave the human with a brief.
     register_window(hook_session, window)
 
-    lines = ["agent-bridge: %s%s" % (
-        ("%d unread for %s" % (unread, ME)) if unread else "nothing new",
-        ("   P0 PENDING: %d" % p0) if p0 else "")]
-    for i, who, topic, head in reversed(last):
-        lines.append("  #%-4s %-9s %-20s %s" % (i, who, topic[:20], head[:66]))
+    # For a window the client names, the count and the digest are its own mail.
+    # The whole-board figures below remain only for a session with no window id.
+    mail = window_mail(window["window"]) if window and window.get("window") else None
+    if mail:
+        if mail["fresh"]:
+            state = "new window on the board, nothing read yet" + \
+                ((" - %d urgent for it from the last day" % mail["urgent"]) if mail["urgent"] else "")
+        elif mail["unread"]:
+            state = "%d unread for this window" % mail["unread"] + \
+                ((", %d of them urgent" % mail["urgent"]) if mail["urgent"] else "")
+        else:
+            state = "nothing new for this window"
+        lines = ["agent-bridge: %s%s" % (state, ("   P0 PENDING: %d" % p0) if p0 else "")]
+        lines += ["  " + l for l in mail["last"]]
+    else:
+        lines = ["agent-bridge: %s%s" % (
+            ("%d unread for %s" % (unread, ME)) if unread else "nothing new",
+            ("   P0 PENDING: %d" % p0) if p0 else "")]
+        for i, who, topic, head in reversed(last):
+            lines.append("  #%-4s %-9s %-20s %s" % (i, who, topic[:20], head[:66]))
 
     watch = "%s/watch_board.py" % os.path.dirname(DB).replace("\\", "/")
     # The interpreter is named outright rather than left as "python3". On Windows
@@ -618,16 +648,26 @@ def main():
     else:
         lines.append("No sessionId found: use the label list_sessions shows for this project,"
                      " the same one in the watchman and in every bridge call.")
-    lines += [
-        "First action (the watchman died with the previous session):",
-        '  Monitor({command: "%s", persistent: true})' % cmd_str,
-        "Before you go idle a hook checks the board for you; unread mail addressed to you is read first, not later.",
-    ]
+    if window:
+        # The background hook (bridge-hook.js watch) wakes this window by the same
+        # rule. A Monitor watchman beside it added nothing but wakes of its own: it
+        # expires every half hour, and each expiry and each restart cost the
+        # session a turn - in a day of measurements, every wake a window got from
+        # its watchman was one of those and none was mail.
+        lines.append("A hook watches the board for this window: it wakes you when mail for it or its project arrives, "
+                     "and checks again before you go idle. Do not start a watchman (Monitor) for the board.")
+    else:
+        lines += [
+            "First action (the watchman died with the previous session):",
+            '  Monitor({command: "%s", timeout_ms: 1800000}) - re-arm it when it expires' % cmd_str,
+            "Before you go idle a hook checks the board for you; unread mail addressed to you is read first, not later.",
+        ]
     if line:
         lines.append('Line of work «%s» (%d windows): load_session_context({line: "%s"}) before reading;'
                      " keep signing with your own sessionId." % (line, len(line_members), line))
     extra = (', canonicalId:"%s", client:"claude-code"' % window["window"]) if window else ""
-    lines.append('Then: get_messages({reader:"%s", sessionId:"%s"%s})' % (ME, sid, extra))
+    if not mail or mail["fresh"] or mail["unread"]:
+        lines.append('Then: get_messages({reader:"%s", sessionId:"%s"%s})' % (ME, sid, extra))
 
     lines += rooms_of_window(hook_session, window and window["window"])
     lines += previous_window(hook_session)

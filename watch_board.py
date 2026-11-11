@@ -2,14 +2,15 @@
 """
 🔔 BOARD WATCHMAN (SQLite) — continuous board monitoring for agent autonomy.
 
-Reads the SQLite database (agent_bridge.db) directly via sqlite3.
-Each stdout line = one alert, kept concise to highlight items requiring response.
+Polls the SQLite database (agent_bridge.db) for new messages and asks mailbox.js
+which of them are worth waking this window for. Each stdout line = one alert.
 """
 import argparse
 import ctypes
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import time
 
@@ -64,21 +65,6 @@ def get_messages_since(last_id):
         con.close()
 
 
-def room_members(room):
-    # The windows of one room. A message in a room is for them alone, P0 or not:
-    # waking every window for an urgent line in one conversation is the bug this
-    # exists to prevent.
-    con = sqlite3.connect(DB_PATH, timeout=5.0)
-    try:
-        cur = con.cursor()
-        cur.execute("SELECT card FROM room_members WHERE room = ?", (room,))
-        return {r[0] for r in cur.fetchall()}
-    except sqlite3.Error:
-        return None   # no rooms table yet: behave as before rooms
-    finally:
-        con.close()
-
-
 def detect_session(agent):
     """Best guess at which registered session this process belongs to.
 
@@ -111,85 +97,21 @@ def detect_session(agent):
     return ""
 
 
-def session_aliases(session_id, agent, lines=True):
-    """Every name this session answers to.
+def urgent_since(agent, window, after):
+    """What arrived after `after` that is worth waking this window for.
 
-    A window collects labels — the client issues a fresh one each time a session
-    starts — and a line of work collects windows, one per account. Resolution runs
-    to a fixed point over all of it, so the order the rows happen to be stored in
-    does not decide what closes.
-
-    lines=True   the addressee side: a message to the line, or to any window on
-                 it, is for us.
-    lines=False  the sender side: only our own window's names. A sibling window on
-                 the same line is somebody else posting, and discarding it as "our
-                 own replica" would hide exactly the conversation the line exists
-                 to carry.
+    The rule is mailbox.js — the same one the Stop hook and the background watcher
+    use. This file used to keep a copy of it, and the copy drifted: it woke a Claude
+    window for mail the owner sent to Gemini, and for every "done" posted to a room.
+    Raises when the rule cannot be asked, so the caller keeps its place on the board
+    and asks again.
     """
-    names = {session_id}
-    try:
-        con = sqlite3.connect(DB_PATH, timeout=3.0)
-        try:
-            cur = con.cursor()
-            try:
-                line_rows = cur.execute("SELECT member, line FROM line_members").fetchall()
-            except sqlite3.Error:
-                line_rows = []                # a board from before lines existed
-            line_names = {line for _, line in line_rows if line}
-            for _ in range(32):
-                before = len(names)
-                marks = list(names)
-                q = ",".join("?" * len(marks))
-                # Scoped to this agent: a label can be shared by a Claude session
-                # and a Gemini one, and they are not the same participant.
-                if lines:
-                    cur.execute(
-                        "SELECT session_id, canonical_id, custom_name FROM sessions "
-                        "WHERE lower(agent) = lower(?) AND "
-                        "(session_id IN (%s) OR canonical_id IN (%s) OR custom_name IN (%s))" % (q, q, q),
-                        [agent.strip()] + marks + marks + marks)
-                else:
-                    cur.execute(
-                        "SELECT session_id, canonical_id, '' FROM sessions "
-                        "WHERE lower(agent) = lower(?) AND (session_id IN (%s) OR canonical_id IN (%s))" % (q, q),
-                        [agent.strip()] + marks + marks)
-                for sid, canon, cname in cur.fetchall():
-                    for value in (sid, canon, cname):
-                        if value and value.strip():
-                            names.add(value.strip())
-                marks = list(names)
-                q = ",".join("?" * len(marks))
-                cur.execute(
-                    "SELECT alias, canonical_id FROM session_aliases "
-                    "WHERE alias IN (%s) OR canonical_id IN (%s)" % (q, q),
-                    marks + marks)
-                for alias, canon in cur.fetchall():
-                    if not lines and (alias in line_names or canon in line_names):
-                        continue              # line membership kept in the alias table
-                    for value in (alias, canon):
-                        if value and value.strip():
-                            names.add(value.strip())
-                if lines:
-                    for member, line in line_rows:
-                        if member in names or line in names:
-                            names.add(member)
-                            names.add(line)
-                if len(names) == before:
-                    break
-        finally:
-            con.close()
-    except Exception:
-        pass
-    return names
-
-
-def names_of(session_id, window_id, agent, lines):
-    """The union of what the label and the window each resolve to."""
-    names = set()
-    for seed in (session_id, window_id):
-        if seed:
-            names |= session_aliases(seed, agent, lines=lines)
-    return names
+    out = subprocess.run(["node", os.path.join(_bridge_home(), "mailbox.js"), "urgent", agent, window, str(after)],
+                         capture_output=True, timeout=30)
+    data = json.loads(out.stdout.decode("utf-8", "replace") or "{}")
+    if "list" not in data:
+        raise RuntimeError(data.get("error") or "mailbox.js gave no list")
+    return data["list"]
 
 
 def parent_alive(pid):
@@ -255,19 +177,17 @@ def main():
     args, _ = parser.parse_known_args()
 
     my_session = args.session.strip()
-    my_agent = args.agent.strip().lower()
     if not my_session:
         my_session = detect_session(args.agent)
 
     parent_pid = os.getppid()
     _announce(args.window)
-    my_names = names_of(my_session, args.window, args.agent, True)
-    my_window = names_of(my_session, args.window, args.agent, False)
+    # The window id when the hook passed it; a label resolves to the same window.
+    me = args.window.strip() or my_session
     last = None
     misses = 0
     now = time.time()
     last_identity_try = now
-    last_alias_refresh = now
     last_heartbeat = now
     sess_label = (" [session: %s]" % my_session) if my_session else " [session unknown]"
     while True:
@@ -279,98 +199,49 @@ def main():
         # Identity is worth asking for again. A session enters the registry the
         # moment it first writes to the board; from then on this watchman can
         # filter properly instead of showing the whole machine.
-        if not my_session and now - last_identity_try >= IDENTITY_RETRY_SEC:
+        if not me and now - last_identity_try >= IDENTITY_RETRY_SEC:
             last_identity_try = now
             found = detect_session(args.agent)
             if found:
-                my_session = found
+                me = my_session = found
                 print("watchman: session recognised as %s — filtering by session is now on"
                       % my_session, flush=True)
-                my_names = names_of(my_session, args.window, args.agent, True)
-                my_window = names_of(my_session, args.window, args.agent, False)
-
-        # Labels accumulate: a window keeps the one it was given today and every
-        # one it was given before. Re-reading them costs one query a minute and
-        # is what keeps yesterday's address working.
-        if my_session and now - last_alias_refresh >= IDENTITY_RETRY_SEC:
-            last_alias_refresh = now
-            my_names = names_of(my_session, args.window, args.agent, True)
-            my_window = names_of(my_session, args.window, args.agent, False)
-
 
         try:
             top = get_max_id()
             if last is None:
                 last = top
-                print("watchman listening at #%d%s" % (top, sess_label), flush=True)
+                # To stderr: every stdout line wakes the session, and "I have started"
+                # is not news — the Monitor call that started this already said so.
+                print("watchman listening at #%d%s" % (top, sess_label), file=sys.stderr, flush=True)
             elif top > last:
-                rows = get_messages_since(last)
-                for r in rows:
-                    i, who, from_sess, to_agent, to_sess, pri, status, topic, body, room = r
-                    who = who or "?"
-                    from_sess = (from_sess or "").strip()
-                    to_sess = (to_sess or "").strip()
-
-                    # Identity is the session, never the agent name. Several
-                    # sessions of one agent run on this machine at once, so
-                    # "from Claude" says nothing about whose message it is.
-                    # Matching on the name alone silenced every other Claude
-                    # session along with this one's own replicas, and a reply
-                    # addressed to this very session lay unseen for hours.
-                    if my_session:
-                        if who.lower().startswith(my_agent) and from_sess in my_window:
-                            continue
-                        # Addressed to one specific other session: not ours.
-                        if to_sess and to_sess != "all" and to_sess not in my_names:
-                            continue
-                        # A plain broadcast from another agent is not an
-                        # interruption. One remark from the owner drew seven
-                        # agreeing replies from agent sessions in a couple of
-                        # minutes, and every one of them landed here as a wake.
-                        # Broadcasts wait to be read on the next get_messages;
-                        # P0 still comes through, and so does anything the human
-                        # writes, because he posts rarely and missing him is the
-                        # failure this watchman exists to prevent.
-                        # The human is recognised by his session, not by the
-                        # sender name: some posts carry a session id in the name
-                        # column instead of an agent, and treating those as human
-                        # let every one of them through.
-                        broadcast = (not to_sess) or to_sess == "all"
-                        from_human = from_sess.lower().startswith("human")
-                        # In a room, the room is the audience. A window outside
-                        # it is not woken, whoever wrote and however urgent.
-                        if broadcast and room:
-                            members = room_members(room)
-                            if members is not None and not (members & (set(my_window) | set(my_names))):
-                                continue
-                            # Inside the room: the owner always, an agent when it
-                            # asks, is stuck, answers or finishes — not for notes.
-                            if not from_human and pri != "P0" and \
-                                    (status or "") not in ("question", "blocked", "answer", "done"):
-                                continue
-                        elif broadcast and not from_human and pri != "P0":
-                            continue
+                if me:
+                    rows = urgent_since(args.agent, me, last)
+                else:
                     # Session unknown: show everything, directed messages
                     # included. Filtering here would hide exactly the orders
                     # meant for this session, and a watchman that misses its
                     # own orders is worse than one that shows a neighbour's.
-
-                    pri = pri or "normal"
+                    rows = [{"id": r[0], "fromSession": r[2] or "", "toSession": r[4] or "", "priority": r[5],
+                             "status": r[6], "topic": r[7], "message": (r[8] or "").replace("\n", " ")[:150]}
+                            for r in get_messages_since(last)]
+                for m in rows:
+                    pri = m.get("priority") or "normal"
                     mark = "🚨 P0" if pri == "P0" else ("· " + pri)
-                    clean_body = (body or "").replace("\n", " ")[:150]
+                    to_sess = (m.get("toSession") or "").strip()
                     tgt = (" → [%s]" % to_sess) if to_sess else ""
                     # The owner is answered on the board, in the room he wrote in.
-                    owner = " · OWNER — ack first in one line (taken / preparing the answer), then the result; replyTo #%d" % i \
-                        if from_sess.lower().startswith("human") else ""
+                    owner = " · OWNER — ack first in one line (taken / preparing the answer), then the result; replyTo #%d" % m["id"] \
+                        if (m.get("fromSession") or "").lower().startswith("human") else ""
                     print("%s #%d [%s] %s%s%s — %s"
-                          % (mark, i, status or "-", topic or "", tgt, owner, clean_body),
+                          % (mark, m["id"], m.get("status") or "-", m.get("topic") or "", tgt, owner, m.get("message") or ""),
                           flush=True)
                 last = top
             misses = 0
         except Exception as e:
             misses += 1
             if misses in (5, 30):
-                print("watchman: SQLite read error for %d consecutive attempts (%s)"
+                print("watchman: the board could not be read for %d consecutive attempts (%s)"
                       % (misses, type(e).__name__), flush=True)
 
         # Every line costs the agent context, so the heartbeat speaks only when
@@ -378,7 +249,7 @@ def main():
         # board it cannot read. A healthy watchman stays quiet.
         if time.time() - last_heartbeat >= HEARTBEAT_SEC:
             last_heartbeat = time.time()
-            if not my_session:
+            if not me:
                 print("watchman alive, board at #%s, session still unknown — a message addressed "
                       "to this session cannot be told from a neighbour's; restart with --session <id>"
                       % (last if last is not None else "?"), flush=True)
