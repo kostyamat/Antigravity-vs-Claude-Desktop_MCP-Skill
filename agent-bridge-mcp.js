@@ -20,6 +20,7 @@ const os = require('os');
 const readline = require('readline');
 const { spawn } = require('child_process');
 const bridgeDb = require('./bridge-db');
+const projectSlice = require('./project-slice');
 const cardsLib = require('./cards');
 const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
 const { workflowHint } = require('./workflow-hint');
@@ -848,9 +849,9 @@ const TOOLS = [
   {
     name: 'save_session_context',
     description:
-      'Save a session context snapshot — safeguards against context loss or window reset. ' +
-      'Snapshots are stored in docs/sessions/ and are never auto-archived. ' +
-      'Update at major work milestones. Restore using `load_session_context`.',
+      'Retired: it stores nothing and answers with where the state belongs. The state of the work has one home, ' +
+      'the slice .agents/HANDOFF.md in the project folder (rewritten at every milestone, then committed); a second ' +
+      'copy on the board drifted away from it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -870,15 +871,16 @@ const TOOLS = [
   {
     name: 'load_session_context',
     description:
-      'Load a session context snapshot. Use when resuming work after a restart or context compaction. ' +
-      'Omit `sessionId` to list all available saved snapshots. Pass `line` to pick a line of work up from ' +
-      'whichever member saved last — that is how context crosses from one account to the other.',
+      'Read a project\'s slice — .agents/HANDOFF.md in its folder, the one place the state of its work is kept. ' +
+      'Pass `line` (a project folder or line of work) or `sessionId` (any window of the project). That file is how ' +
+      'the state crosses from one account or window to the other. Only when a project has no slice does it fall ' +
+      'back to a snapshot saved before slices became the only state, marked as old.',
     inputSchema: {
       type: 'object',
       properties: {
         agent: { type: 'string', description: '"Claude" or "Gemini".' },
-        sessionId: { type: 'string', description: 'Session identifier to restore. Omit to list snapshots.' },
-        line: { type: 'string', description: 'Line of work (or any member of one): restores the freshest snapshot saved by any member.' }
+        sessionId: { type: 'string', description: 'Any window of the project whose slice you want. Omit both to list old snapshots.' },
+        line: { type: 'string', description: 'The project: its folder, its line of work, or any member of one.' }
       }
     }
   },
@@ -2010,8 +2012,7 @@ function doFindSession(id, a) {
   }
   if (!hits.length) {
     return ok(id, `No sessions found for query "${a.query}".\n` +
-      'Topic has not been investigated yet — you may open a new session/branch, ' +
-      'and register it with `save_session_context`.');
+      'Topic has not been investigated yet — you may open a new session/branch.');
   }
   hits.sort((x, y) => y.score - x.score || String(y.r.lastSeen || '').localeCompare(String(x.r.lastSeen || '')));
   const rows = hits.slice(0, 8).map(h =>
@@ -2030,81 +2031,38 @@ function ctxFile(agent, sessionId) {
 }
 
 function doSaveCtx(id, a) {
-  const agent = normAgent(a.agent);
-  if (!agent) return fail(id, 'save_session_context: `agent` is required.');
-  const sid = String(a.sessionId || '').trim();
-  if (!sid) return fail(id, 'save_session_context: `sessionId` is required.');
-  const summary = String(a.summary || '').trim();
-  if (!summary) return fail(id, 'save_session_context: empty `summary` — snapshot without summary is unusable.');
-
-  ensureDir(SESSIONS_DIR);
-  const file = ctxFile(agent, sid);
-  const now = new Date().toISOString();
-
-  if (fs.existsSync(file)) {
-    ensureDir(DOCS_ARCHIVE);
-    const stamp = now.replace(/[:.]/g, '-');
-    const dest = path.join(DOCS_ARCHIVE, `${path.basename(file, '.md')}__${stamp}.md`);
-    try { fs.copyFileSync(file, dest); } catch (e) { logError(`ctx archive: ${e.message}`); }
-  }
-
-  const parts = [];
-  parts.push(`# 💾 Session Context Snapshot — ${agent} / ${sid}`);
-  parts.push('');
-  parts.push(`> Updated: ${now}`);
-  parts.push('> This file is a context safeguard. If a session loses memory or is re-instantiated,');
-  parts.push('> read this file FIRST to resume work without starting over.');
-  parts.push('');
-  if (a.project) { parts.push('## 📁 Project'); parts.push(String(a.project)); parts.push(''); }
-  parts.push('## 🧭 Scope & Current Progress');
-  parts.push(summary);
-  parts.push('');
-  if (a.decisions) { parts.push('## ⚖️ Architectural Decisions & Constraints (Do Not Overturn)'); parts.push(String(a.decisions)); parts.push(''); }
-  if (a.openTasks) { parts.push('## 📋 Remaining Tasks'); parts.push(String(a.openTasks)); parts.push(''); }
-  if (a.paths) { parts.push('## 🗂️ Key Paths & Files'); parts.push(String(a.paths)); parts.push(''); }
-  if (a.gotchas) { parts.push('## 🪤 Pitfalls & Disproven Hypotheses'); parts.push(String(a.gotchas)); parts.push(''); }
-
-  fs.writeFileSync(file, parts.join('\n'), 'utf8');
-
-  try {
-    const reg = readReg();
-    const key = sessKey(agent, sid);
-    const r = reg[key] || { agent, sessionId: sid, topics: [], contacts: {}, firstSeen: now };
-    r.lastSeen = now;
-    r.summary = summary.split(/\r?\n/)[0].slice(0, 200);
-    r.project = a.project || r.project || '';
-    r.knows = [a.decisions || '', a.gotchas || ''].join(' ').slice(0, 500);
-    r.hasSnapshot = true;
-    if (a.topics) {
-      String(a.topics).split(/[,;]+/).map(t => t.trim()).filter(Boolean)
-        .forEach(t => { if (!r.topics.includes(t)) r.topics.push(t); });
-    }
-    reg[key] = r;
-    writeReg(reg);
-  } catch (e) { logError(`reg from ctx: ${e.message}`); }
-
-  const missing = [];
-  if (!a.decisions) missing.push('`decisions`');
-  if (!a.openTasks) missing.push('`openTasks`');
-  if (!a.paths) missing.push('`paths`');
-  // The usual reason fields go missing is not an agent leaving them out: a literal
-  // "<decisions>" inside the text of one field swallows everything after it, because
-  // the call itself is parsed as markup. The text still reaches the file, merged into
-  // the field before it — so say where to look instead of only that something is gone.
-  const angle = ['summary', 'decisions', 'openTasks', 'paths', 'gotchas']
-    .some(k => typeof a[k] === 'string' && a[k].includes('<'));
-  ok(id, `💾 Snapshot saved: ${file}` +
-        (missing.length ? `\n⚠️ Missing fields: ${missing.join(', ')} — context restoration may be incomplete.` : '') +
-        (missing.length && angle
-          ? '\n   Likely cause: a "<" inside a field value (a literal <decisions> tag, say) merged the fields after it ' +
-            'into that one. Their text is still in the file — reread it, and keep angle brackets out of snapshot text.'
-          : ''));
+  // Nothing is stored (project-slice.js says why). The answer names the file to
+  // write instead, so the agent that still reaches for this tool is not left guessing.
+  const s = projectSlice.find(bridgeDb, String(a.sessionId || '').trim());
+  fail(id, 'save_session_context stores nothing any more: the state of the work has one home, the project\'s slice, ' +
+    'and a second copy on the board drifted away from it. ' +
+    (s.folder ? `Rewrite ${s.file}` : 'Rewrite .agents/HANDOFF.md in the project folder') +
+    ' (date and who, what is installed, done but uncommitted, in progress with the exact next step, questions for the owner) and commit.' +
+    (s.folder && !s.git ? `\n${s.folder} is not a git repository yet: offer the owner \`git init\` first — the slice and the commits are the history.` : ''));
 }
 
 function doLoadCtx(id, a) {
   ensureDir(SESSIONS_DIR);
   const agent = normAgent(a.agent);
   const sid = String(a.sessionId || '').trim();
+
+  // The slice first: it is the state. What follows it is the old store, kept
+  // readable so nothing saved there is lost, and labelled so nobody trusts it
+  // over the project's own files.
+  let old = '';
+  const slice = projectSlice.find(bridgeDb, String(a.line || sid).trim());
+  if (slice.text) {
+    return ok(id, `📄 Slice of ${slice.folder} — ${slice.file}, written ${ago(new Date(slice.mtime).toISOString())}.` +
+      (slice.git ? '' : '\n⚠️ This folder is not a git repository: offer the owner `git init`, the commits are the history.') +
+      `\n\n───\n\n${slice.text}`);
+  }
+  if (slice.folder) {
+    old = `📄 ${slice.folder} has no slice yet (${slice.file}). Write one at the first milestone` +
+      (slice.git ? '.' : ', and offer the owner `git init` — this folder is not a git repository.') +
+      '\nBelow is what the old snapshot store holds; it was saved before slices became the only state and may be behind.\n\n';
+  } else if (a.line || sid) {
+    old = '⚠️ No project folder behind this name, so no slice to read. Below is the old snapshot store; it may be behind.\n\n';
+  }
 
   // A session does not survive a change of account, so a line carries its
   // context: the freshest snapshot any member saved is the one to pick up from.
@@ -2113,7 +2071,7 @@ function doLoadCtx(id, a) {
     const line = bridgeDb.lineMembers(asked).length ? asked : bridgeDb.lineOf(asked);
     const members = line ? bridgeDb.lineMembers(line) : [];
     if (!members.length) {
-      return fail(id, `load_session_context: "${asked}" is neither a line nor a member of one. See list_sessions.`);
+      return fail(id, `load_session_context: "${asked}" is neither a project folder, a line, nor a member of one. See list_sessions.`);
     }
     let files = [];
     try { files = fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.md')); } catch (_) {}
@@ -2125,7 +2083,7 @@ function doLoadCtx(id, a) {
       try { found.push({ f, member: hit.member, mtime: fs.statSync(path.join(SESSIONS_DIR, f)).mtimeMs }); } catch (_) {}
     }
     if (!found.length) {
-      return ok(id, `🧵 Line «${line}» has ${members.length} members, and none of them has saved a snapshot yet:\n` +
+      return ok(id, old + `🧵 Line «${line}» has ${members.length} members, and none of them has saved a snapshot yet:\n` +
         members.map(m => `   · ${m.member}`).join('\n'));
     }
     found.sort((x, y) => y.mtime - x.mtime);
@@ -2137,29 +2095,30 @@ function doLoadCtx(id, a) {
       return fail(id, `load_session_context: failed to read ${top.f}: ${e.message}`);
     }
     const older = found.slice(1).map(x => `   · ${x.member} — ${ago(new Date(x.mtime).toISOString())}`).join('\n');
-    return ok(id, `🧵 Line «${line}» — freshest snapshot is from ${top.member}, saved ${ago(new Date(top.mtime).toISOString())}.` +
+    return ok(id, old + `🧵 Line «${line}» — freshest snapshot is from ${top.member}, saved ${ago(new Date(top.mtime).toISOString())}.` +
       (older ? `\nOlder snapshots on the same line:\n${older}` : '') + `\n\n───\n\n${text}`);
   }
 
   if (!sid) {
     let files = [];
     try { files = fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.md')); } catch (e) { /* */ }
-    if (!files.length) return ok(id, 'No saved session context snapshots found.');
+    if (!files.length) return ok(id, old + 'No old session context snapshots found.');
     const lines = files.map(f => {
       let when = '';
       try { when = ago(fs.statSync(path.join(SESSIONS_DIR, f)).mtime.toISOString()); } catch (e) { /* */ }
       return `   ${f}${when ? `  ·  updated ${when}` : ''}`;
     });
-    return ok(id, `💾 Saved session context snapshots (${files.length}):\n${lines.join('\n')}\n\n` +
+    return ok(id, old + `💾 Old session context snapshots (${files.length}):\n${lines.join('\n')}\n\n` +
       'To load: load_session_context({agent:"…", sessionId:"…"})');
   }
 
   const file = ctxFile(agent, sid);
   if (!fs.existsSync(file)) {
-    return fail(id, `load_session_context: snapshot not found for ${agent}/${sid}. Call without sessionId to list snapshots.`);
+    return fail(id, `load_session_context: ${slice.folder ? `${slice.folder} has no slice yet (${slice.file})` : `"${sid}" leads to no project folder`}` +
+      `, and the old snapshot store has nothing for ${agent}/${sid}.`);
   }
   try {
-    ok(id, fs.readFileSync(file, 'utf8'));
+    ok(id, old + fs.readFileSync(file, 'utf8'));
   } catch (e) {
     fail(id, `load_session_context: failed to read ${file}: ${e.message}`);
   }

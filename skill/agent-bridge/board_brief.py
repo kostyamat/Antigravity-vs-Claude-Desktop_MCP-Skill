@@ -197,13 +197,14 @@ def workflow_hint(start):
     An owner who said no leaves .no-agent-workflow in the project root, and is not
     asked again.
     """
-    d = os.path.abspath(start or os.getcwd())
+    here = os.path.abspath(start or os.getcwd())
+    d = here
     while True:
         if os.path.exists(os.path.join(d, ".git")):
             break
         parent = os.path.dirname(d)
         if parent == d:
-            return None
+            return no_git_hint(here)
         d = parent
     if os.path.exists(os.path.join(d, ".no-agent-workflow")):
         return None
@@ -215,6 +216,30 @@ def workflow_hint(start):
             "the project up by it (.agents/AGENTS.md, HANDOFF.md, TODO.md, DEBT.md; move scattered notes "
             "there). Do it only after he agrees. If he declines, create an empty .no-agent-workflow file "
             "in the project root so the offer is not repeated." % d)
+
+
+def no_git_hint(folder):
+    """A line asking the agent to offer `git init`, or None.
+
+    Every project that is opened is to have git (owner, 11.11.2026): the slice and the
+    commits are the only history, and a folder without git has neither. A window that
+    landed where no project was chosen - a drive root, the home folder, a system
+    folder - is not a project, and nobody is asked to turn it into one.
+    """
+    low = folder.replace("\\", "/").rstrip("/").lower()
+    if len(low) <= 2 or os.path.exists(os.path.join(folder, ".no-agent-workflow")):
+        return None
+    apart = [os.path.expanduser("~")] + [os.environ.get(k, "") for k in
+             ("SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData", "TEMP")]
+    for a in apart:
+        a = a.replace("\\", "/").rstrip("/").lower()
+        if a and (low == a or (a != os.path.expanduser("~").replace("\\", "/").rstrip("/").lower() and low.startswith(a + "/"))):
+            return None
+    return ("This folder (%s) is not a git repository, so its work has no history and no slice that survives "
+            "this window. If it is a project, tell the owner so in one line and offer `git init` (with a "
+            ".gitignore for build output, secrets and any repository nested below it) and the agent-workflow "
+            "layout (.agents/AGENTS.md, HANDOFF.md). Do it only after he agrees. If he declines, create an "
+            "empty .no-agent-workflow file there so the offer is not repeated." % folder)
 
 
 def window_state():
@@ -663,8 +688,14 @@ def main():
             "Before you go idle a hook checks the board for you; unread mail addressed to you is read first, not later.",
         ]
     if line:
-        lines.append('Line of work «%s» (%d windows): load_session_context({line: "%s"}) before reading;'
-                     " keep signing with your own sessionId." % (line, len(line_members), line))
+        # The state of the work is the project's slice and nothing on the board.
+        slice_file = os.path.join(os.getcwd(), ".agents", "HANDOFF.md")
+        if os.path.exists(slice_file):
+            lines.append("Project «%s» (%d windows): its state is the slice .agents/HANDOFF.md - "
+                         "read it first if it did not arrive by import." % (line, len(line_members)))
+        else:
+            lines.append("Project «%s» (%d windows) has no slice (.agents/HANDOFF.md) yet: "
+                         "write one at the first milestone." % (line, len(line_members)))
     extra = (', canonicalId:"%s", client:"claude-code"' % window["window"]) if window else ""
     if not mail or mail["fresh"] or mail["unread"]:
         lines.append('Then: get_messages({reader:"%s", sessionId:"%s"%s})' % (ME, sid, extra))
