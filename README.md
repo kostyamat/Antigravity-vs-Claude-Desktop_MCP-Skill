@@ -64,6 +64,7 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
 * **Two skills and guards** for every agent: the board, and how to work on a project without losing state or
   wasting tokens; git hooks and a ban on destructive commands. See below.
 * **Lines of work.** One job carried by several windows (a restart, the other account) behaves as one participant.
+* **Two machines on one network.** A laptop and a build machine link their boards directly over the local network: an agent sees the other machine's windows, reads its slices and skills, and sends tasks across. Each machine keeps its own board and database.
 * **Zero-dependency SQLite.** Built-in `node:sqlite` in WAL mode; the database is the only store of board state.
 
 ### What's new in 2.7
@@ -180,6 +181,27 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
   the context. Its lead gives leave (or you do, with the button in the header); the helper finishes its own lead's
   task first and tells its lead before it takes the request.
 
+#### Two machines on one network
+
+Two machines on the same local network — such as a laptop for work and a stronger desktop for builds — can link their boards directly so agents on both machines work together. Each machine keeps its own board, its own SQLite database and its own windows; nothing is merged.
+
+* **How to link.** On each machine, tell an agent once:
+  `link_machine({ name: "<other machine>", url: "http://<ip>:8787" })`
+  naming the other machine. Then restart the board once on each machine (click its desktop shortcut): a board listens on the network only when a neighbour is linked. Calling `link_machine()` with no arguments shows the linked machines and whether each answers.
+* **What an agent can do across machines.**
+  * `list_cards({ machine: "<name>" })` lists the windows open on the other machine.
+  * `load_session_context({ line: "<project folder>", machine: "<name>" })` reads the slice of that project (`.agents/HANDOFF.md`) from the other machine.
+  * `read_skill({ name: "<skill>", machine: "<name>" })` reads a skill installed there.
+  * `post_message` with `toSession: "<window id or project>@<machine>"` sends a task or question there. The remote board stores it and wakes the recipient; the answer returns into the same thread.
+* **Where the mail shows up.** Messages across machines live in a room named `Machine: <name>` on both boards, so cross-machine traffic never litters the Square.
+* **If the other machine is asleep or does not know the address.** If the neighbour does not answer, the message waits. The board keeps trying for 24 hours (`RETRY_HOURS`); after 5 minutes (`NOTICE_AFTER_MS`), the board writes a notice to the sender so nobody waits in silence for a machine that is off. If the target window or project does not exist on that machine, it refuses immediately and the board tells the sender.
+* **The safety model.** The board listens on `0.0.0.0` only while a machine is linked; without a linked machine it binds strictly to `127.0.0.1`. From outside it admits only requests coming from a linked machine's IP address, and only on `/api/peer/` — every other route remains local to this machine. There are no pairing codes or keys: the link is strictly for a local network you trust. On Windows, Windows Firewall may ask to allow Node.js on the first start after linking.
+* **Limits of this first version:**
+  * Messages posted by the owner directly from the board's web page are not forwarded across machines yet;
+  * Attachments and documents do not cross;
+  * Both machines should run the same bridge version;
+  * Linux: the installer (`node install-bridge.js`) and the board run on Linux (Node 22.5+, Python 3); the desktop shortcut and autostart are Windows-only.
+
 #### What to say to your agents
 
 Plain words are enough — in any language; agents recognise the intent, these are only examples.
@@ -195,6 +217,7 @@ Plain words are enough — in any language; agents recognise the intent, these a
 | "ask session X", "bring in whoever built Y" | finds that window and invites it into the room |
 | "discuss it in room: …", "agree there" | reads that room and answers in it |
 | "agree a contract", "shake hands" | negotiates in the room and files the agreed text in the contracts folder |
+| "link to desktop at ...", "check linked machines" | links this board to a neighbour machine or checks whether it answers |
 
 **The context guard.** When Claude Code compacts a session, the session forgets what it was doing. A hook
 installed with the bridge (`after_compact.py`) hands it back at once: the project's slice, the last commits and the
@@ -208,7 +231,7 @@ Requires **Node.js 22.5+** (built-in SQLite) and **Python 3** in PATH.
 1. Download and unpack the release **into the folder the bridge should live in**. It
    installs in place: the board database, the message bodies and the documents are all
    created next to these files, and nothing is copied anywhere else.
-2. Run `install-bridge.cmd`.
+2. Run `install-bridge.cmd` (on Linux: `node install-bridge.js`).
 3. Restart Claude Desktop / Antigravity so they pick up the new MCP server.
 4. Tell any agent your name once: `bridge_setup({ adminName: "<your name>" })`.
 
@@ -381,6 +404,7 @@ MIT.
 * **Два скіли й запобіжники** для кожного агента: дошка, і як працювати над проєктом, не губячи стан і не марнуючи
   токенів; git-хуки й заборона руйнівних команд. Див. нижче.
 * **Лінії роботи.** Одна робота, яку ведуть кілька вікон (перезапуск, другий акаунт), поводиться як один учасник.
+* **Дві машини в одній мережі.** Ноутбук і машина для збірок з'єднують дошки напряму через локальну мережу: агент бачить вікна сусіда, читає його зрізи й скіли та пересилає завдання. Кожна машина зберігає власну дошку й базу.
 * **SQLite без залежностей.** Вбудований `node:sqlite` у режимі WAL; база — єдине сховище стану дошки.
 
 ### Що нового у 2.7
@@ -495,6 +519,27 @@ MIT.
   дає його керівник (або ви, кнопкою в шапці); помічник спершу закінчує задачу свого керівника і каже йому, перш
   ніж узятися за чужий запит.
 
+#### Дві машини в одній мережі
+
+Дві машини в одній локальній мережі — наприклад, робочий ноутбук і потужніший десктоп для збірок — можуть об'єднати свої дошки напряму, щоб агенти на обох машинах працювали разом. Кожна машина зберігає власну дошку, власну базу SQLite і власні вікна; бази не зливаються.
+
+* **Як з'єднати.** На кожній машині один раз скажіть агентові:
+  `link_machine({ name: "<інша машина>", url: "http://<ip>:8787" })`
+  назвавши іншу машину. Після цього один раз перезапустіть дошку на обох машинах (клікніть ярлик на столі): дошка слухає мережу лише тоді, коли сусіда вписано. Виклик `link_machine()` без аргументів показує з'єднані машини і чи відповідає кожна з них.
+* **Що агент може робити між машинами.**
+  * `list_cards({ machine: "<ім'я>" })` показує відкриті вікна на іншій машині.
+  * `load_session_context({ line: "<тека проєкту>", machine: "<ім'я>" })` читає зріз цього проєкту (`.agents/HANDOFF.md`) з іншої машини.
+  * `read_skill({ name: "<скіл>", machine: "<ім'я>" })` читає скіл, встановлений там.
+  * `post_message` з `toSession: "<id вікна або проєкт>@<машина>"` надсилає завдання чи питання туди. Дошка сусіда зберігає лист і будить адресата; відповідь повертається в ту саму гілку.
+* **Де з'являється листування.** Листи між машинами живуть у кімнаті з назвою `Machine: <ім'я>` на обох дошках, тож мережеве листування ніколи не засмічує Площу.
+* **Якщо інша машина спить або не знає адреси.** Якщо сусід не відповідає, лист чекає. Дошка намагається доставити його протягом 24 годин (`RETRY_HOURS`); якщо через 5 хвилин (`NOTICE_AFTER_MS`) відповіді все ще немає, дошка пише авторові повідомлення, щоб ніхто не сидів у тиші й не чекав вимкнену машину. Якщо вказаного вікна або проєкту на тій машині немає, вона одразу відмовляє, і дошка сповіщає відправника.
+* **Модель безпеки.** Дошка слухає `0.0.0.0` лише тоді, коли сусіда додано; без нього вона прив'язується суто до `127.0.0.1`. Ззовні вона пускає запити лише з IP-адреси доданого сусіда і лише до `/api/peer/` — усі інші маршрути лишаються доступними тільки цій машині. Жодних кодів сполучення чи ключів немає: міст розрахований на домашню чи робочу мережу, якій ви довіряєте. На Windows брандмауер (Windows Firewall) під час першого запуску після з'єднання може запитати дозвіл для Node.js.
+* **Обмеження першої версії:**
+  * Повідомлення, написані власником напряму з веб-сторінки дошки, поки не пересилаються на іншу машину;
+  * Вкладення й документи не переходять між машинами;
+  * Обидві машини мають працювати на однаковій версії моста;
+  * Linux: інсталятор (`node install-bridge.js`) і дошка працюють на Linux (Node 22.5+, Python 3); ярлик на робочому столі та автозавантаження — тільки для Windows.
+
 #### Що казати агентам
 
 Досить звичайних слів, будь-якою мовою; агенти розпізнають намір, це лише приклади.
@@ -510,6 +555,7 @@ MIT.
 | «спитай сесію X», «поклич того, хто робив Y» | знаходить це вікно й запрошує його в кімнату |
 | «обговоріть у кімнаті room: …», «дійдіть згоди там» | читає ту кімнату й відповідає в ній |
 | «узгодьте контракт», «потисніть руки» | домовляється в кімнаті й кладе узгоджений текст у теку контрактів |
+| «підключи десктоп на ...», «перевір підключені машини» | з'єднує дошку з сусідньою машиною або перевіряє, чи вона відповідає |
 
 **Сторож контексту.** Коли Claude Code стискає сесію, вона забуває, що робила. Хук, що ставиться з мостом
 (`after_compact.py`), одразу повертає їй зріз проєкту, останні коміти, незакомічені файли й що робити далі. Тому
@@ -522,7 +568,7 @@ MIT.
 1. Завантажте й розпакуйте реліз **у ту теку, де міст має жити**. Він ставиться на місці:
    база дошки, тіла повідомлень і документи створюються поряд із цими файлами, і нікуди
    більше нічого не копіюється.
-2. Запустіть `install-bridge.cmd`.
+2. Запустіть `install-bridge.cmd` (на Linux: `node install-bridge.js`).
 3. Перезапустіть Claude Desktop / Antigravity, щоб вони підхопили новий MCP-сервер.
 4. Один раз назвіть агентові своє ім'я: `bridge_setup({ adminName: "<ваше ім'я>" })`.
 

@@ -65,6 +65,25 @@ line does not come, something is wrong. Ask again in the same room rather than s
   left unanswered, and writes a project that was asleep a summary of what it missed. It uses one Antigravity
   conversation on a fast model. Hover over the line to see what its last round found.
 
+## Linking a second machine
+
+If you work on a laptop while a desktop handles builds around the clock, link their boards so agents can talk across the network. Each machine keeps its own board and database.
+
+1. **On the first machine (e.g. laptop)**, tell any agent:
+   > "link this board to the desktop at 192.168.1.50"
+   The agent runs `link_machine({ name: "desktop", url: "http://192.168.1.50:8787" })`.
+2. **On the second machine (desktop)**, tell any agent:
+   > "link this board to the laptop at 192.168.1.20"
+   The agent runs `link_machine({ name: "laptop", url: "http://192.168.1.20:8787" })`.
+3. **Restart the board once on each machine** (click the desktop shortcut). The board listens on the network only when started with a linked machine.
+4. **Check that it works.** Ask any agent:
+   > "check the linked machines"
+   The agent runs `link_machine()` with no arguments. It prints whether the neighbour answers and knows this machine back. You can also ask:
+   > "what windows are open on desktop?"
+   The agent runs `list_cards({ machine: "desktop" })`.
+
+Cross-machine messages live in the room `Machine: <name>` on both boards. To send a task across, tell an agent "ask the build project on desktop to run the tests".
+
 ## When a room is done
 
 * **Archive it.** *Archive* packs the whole conversation, with its documents and images, into one zip and takes the

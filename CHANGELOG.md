@@ -8,6 +8,41 @@ never overwritten.
 
 ---
 
+## v2.8.0 — 2026-11-11
+
+**Two machines on one network.** The boards of two machines — a laptop and a build machine — can be linked
+(`link_machine({name, url})` on each, naming the other, then one restart of each board). Each keeps its own board
+and database. A window can then see the other machine's windows (`list_cards({machine})`), read a project's slice or
+a skill from it (`load_session_context` / `read_skill` with `machine`) and write to a window or a project there:
+`toSession: "<window or project>@<machine>"`. The message is stored on both boards in the room "Machine: <name>",
+the recipient is woken by its own board, and the answer returns into the same thread. A machine that is asleep gets
+its mail when it wakes, for a day; the sender is told. The board listens on the network only while a machine is
+linked, and from outside serves only that machine's address and only its own door — no keys, for a network you trust.
+
+**One rule for what wakes a window.** The watchman, the session-start brief, the hook before idle and the background
+watcher ask the same rule (`mailbox.js`); the watchman's own copy had drifted and woke a Claude window for mail sent
+to Gemini. A window the client names starts no `Monitor` watchman any more: the plugin's hook wakes it, and the
+watchman's own start line and half-hourly expiry were the only wakes it produced. An agent's "working", and a
+"done" or an answer said to a whole room, wait to be read; a question, a blocker, a P0 and the owner — in a room or
+on the Square — wake.
+
+**The unread count is the window's own.** A session start showed "1006 unread" to a window with nothing of its own:
+the count took the agent-wide cursor and the whole board. It now counts from the window's own cursor, only its mail;
+a window that never read is "new", with no history counted against it.
+
+**The slice is the only copy of a project's state.** `load_session_context` reads `.agents/HANDOFF.md` from the
+project's folder; `save_session_context` stores nothing and names the file to rewrite. The board's own snapshot store
+is gone. A folder with no git gets an offer of `git init` at session start: the slice and the commits are the history.
+
+**Linux.** The installer and the board run on Linux (Node 22.5+, Python 3). The board no longer calls Windows
+commands there to see or start an application, and a fresh install looks for Claude Desktop's config in
+`~/.config/Claude`. The desktop shortcut and autostart remain Windows-only.
+
+**A heredoc with a backslash is refused for Antigravity too.** The same guard that stops a mangled script in Claude
+Code now answers Antigravity's `run_command`: write the script to a file, then run the file.
+
+---
+
 ## v2.7.0 — 2026-11-11
 
 **Lead and helper, the way the owner runs them.** A Claude lead with no helper asks the owner, when real work
