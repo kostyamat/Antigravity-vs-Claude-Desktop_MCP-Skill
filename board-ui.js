@@ -43,6 +43,23 @@ const updater = require('./updater').createUpdater({ home: path.resolve(__dirnam
 const BUILD = require('./build-print').modulesPrint(path.resolve(__dirname));
 
 const SCRIPTS_DIR = path.resolve(__dirname);
+
+// --log: this process writes its own log files. The hidden launcher used to
+// redirect the output in the shell (>> board_ui_stdout.log), and the shell of a
+// running board keeps that file open: a second launch then failed on "the file is
+// being used by another process" before node even started. So the desktop
+// shortcut, whose whole job is to replace the running board, replaced nothing -
+// on every Windows machine, silently. Appending from here shares the file.
+if (process.argv.includes('--log')) {
+  const into = file => (chunk, enc, cb) => {
+    try { fs.appendFileSync(path.join(SCRIPTS_DIR, file), chunk); } catch (_) {}
+    const done = typeof enc === 'function' ? enc : cb;
+    if (typeof done === 'function') done();
+    return true;
+  };
+  process.stdout.write = into('board_ui_stdout.log');
+  process.stderr.write = into('board_ui_stderr.log');
+}
 const LOG_FILE = path.join(SCRIPTS_DIR, 'board_ui_stderr.log');
 
 process.on('uncaughtException', err => {
@@ -954,7 +971,24 @@ function killOldBoard(port) {
   } catch (e) { return 'error ' + e.message; }
 }
 
+// A board told to replace the running one makes it leave BEFORE it binds. Waiting
+// for "address in use" is not enough: on Windows a board that listens for linked
+// machines (0.0.0.0) binds happily beside an old one on 127.0.0.1, and then two
+// boards run on one database - the old one still answering this machine's page.
+let askedFirst = false;
 function listen(port, retries = 30) {
+  if (REPLACE && !askedFirst) {
+    askedFirst = true;
+    return askOldBoardToLeave(port, left => {
+      if (left) console.log('📡 Old board left; taking the port.');
+      else {
+        const how = killOldBoard(port);
+        if (/^killed/.test(how)) console.log('📡 Old board did not leave by itself: ' + how);
+      }
+      replaceTried = true;
+      setTimeout(() => listen(port, retries), left ? 600 : 300);
+    });
+  }
   const onError = err => {
     if (err.code === 'EADDRINUSE') {
       if (REPLACE && !replaceTried) {

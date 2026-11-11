@@ -185,8 +185,17 @@ function setRef(bridgeDb, localId, machine, remoteId, state) {
 function roomFor(bridgeDb, machine, card, agent) {
   const name = `Machine: ${machine}`;
   let room = (bridgeDb.readRooms() || []).find(r => r.name === name && !r.archived);
-  if (!room) room = bridgeDb.createRoom(name, [{ card, agent: agent || '' }], '');
-  else if (card && !(room.members || []).some(m => m.card === card)) bridgeDb.addRoomMember(room.id, card, agent || '');
+  if (!room) {
+    // createRoom hands back an existing room that has exactly these members, so a
+    // room made for one window alone was whatever room that window already sat in
+    // by itself: the first letter to a neighbour landed in the owner's own room.
+    // A marker member makes the set unique; it is taken out once the room exists.
+    const marker = `machine:${machine}`;
+    room = bridgeDb.createRoom(name, [{ card, agent: agent || '' }, { card: marker, agent: '' }], '');
+    try { bridgeDb.getDb().prepare('DELETE FROM room_members WHERE room = ? AND card = ?').run(room.id, marker); } catch (_) {}
+  } else if (card && !(room.members || []).some(m => m.card === card)) {
+    bridgeDb.addRoomMember(room.id, card, agent || '');
+  }
   return room.id;
 }
 

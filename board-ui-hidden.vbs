@@ -2,4 +2,6 @@ Set WshShell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 WshShell.CurrentDirectory = scriptDir
-WshShell.Run "cmd.exe /c ""node """ & scriptDir & "\board-ui.js"" --no-open --replace >> """ & scriptDir & "\board_ui_stdout.log"" 2>> """ & scriptDir & "\board_ui_stderr.log""""", 0, False
+' No shell redirection: the board writes its own log (--log). A redirect here was held
+' open by the running board and made every later launch fail before it started.
+WshShell.Run "node """ & scriptDir & "\board-ui.js"" --no-open --replace --log", 0, False
