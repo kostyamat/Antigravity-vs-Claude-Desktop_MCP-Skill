@@ -40,9 +40,25 @@ assert.ok(!peerLink.admits(req('192.168.1.50', '/api/post'), cfg), 'the neighbou
 assert.ok(!peerLink.admits(req('192.168.1.50', '/api/board'), cfg), 'nor read the whole board');
 assert.ok(!peerLink.admits(req('192.168.1.50', '/api/shutdown'), cfg));
 assert.ok(!peerLink.admits(req('192.168.1.50', '/'), cfg));
-assert.ok(!peerLink.admits(req('192.168.1.77', '/api/peer/hello'), cfg), 'a stranger on the network, even at the door');
-assert.ok(!peerLink.admits(req('192.168.1.77', '/api/peer/deliver'), cfg));
-assert.ok(!peerLink.admits(req('192.168.1.50', '/api/peer/deliver'), none), 'nobody from outside while no machine is linked');
+// A machine of the same private network that is not linked: it may ask who this board is
+// and knock to be linked. Nothing else, and a machine from outside the network not even that.
+assert.ok(peerLink.admits(req('192.168.1.77', '/api/peer/hello'), cfg), 'a stranger of the network may ask who this is');
+assert.ok(peerLink.admits(req('192.168.1.77', '/api/peer/hello?x=1'), cfg));
+assert.ok(peerLink.admits(req('10.0.0.5', '/api/peer/knock'), none), 'and may knock, even while nobody is linked');
+assert.ok(!peerLink.admits(req('192.168.1.77', '/api/peer/deliver'), cfg), 'but cannot deliver mail');
+assert.ok(!peerLink.admits(req('192.168.1.77', '/api/peer/cards'), cfg), 'nor see the windows');
+assert.ok(!peerLink.admits(req('192.168.1.77', '/api/peer/slice?project=x'), cfg), 'nor read a slice');
+assert.ok(!peerLink.admits(req('192.168.1.77', '/api/peer/hello/../../api/board'), cfg), 'nor walk out of the door by a path');
+assert.ok(!peerLink.admits(req('192.168.1.77', '/api/machines'), cfg), 'nor touch the linking controls');
+assert.ok(!peerLink.admits(req('192.168.1.77', '/api/post'), cfg));
+assert.ok(!peerLink.admits(req('8.8.8.8', '/api/peer/hello'), cfg), 'a machine from outside the private network: nothing at all');
+assert.ok(!peerLink.admits(req('172.32.0.1', '/api/peer/knock'), cfg), '172.32 is not a private range');
+assert.ok(peerLink.admits(req('172.20.5.5', '/api/peer/knock'), cfg), '172.16-31 is');
+assert.ok(!peerLink.admits(req('192.168.1.50', '/api/peer/deliver'), none), 'a machine that is not linked delivers nothing');
 assert.ok(!peerLink.admits(req(undefined, '/api/peer/hello'), cfg), 'an address that cannot be read is nobody');
+
+// Whether the board listens on the network at all.
+assert.strictEqual(peerLink.listenHost({}), '0.0.0.0');
+assert.strictEqual(peerLink.listenHost({ listenOnNetwork: false }), '127.0.0.1', 'a machine that will never be linked can close the door');
 
 console.log('peer-link: all checks passed');

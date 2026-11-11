@@ -107,12 +107,38 @@ function peerAt(addr, cfg) {
   return peers(cfg).find(p => addressesOf(p.host).has(a)) || null;
 }
 
-// The one rule for a request that did not come from this machine: a neighbour,
-// and only the neighbour's door. Everything else on the board is the owner's.
+// An address of a private network: the only kind a stranger may knock from.
+function isPrivate(addr) {
+  const a = plain(addr);
+  if (/^10\./.test(a) || /^192\.168\./.test(a) || /^169\.254\./.test(a)) return true;
+  const m = /^172\.(\d+)\./.exec(a);
+  if (m && Number(m[1]) >= 16 && Number(m[1]) <= 31) return true;
+  return /^(fe80|fc|fd)/.test(a);
+}
+
+// The one rule for a request that did not come from this machine. A linked
+// neighbour: its door, /api/peer/. A machine of the same private network that is
+// not linked: two things only — asking who this board is, and knocking to be
+// linked (which gives it nothing until the owner allows it). Everything else on
+// the board is the owner's, whoever asks.
 function admits(req, cfg) {
   const from = req.socket && req.socket.remoteAddress;
   if (isLoopback(from)) return true;
-  return String(req.url || '').startsWith('/api/peer/') && !!peerAt(from, cfg);
+  const url = String(req.url || '').split('?')[0];
+  if (!url.startsWith('/api/peer/')) return false;
+  if (peerAt(from, cfg)) return true;
+  return isPrivate(from) && (url === '/api/peer/hello' || url === '/api/peer/knock');
+}
+
+// The board listens on the network from the start, so that another board can
+// find it and nothing has to be restarted when a machine is linked. The door
+// above is what keeps that safe; "listenOnNetwork": false in bridge_config.json
+// closes it for a machine that will never be linked.
+function listenHost(cfg) {
+  return (cfg || readConfig()).listenOnNetwork === false ? '127.0.0.1' : '0.0.0.0';
+}
+function myPort(cfg) {
+  return Number(process.env.AGENT_BRIDGE_PORT) || Number((cfg || readConfig()).uiPort) || 8787;
 }
 
 // ── talking to a neighbour ───────────────────────────────────────────────────────
@@ -404,7 +430,10 @@ async function handle(req, res, deps) {
     if (what === 'hello' && req.method === 'GET') {
       return send(200, { machine: machineName(), version: readConfig().installedVersion || '', knowsYou: peer ? peer.name : '' });
     }
-    if (!peer) return send(403, { error: 'this machine is not linked to yours — link_machine on both sides' });
+    if (what === 'knock' && req.method === 'POST') {
+      return send(200, knocked(from, await readBody(req, 4000), req.headers['x-board-machine']));
+    }
+    if (!peer) return send(403, { error: 'this machine is not linked to yours — link the two boards first (Machines on the board page)' });
     if (what === 'cards' && req.method === 'GET') {
       const hours = Number(url.searchParams.get('hours')) || 48;
       const list = deps.cardsLib.allCards({ sinceHours: hours, names: deps.names ? deps.names() : undefined })
@@ -478,7 +507,159 @@ function unlink(name) {
   return before !== cfg.peers.length;
 }
 
+// ── finding, knocking, allowing ──────────────────────────────────────────────────
+
+// Another board asks to be linked. A machine already linked is told so. With
+// "trust my network" on, a machine of the private network is linked at once;
+// otherwise the request waits for the owner's click on this board.
+function knocked(from, body, header) {
+  const cfg = readConfig();
+  const addr = plain(from);
+  const port = Number(body && body.port) || 8787;
+  const url = `http://${addr.includes(':') ? '[' + addr + ']' : addr}:${port}`;
+  const name = freeName(slug((body && body.machine) || header) || 'machine', url, cfg);
+  if (peers(cfg).some(p => p.url === url)) return { state: 'linked', machine: machineName(cfg) };
+  if (cfg.trustNetwork === true && (isPrivate(addr) || isLoopback(addr))) {
+    cfg.peers = (cfg.peers || []).concat([{ name, url }]);
+    cfg.peerRequests = (cfg.peerRequests || []).filter(r => r.url !== url);
+    writeConfig(cfg);
+    return { state: 'linked', machine: machineName(cfg) };
+  }
+  cfg.peerRequests = (cfg.peerRequests || []).filter(r => r.url !== url)
+    .concat([{ name, url, address: addr, at: new Date().toISOString() }]).slice(-20);
+  writeConfig(cfg);
+  return { state: 'pending', machine: machineName(cfg) };
+}
+
+// Two machines may call themselves the same; the second gets a number.
+function freeName(name, url, cfg) {
+  const taken = new Map(peers(cfg).map(p => [p.name, p.url]));
+  if (!taken.has(name) || taken.get(name) === url) return name;
+  for (let i = 2; i < 50; i++) if (!taken.has(`${name}-${i}`)) return `${name}-${i}`;
+  return name + '-' + Date.now();
+}
+
+// Link this board to the board at `address` and tell it so. → { name, url, state }
+// state: 'linked' (it has us too) or 'pending' (its owner has to allow it there).
+async function linkTo(address, port) {
+  const host = String(address || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  if (!host) throw new Error('an address is needed');
+  const url = /:\d+$/.test(host) ? `http://${host}` : `http://${host}:${Number(port) || 8787}`;
+  let hello;
+  try { hello = await request({ url }, 'GET', '/api/peer/hello', undefined, 4000); }
+  catch (e) { throw new Error(`no board answers at ${url} (${e.message})`); }
+  if (hello.status !== 200 || !hello.json.machine) throw new Error(`${url} did not answer as a board`);
+  const p = link(freeName(slug(hello.json.machine), new URL(url).origin, readConfig()), url);
+  let state = 'pending';
+  try {
+    const k = await request(p, 'POST', '/api/peer/knock', { machine: machineName(), port: myPort() }, 5000);
+    if (k.status === 200 && k.json.state) state = k.json.state;
+  } catch (_) {}
+  // A board from before knocking existed (2.8.0-2.8.3) does not answer the knock; if
+  // it was linked to this machine by hand it still says so when asked who it is.
+  if (state !== 'linked') {
+    try { if ((await request(p, 'GET', '/api/peer/hello', undefined, 4000)).json.knowsYou) state = 'linked'; } catch (_) {}
+  }
+  return { name: p.name, url: p.url, state, version: hello.json.version || '' };
+}
+
+function allow(url) {
+  const cfg = readConfig();
+  const r = (cfg.peerRequests || []).find(x => x.url === url);
+  if (!r) throw new Error('no such request');
+  cfg.peerRequests = cfg.peerRequests.filter(x => x.url !== url);
+  cfg.peers = (cfg.peers || []).filter(p => p.url !== url).concat([{ name: freeName(r.name, url, cfg), url }]);
+  writeConfig(cfg);
+  return { name: r.name, url };
+}
+function refuse(url) {
+  const cfg = readConfig();
+  cfg.peerRequests = (cfg.peerRequests || []).filter(x => x.url !== url);
+  writeConfig(cfg);
+}
+function setTrust(on) {
+  const cfg = readConfig();
+  cfg.trustNetwork = Boolean(on);
+  writeConfig(cfg);
+  return cfg.trustNetwork;
+}
+
+// This machine's addresses on private networks.
+function myAddresses() {
+  const out = [];
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const i of list || []) if (i.family === 'IPv4' && !i.internal && isPrivate(i.address)) out.push(i.address);
+  }
+  return out;
+}
+
+// Boards on this machine's private networks: every address of each /24 this
+// machine is in is asked who it is. → [{ address, url, machine, version, linked }]
+async function find(opts) {
+  const o = opts || {};
+  const port = Number(o.port) || myPort();
+  const mine = new Set(myAddresses());
+  const targets = [];
+  for (const a of mine) {
+    const base = a.split('.').slice(0, 3).join('.');
+    for (let n = 1; n < 255; n++) {
+      const ip = `${base}.${n}`;
+      if (!mine.has(ip) || o.includeSelf) targets.push(ip);
+    }
+  }
+  const found = [];
+  const linked = new Set(peers().map(p => p.url));
+  let next = 0;
+  const worker = async () => {
+    while (next < targets.length) {
+      const ip = targets[next++];
+      const url = `http://${ip}:${port}`;
+      try {
+        const r = await request({ url }, 'GET', '/api/peer/hello', undefined, o.timeoutMs || 600);
+        if (r.status === 200 && r.json.machine) found.push({ address: ip, url, machine: r.json.machine, version: r.json.version || '', linked: linked.has(url) });
+      } catch (_) {}
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(96, targets.length) }, worker));
+  return found.sort((x, y) => x.address.localeCompare(y.address, undefined, { numeric: true }));
+}
+
+// What the board page shows under "Machines".
+async function overview() {
+  const cfg = readConfig();
+  const linked = await Promise.all(peers(cfg).map(async p => {
+    try {
+      const r = await request(p, 'GET', '/api/peer/hello', undefined, 2500);
+      return { name: p.name, url: p.url, answers: r.status === 200, version: r.json.version || '', knowsUs: Boolean(r.json.knowsYou) };
+    } catch (_) { return { name: p.name, url: p.url, answers: false, version: '', knowsUs: false }; }
+  }));
+  return { me: machineName(cfg), addresses: myAddresses(), port: myPort(cfg), open: listenHost(cfg) !== '127.0.0.1',
+           trust: cfg.trustNetwork === true, linked, requests: cfg.peerRequests || [] };
+}
+
+// The board page's own calls (/api/machines…). They come from this machine only.
+async function localApi(req, res) {
+  const send = (status, json) => {
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(json));
+  };
+  try {
+    const what = new URL(req.url, 'http://x').pathname.replace(/^\/api\/machines\/?/, '');
+    if (req.method === 'GET' && !what) return send(200, await overview());
+    if (req.method !== 'POST') return send(404, { error: 'no such call' });
+    const d = await readBody(req, 4000);
+    if (what === 'find') return send(200, { found: await find() });
+    if (what === 'link') return send(200, await linkTo(d.address || d.url, d.port));
+    if (what === 'allow') return send(200, allow(String(d.url || '')));
+    if (what === 'refuse') { refuse(String(d.url || '')); return send(200, { ok: true }); }
+    if (what === 'unlink') return send(200, { ok: unlink(String(d.name || '')) });
+    if (what === 'trust') return send(200, { trust: setTrust(d.on === true) });
+    send(404, { error: 'no such call' });
+  } catch (e) { send(400, { error: e.message }); }
+}
+
 module.exports = {
+  isPrivate, listenHost, myPort, knocked, linkTo, allow, refuse, setTrust, find, overview, localApi, myAddresses,
   machineName, peers, enabled, peerByName, parseAddress, isLoopback, admits, peerAt,
   request, ask, pump, handle, deliver, roomFor, ensureTable, ref, link, unlink, knownProject,
   refreshCards, neighbourCards

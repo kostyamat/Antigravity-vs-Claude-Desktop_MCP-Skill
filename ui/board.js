@@ -937,8 +937,34 @@ async function checkApps() {
   try { sup = await (await fetch('/api/supervisor')).json(); } catch (_) {}
   try { upd = await (await fetch('/api/update')).json(); } catch (_) {}
   if (j.antigravity) { try { quo = await (await fetch('/api/quota')).json(); } catch (_) {} }
+  let mach = null;
+  try { mach = await (await fetch('/api/machines')).json(); } catch (_) {}
   $('#apps').innerHTML = line('Claude Desktop', j.claude, 'claude') + line('Antigravity', j.antigravity, 'antigravity') +
-    quotaLine(quo) + supervisorLine(sup, j.antigravity) + updateLine(upd);
+    quotaLine(quo) + supervisorLine(sup, j.antigravity) + machinesLines(mach) + updateLine(upd);
+}
+// Other machines of the owner's network: who is linked, who asks to be, and the search.
+let FOUND = null;
+function machinesLines(m) {
+  if (!m || m.error || !m.open) return '';
+  const btn = (attr, val, text) => ' <button type="button" class="link-btn" data-' + attr + '="' + esc(val) + '">' + text + '</button>';
+  let out = '';
+  for (const r of m.requests || []) {
+    out += '<div class="receipt late" title="' + esc(r.url) + '"><i></i>Machine "' + esc(r.name) + '" (' + esc(r.address || r.url) + ') asks to link' +
+      btn('mach-allow', r.url, 'Allow') + btn('mach-refuse', r.url, 'Refuse') + '</div>';
+  }
+  for (const p of m.linked || []) {
+    const state = !p.answers ? 'does not answer' : p.knowsUs ? 'linked' : 'waits for Allow on that machine';
+    out += '<div title="' + esc(p.url + (p.version ? ' · bridge ' + p.version : '')) + '"' + (p.answers && p.knowsUs ? '' : ' class="receipt late"') + '><i class="' +
+      (p.answers && p.knowsUs ? 'up' : '') + '"></i>Machine "' + esc(p.name) + '" — ' + state + btn('mach-unlink', p.name, 'Unlink') + '</div>';
+  }
+  const linked = new Set((m.linked || []).map(p => p.url));
+  for (const f of (FOUND || []).filter(x => !linked.has(x.url))) {
+    out += '<div title="' + esc(f.url + ' · bridge ' + f.version) + '"><i></i>Found "' + esc(f.machine) + '" at ' + esc(f.address) + btn('mach-link', f.url, 'Link') + '</div>';
+  }
+  if (FOUND && !FOUND.filter(x => !linked.has(x.url)).length) out += '<div><i></i>No other board found on this network</div>';
+  out += '<div title="This machine: ' + esc(m.me) + ' · ' + esc((m.addresses || []).join(', ')) + ' · port ' + esc(String(m.port)) + '"><i class="' + ((m.linked || []).length ? 'up' : '') +
+    '"></i>Machines' + btn('mach-find', '1', 'Find') + ' · trust my network: ' + (m.trust ? 'on' : 'off') + btn('mach-trust', m.trust ? 'off' : 'on', m.trust ? 'Turn off' : 'Turn on') + '</div>';
+  return out;
 }
 // The supervisor is the owner's to switch. The tooltip says what its last round saw.
 function supervisorLine(s, antigravityUp) {
@@ -988,6 +1014,24 @@ $('#apps').addEventListener('click', async e => {
     if (r.error) { alert('Not updated: ' + r.error); return checkApps(); }
     u.textContent = 'Installed ' + r.to + ' — the board is restarting; restart Claude Desktop and Antigravity too';
     return;
+  }
+  const mb = e.target.closest('[data-mach-find],[data-mach-link],[data-mach-allow],[data-mach-refuse],[data-mach-unlink],[data-mach-trust]');
+  if (mb) {
+    const d = mb.dataset;
+    mb.disabled = true;
+    let r = {};
+    if ('machFind' in d) { mb.textContent = 'Searching…'; r = await post('/api/machines/find', {}).catch(x => ({ error: x.message })); FOUND = r.found || []; }
+    else if ('machLink' in d) { mb.textContent = 'Linking…'; r = await post('/api/machines/link', { address: d.machLink }).catch(x => ({ error: x.message })); }
+    else if ('machAllow' in d) r = await post('/api/machines/allow', { url: d.machAllow }).catch(x => ({ error: x.message }));
+    else if ('machRefuse' in d) r = await post('/api/machines/refuse', { url: d.machRefuse }).catch(x => ({ error: x.message }));
+    else if ('machUnlink' in d) { if (confirm('Unlink machine "' + d.machUnlink + '"?')) r = await post('/api/machines/unlink', { name: d.machUnlink }).catch(x => ({ error: x.message })); }
+    else if ('machTrust' in d) {
+      if (d.machTrust === 'off' || confirm('Trust this network? Any board on it that asks will be linked without your click. Turn it on only at home.')) {
+        r = await post('/api/machines/trust', { on: d.machTrust === 'on' }).catch(x => ({ error: x.message }));
+      }
+    }
+    if (r && r.error) alert(r.error);
+    return checkApps();
   }
   const s = e.target.closest('[data-sup]');
   if (s) {

@@ -726,19 +726,21 @@ const TOOLS = [
   {
     name: 'link_machine',
     description:
-      'Link this board to the board of another machine on the same local network (a laptop and a build desktop). ' +
-      'Each machine keeps its own board and database; linked, a window here can see the other machine\'s windows ' +
-      '(list_cards({machine})), read a project\'s slice or a skill from it (load_session_context / read_skill with ' +
-      '`machine`), and send it a task or a question: post_message with toSession "<window id or project>@<machine>" — ' +
-      'the other board stores it and wakes the recipient, and the answer comes back into the same thread. ' +
-      'Link on BOTH machines, each naming the other, then restart each board once. No arguments: the linked machines ' +
-      'and whether each answers. Only for a network the owner trusts: the neighbour is recognised by its address alone.',
+      'Link this board to the board of another machine on the same network (a laptop and a build desktop). Each machine ' +
+      'keeps its own board and database; linked, a window here can see the other machine\'s windows (list_cards({machine})), ' +
+      'read a project\'s slice or a skill from it (load_session_context / read_skill with `machine`), and send it a task or ' +
+      'a question: post_message with toSession "<window id or project>@<machine>". ' +
+      '`find: true` searches the network for boards; `url` links to one (the address is enough) — the owner then clicks ' +
+      'Allow on that machine\'s board page, once, unless that board trusts its network. No restart, no terminal. ' +
+      'No arguments: the linked machines, whether each answers, and who asks to be linked. The owner can do all of it ' +
+      'himself under "Machines" at the bottom left of the board page.',
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'What to call the other machine, e.g. "desktop". Letters, digits, dashes.' },
-        url: { type: 'string', description: 'Its board, e.g. "192.168.1.50" or "http://192.168.1.50:8787".' },
-        remove: { type: 'boolean', description: 'true = unlink that machine.' }
+        find: { type: 'boolean', description: 'true = search this network for other boards.' },
+        url: { type: 'string', description: 'The other board, e.g. "192.168.1.50" or "http://192.168.1.50:8787".' },
+        name: { type: 'string', description: 'With remove: the machine to unlink.' },
+        remove: { type: 'boolean', description: 'true = unlink the machine named.' }
       }
     }
   },
@@ -1032,26 +1034,29 @@ function boardNames() {
 
 function doLinkMachine(id, a) {
   if (a.name && a.remove === true) {
-    return ok(id, peerLink.unlink(a.name) ? `Machine "${a.name}" unlinked. Restart the board to close the door if no machine is left.`
-                                          : `No machine "${a.name}" was linked.`);
+    return ok(id, peerLink.unlink(a.name) ? `Machine "${a.name}" unlinked.` : `No machine "${a.name}" was linked.`);
   }
-  if (a.name || a.url) {
-    if (!a.name || !a.url) return fail(id, 'link_machine: both `name` and `url` are needed.');
-    let p;
-    try { p = peerLink.link(a.name, a.url); } catch (e) { return fail(id, 'link_machine: ' + e.message); }
-    const tail = `\nThis machine calls itself "${peerLink.machineName()}" — on "${p.name}" run link_machine({name: "${peerLink.machineName()}", url: "<this machine's address>"}).` +
-      '\nThen restart the board on each machine once (its shortcut): only a board started with a linked machine listens on the network.';
-    return void peerLink.ask(p.name, '/api/peer/hello').then(
-      r => ok(id, `🖧 Linked "${p.name}" at ${p.url}: its board answers as "${r.machine}"` +
-        (r.knowsYou ? ` and knows this machine as "${r.knowsYou}".` : ', and does not know this machine yet.') + tail),
-      e => ok(id, `🖧 Linked "${p.name}" at ${p.url}, but it does not answer yet (${e.message}).` + tail));
+  if (a.find === true) {
+    return void peerLink.find().then(list => ok(id, list.length
+      ? 'Boards on this network:\n' + list.map(f => `🖧 "${f.machine}" at ${f.address} — bridge ${f.version || '?'}${f.linked ? ' — linked' : ''}`).join('\n') +
+        '\nLink one: link_machine({url: "<address>"}).'
+      : 'No other board answers on this network. Is the bridge installed and running there (2.8.4 or newer), and are both machines on the same network?'),
+      e => fail(id, 'link_machine: ' + e.message));
   }
-  const list = peerLink.peers();
-  if (!list.length) return ok(id, 'No machine is linked. link_machine({name, url}) links one; do it on both machines.');
-  Promise.all(list.map(p => peerLink.ask(p.name, '/api/peer/hello').then(
-    r => `🖧 ${p.name} — ${p.url} — answers as "${r.machine}"` + (r.knowsYou ? '' : ' — it has NOT linked this machine back'),
-    e => `🖧 ${p.name} — ${p.url} — no answer (${e.message})`)))
-    .then(lines => ok(id, `This machine: "${peerLink.machineName()}". Linked machines:\n` + lines.join('\n')));
+  if (a.url) {
+    return void peerLink.linkTo(a.url).then(p => ok(id, `🖧 Linked "${p.name}" at ${p.url}` +
+      (p.state === 'linked' ? ' — it has linked this machine too. Nothing else to do: list_cards({machine: "' + p.name + '"}).'
+        : `. That board now shows "${peerLink.machineName()} asks to link — Allow" on its page: the owner clicks Allow there ` +
+          '(or turns on "trust my network" there). Until then it answers nothing but its name.')),
+      e => fail(id, 'link_machine: ' + e.message));
+  }
+  Promise.resolve(peerLink.overview()).then(o => {
+    const lines = o.linked.map(p => `🖧 ${p.name} — ${p.url} — ` + (!p.answers ? 'does not answer' : p.knowsUs ? 'linked' : 'waits for Allow on that machine'));
+    const asks = (o.requests || []).map(r => `❓ "${r.name}" (${r.address || r.url}) asks to link — the owner allows it on the board page (Machines)`);
+    ok(id, `This machine: "${o.me}" (${(o.addresses || []).join(', ') || 'no network address'}).` +
+      (lines.length ? '\nLinked machines:\n' + lines.join('\n') : '\nNo machine is linked. link_machine({find: true}) searches this network.') +
+      (asks.length ? '\n' + asks.join('\n') : '') + `\nTrust my network: ${o.trust ? 'on' : 'off'}.`);
+  }, e => fail(id, 'link_machine: ' + e.message));
 }
 
 function doListCards(id, a) {

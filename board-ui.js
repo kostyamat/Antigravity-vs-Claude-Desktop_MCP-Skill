@@ -97,7 +97,7 @@ const MIME_BY_EXT = {
 // machine only when a neighbour is linked, and then lets in nothing but that
 // neighbour, on /api/peer/ alone: every other route stays this machine's.
 const peerLink = require('./peer-link');
-const HOST = peerLink.enabled() ? '0.0.0.0' : '127.0.0.1';
+const HOST = peerLink.listenHost();
 // Where this machine itself reaches its board, whatever the board listens on. Asking
 // the old board to leave at 0.0.0.0 reached nobody on Windows, so once a neighbour
 // was linked a restart could not replace the running board and it never opened to the network.
@@ -543,6 +543,7 @@ function send(res, code, type, body) {
 const server = http.createServer((req, res) => {
   if (!peerLink.admits(req)) return send(res, 403, 'text/plain; charset=utf-8', 'Forbidden');
   if (req.url.startsWith('/api/peer/')) return void peerLink.handle(req, res, peerDeps);
+  if (req.url.startsWith('/api/machines')) return void peerLink.localApi(req, res);
   if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) {
     return send(res, 200, 'text/html; charset=utf-8', uiPage());
   }
@@ -1031,7 +1032,7 @@ function listen(port, retries = 30) {
     server.removeListener('error', onError);
     const url = `http://${LOCAL}:${port}/`;
     console.log('📡 Board visualizer: ' + url);
-    if (HOST !== LOCAL) console.log('   Open to the linked machine(s) on port ' + port + ': ' + peerLink.peers().map(p => p.name).join(', ') + '.');
+    if (HOST !== LOCAL) console.log('   Other boards of this network can find it on port ' + port + '; linked: ' + (peerLink.peers().map(p => p.name).join(', ') || 'none') + '.');
     console.log('   Ctrl+C to stop.');
     if (!process.argv.includes('--no-open')) {
       openAppWindow(url);
@@ -1091,6 +1092,7 @@ setInterval(() => { try { require('./project-line').dropArchived(bridgeDb, cards
 // What the neighbour's door and the outgoing mail need from this board.
 const peerDeps = { bridgeDb, cardsLib, router, projectSlice: require('./project-slice'), skillReader: require('./skill-reader') };
 setInterval(() => { peerLink.pump(peerDeps); }, 5000).unref();
-if (peerLink.enabled()) { peerLink.refreshCards(); setInterval(() => { peerLink.refreshCards(); }, 30000).unref(); }
+peerLink.refreshCards();
+setInterval(() => { peerLink.refreshCards(); }, 30000).unref();
 
 listen(PORT_FROM);
