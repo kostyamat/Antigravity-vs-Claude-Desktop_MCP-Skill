@@ -106,6 +106,8 @@ let warnCount = 0;
 // Claude Desktop takes its Skill only by hand. Remember where the bundle was
 // written so the closing summary can name the one step left to the human.
 const desktopBundlePaths = [];
+const claudePlugin = require('./claude-plugin');
+let pluginHooks = null; // set in 4b, written into the plugin in 4c
 
 console.log('════════════════════════════════════════════════════════════════');
 console.log('🚀 Agent-Bridge' + (VERSION ? ' v' + VERSION : '') + ': Deployment & Setup');
@@ -313,7 +315,7 @@ const claudeHome = require('./claude-home');
 }
 
 // 4b. Configure SessionStart hook for Claude Code
-console.log('\n[4b/8] Configuring SessionStart hooks for Claude Code...');
+console.log('\n[4b/8] Claude Code hooks: one plugin instead of settings.json...');
 try {
   const briefSource = path.join(SCRIPTS_DIR, 'skill', 'agent-bridge', 'board_brief.py');
   const briefTarget = path.join(SCRIPTS_DIR, 'board_brief.py');
@@ -329,100 +331,32 @@ try {
   }
 
   const pyCmd = detectedPython.found ? detectedPython.cmd : 'python';
-  const briefCmd = `${pyCmd} "${briefTarget.replace(/\\/g, '/')}"`;
+  // The board's hooks live in the agent-bridge plugin (claude-plugin.js), which
+  // is written beside the skill in step 4c. Here only the copies earlier
+  // installs put into settings.json are taken out, or every hook would run twice.
+  pluginHooks = claudePlugin.bridgeHooks({ nodeExe: process.execPath, scriptsDir: SCRIPTS_DIR, pyCmd });
 
   const claudeSettingsPath = path.join(USER_PROFILE, '.claude', 'settings.json');
-  const claudeDir = path.dirname(claudeSettingsPath);
-  if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
-
-  let settings = {}, parsed = true;
+  let settings = null;
   if (fs.existsSync(claudeSettingsPath)) {
     try {
       settings = JSON.parse(fs.readFileSync(claudeSettingsPath, 'utf8')) || {};
     } catch (e) {
-      parsed = false;
+      warnCount++;
+      console.warn('  ⚠️ settings.json cannot be read (invalid JSON) — NOT modifying.');
+      console.warn('     If it still holds bridge hooks (board_brief, bridge-hook.js, pre/after_compact), remove them by hand:');
+      console.warn('     the plugin runs them now, and a second copy runs every hook twice.');
     }
   }
-
-  if (!parsed) {
-    warnCount++;
-    console.warn(`  ⚠️ settings.json cannot be read (invalid JSON) — NOT modifying.`);
-    console.warn('     Add the hooks by hand: the commands are printed above.');
-  } else {
-    // Four hooks, one way of installing them. A hook is found by a word in its
-    // command, so an earlier copy at another path is moved here rather than
-    // added twice.
-    //   board_brief         — every session start: who you are on the board, what is new.
-    //   after_compact       — after a compaction only: the slice, last commits, dirty files.
-    //   pre_compact         — before a compaction: warns when the slice lags the tree
-    //                          (commits after it, dirty files) and leaves a note that
-    //                          after_compact hands to the woken session. Never blocks.
-    //   board_brief --prompt — every prompt, silent unless this window was invited into
-    //                          a room: a Claude window cannot be woken from outside, so
-    //                          the owner's next word, whatever it is, carries the invitation.
-    const posix = p => p.replace(/\\/g, '/');
-    const hookCmd = mode => `"${process.execPath}" "${posix(path.join(SCRIPTS_DIR, 'bridge-hook.js'))}" ${mode}`;
-    const wanted = [
-      { event: 'SessionStart', needle: 'board_brief', matcher: null,
-        hook: { type: 'command', command: briefCmd } },
-      { event: 'SessionStart', needle: 'after_compact', matcher: 'compact',
-        hook: { type: 'command', command: `${pyCmd} "${posix(path.join(SCRIPTS_DIR, 'after_compact.py'))}"`,
-                timeout: 30, statusMessage: 'Context guard: the session slice after compaction' } },
-      { event: 'PreCompact', needle: 'pre_compact', matcher: null,
-        hook: { type: 'command', command: `${pyCmd} "${posix(path.join(SCRIPTS_DIR, 'pre_compact.py'))}"`,
-                timeout: 20, statusMessage: 'Context guard: is the slice current?' } },
-      // The Claude side of the board, done by the client instead of by the
-      // agent's memory — see bridge-hook.js for each of them.
-      //   stamp  — signs every bridge call with this window's id.
-      //   prompt — every prompt: one line when unread mail waits (it replaces the
-      //            older board_brief --prompt, found here by its old name).
-      //   stop   — a session about to go idle over unread mail reads it first.
-      //   watch  — in the background from session start and from every stop:
-      //            wakes the idle session when something arrives for it.
-      { event: 'PreToolUse', needle: 'bridge-hook.js" stamp', matcher: 'mcp__agent-bridge__.*',
-        hook: { type: 'command', command: hookCmd('stamp'), timeout: 10 } },
-      { event: 'UserPromptSubmit', needle: 'bridge-hook.js" prompt', also: ['board_brief'], matcher: null,
-        hook: { type: 'command', command: hookCmd('prompt'), timeout: 10 } },
-      { event: 'Stop', needle: 'bridge-hook.js" stop', matcher: null,
-        hook: { type: 'command', command: hookCmd('stop'), timeout: 15 } },
-      { event: 'Stop', needle: 'bridge-hook.js" watch', matcher: null,
-        hook: { type: 'command', command: hookCmd('watch'), async: true, asyncRewake: true, timeout: 86700 } },
-      { event: 'SessionStart', needle: 'bridge-hook.js" watch', matcher: null,
-        hook: { type: 'command', command: hookCmd('watch'), async: true, asyncRewake: true, timeout: 86700 } }
-    ];
-    if (!settings.hooks) settings.hooks = {};
-    let changed = false;
-    for (const w of wanted) {
-      if (!Array.isArray(settings.hooks[w.event])) settings.hooks[w.event] = [];
-      let found = null;
-      for (const entry of settings.hooks[w.event]) {
-        const needles = [w.needle].concat(w.also || []);
-        const h = entry && Array.isArray(entry.hooks)
-          ? entry.hooks.find(x => x && typeof x.command === 'string' && needles.some(n => x.command.includes(n))) : null;
-        if (h) { found = { entry, h }; break; }
-      }
-      if (!found) {
-        const entry = { hooks: [Object.assign({}, w.hook)] };
-        if (w.matcher) entry.matcher = w.matcher;
-        settings.hooks[w.event].push(entry);
-        console.log(`  ✅ Claude Code hook installed: ${w.event} ${w.needle} — ${w.hook.command}`);
-        changed = true;
-      } else if (JSON.stringify(Object.assign({}, found.h, w.hook)) !== JSON.stringify(found.h) ||
-                 (w.matcher && found.entry.matcher !== w.matcher)) {
-        Object.assign(found.h, w.hook);
-        if (w.matcher) found.entry.matcher = w.matcher;
-        console.log(`  ✅ Claude Code hook updated: ${w.event} ${w.needle} — ${w.hook.command}`);
-        changed = true;
-      } else {
-        console.log(`  ✅ Claude Code hook up to date: ${w.event} ${w.needle}`);
-      }
-    }
-    if (changed) {
-      if (fs.existsSync(claudeSettingsPath)) {
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        fs.copyFileSync(claudeSettingsPath, `${claudeSettingsPath}.bak-${stamp}`);
-      }
+  if (settings) {
+    const removed = claudePlugin.stripFromSettings(settings, pluginHooks);
+    if (removed.length) {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      fs.copyFileSync(claudeSettingsPath, `${claudeSettingsPath}.bak-${stamp}`);
       fs.writeFileSync(claudeSettingsPath, JSON.stringify(settings, null, 2), 'utf8');
+      for (const r of removed) console.log(`  ✅ Moved to the plugin, removed from settings.json: ${r}`);
+    } else {
+      console.log('  ✅ settings.json holds no bridge hooks: the plugin carries them.');
     }
   }
 } catch (e) {
@@ -741,6 +675,23 @@ for (const skillName of skillNames) {
   }
 }
 if (desktopBundlePaths.length) console.log('    (Upload each via Settings > Capabilities > Skills)');
+
+// The installed Claude Code copy of the agent-bridge skill becomes the plugin
+// agent-bridge@skills-dir: its manifest and hooks.json are written after the
+// copy and the prune above, which would otherwise delete them as strangers.
+if (pluginHooks) {
+  const pluginDir = path.join(USER_PROFILE, '.claude', 'skills', claudePlugin.PLUGIN_NAME);
+  try {
+    const w = claudePlugin.writePlugin(pluginDir, pluginHooks, VERSION);
+    console.log('  ✅ Claude Code plugin ' + claudePlugin.PLUGIN_NAME + '@skills-dir ' +
+      (w.manifest || w.hooks ? 'written' : 'up to date') + ': ' + pluginHooks.length + ' hooks + the skill, one switch.');
+    console.log('     Off: claude plugin disable ' + claudePlugin.PLUGIN_NAME + '@skills-dir   On: claude plugin enable ' + claudePlugin.PLUGIN_NAME + '@skills-dir');
+    if (w.manifest || w.hooks) console.log('     Open Claude Code sessions pick it up on /reload-plugins or a restart.');
+  } catch (e) {
+    warnCount++;
+    console.warn('  ⚠️ Claude Code plugin not written (' + e.message + '): the board hooks are not active.');
+  }
+}
 
 // 4d. Guards: git hooks that keep history clean, and commands agents may not run.
 console.log('\n[4d/8] Installing guards (git hooks, destructive commands)...');
