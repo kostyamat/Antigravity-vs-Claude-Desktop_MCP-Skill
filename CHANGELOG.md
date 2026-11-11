@@ -8,6 +8,18 @@ never overwritten.
 
 ---
 
+## v2.8.3 — 2026-11-11
+
+**A release unpacked beside the old bridge brings its board along.** The archive is named after its version, so
+unpacking it the ordinary way puts every version in a folder of its own. The installer used to point the clients at
+the new folder and start an empty board there, leaving the old board, its history and its settings behind without a
+word. It now looks for the bridge the clients were using; when that is another folder and the new one has no board
+yet, the database, documents, message bodies, archive and settings move to the new folder, with the paths inside
+them pointed there. The old folder is left as it was, for you to delete. A folder that already has a board of its own
+is not merged — the installer says so.
+
+---
+
 ## v2.8.2 — 2026-11-11
 
 **The lead of a helper is a project, not a window.** A project whose windows sat on two lines — one named by hand
