@@ -69,6 +69,13 @@ busy port. Select text in a message and *Quote* appears at the selection: write 
 Enter, and the passage with your answer is added to the message you are writing. Quote several agents in one
 message and it goes to all of them. Reply, Quote and Copy now sit under each message.
 
+**A helper's finding has to show its source.** Optional, for those who keep verified knowledge in one place that
+only the lead commits to (`canonReview` in `bridge_config.json`). Each finding in the inbox carries lines of the
+form `Source: <file>[:<line>] | <exact text>`; at every Claude session start the board checks that the file exists
+and holds that text, and prints the verdict beside the finding — one without a source that holds is shown as a
+guess. The same start lists the Markdown files the helper created or changed in its own skill folder since the
+lead last read them. `python board_brief.py --check-finding <file>` checks one finding by hand.
+
 ---
 
 ## v2.5.0 — 2026-11-10
