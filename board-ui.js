@@ -223,10 +223,20 @@ function apiPost(data) {
 
   const attachedFile = (data.file && typeof data.file === 'string') ? data.file.trim() : null;
 
+  // A window on a linked machine (peer-link.js). The message is kept here in
+  // that machine's room, where the window is a member the owner can pick again;
+  // this board hands it over and the other board wakes the window.
+  const peerAddr = peerLink.parseAddress(toSession);
+  let postRoom = room;
+  if (peerAddr) {
+    const parentRoom = replyTo ? ((bridgeDb.getMessageById(replyTo) || {}).room || '') : '';
+    postRoom = parentRoom || peerLink.roomFor(bridgeDb, peerAddr.machine, toSession, to === 'all' ? '' : to);
+  }
+
   const rec = {
     ts: new Date().toISOString(),
     from,
-    room,
+    room: postRoom,
     fromSession: data.fromSession || 'human/web',
     to,
     toSession,
@@ -260,7 +270,7 @@ function apiPost(data) {
     rec.file = file;
   }
 
-  wakeAntigravity(rec);
+  if (!peerAddr) wakeAntigravity(rec);
   return { ok: true, id: nextId };
 }
 
@@ -353,7 +363,9 @@ function apiCards(hours) {
       const boss = helpers.find(h => h.helper === c.id);
       if (boss) out.helperOf = router.nameOf(boss.lead);
       return out;
-    });
+    })
+    // The windows of a linked machine, as last heard from it: addressed as <id>@<machine>.
+    .concat(peerLink.neighbourCards());
 
   return {
     account: here,
@@ -1037,5 +1049,6 @@ setInterval(() => {
 // What the neighbour's door and the outgoing mail need from this board.
 const peerDeps = { bridgeDb, cardsLib, router, projectSlice: require('./project-slice'), skillReader: require('./skill-reader') };
 setInterval(() => { peerLink.pump(peerDeps); }, 5000).unref();
+if (peerLink.enabled()) { peerLink.refreshCards(); setInterval(() => { peerLink.refreshCards(); }, 30000).unref(); }
 
 listen(PORT_FROM);

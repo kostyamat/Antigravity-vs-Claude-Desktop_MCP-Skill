@@ -39,7 +39,6 @@ const { checkQuotes } = require('./reply-quotes');
 const releaseNotes = require('./release-notes');
 
 const SCRIPTS_DIR  = path.resolve(__dirname);
-const BRIDGE_FILE  = path.join(SCRIPTS_DIR, 'agent_bridge.json');
 const CURSOR_FILE  = path.join(SCRIPTS_DIR, 'agent_bridge_cursors.json');
 const ARCHIVE_DIR  = path.join(SCRIPTS_DIR, 'agent_bridge_archive');
 const BODIES_DIR   = path.join(SCRIPTS_DIR, 'agent_bridge_bodies');
@@ -202,12 +201,6 @@ function readBoard() {
     logError(`readBoard: ${err.message}`);
     return [];
   }
-}
-
-function writeBoard(data) {
-  try {
-    fs.writeFileSync(BRIDGE_FILE, JSON.stringify(data, null, 2), 'utf8');
-  } catch (_) {}
 }
 
 function readCursors() {
@@ -1706,7 +1699,11 @@ ${a.context && String(a.context).trim() ? a.context : '⚠️ AUTHOR DID NOT PRO
 
   const rec = {
     name, file, from, fromSession, to, toSession, topic,
-    room: resolveRoom(a, toSession, to).room,
+    // A document for a window on a linked machine lives in that machine's room;
+    // its announcement carries the text across (peer-link.js documentOf).
+    room: peerLink.parseAddress(toSession)
+      ? peerLink.roomFor(bridgeDb, peerLink.parseAddress(toSession).machine, String(a.canonicalId || fromSession || toSession), from)
+      : resolveRoom(a, toSession, to).room,
     title: a.title || topic,
     created: now,
     priority: PRIORITIES.includes(a.priority) ? a.priority : 'normal',
@@ -1720,16 +1717,16 @@ ${a.context && String(a.context).trim() ? a.context : '⚠️ AUTHOR DID NOT PRO
   noteSession(from, fromSession, topic, to, toSession, sessionIdentity(a));
 
   if (a.announce !== false) {
-    const board = readBoard();
-    const nextId = board.reduce((mx, m) => Math.max(mx, m.id || 0), 0) + 1;
-    board.push({
-      id: nextId, ts: now, from, fromSession, to, toSession,
-      replyTo: null, topic,
+    // Into the database, like every other message. It used to be appended to the
+    // old JSON file, which nothing reads any more, so no document was ever
+    // announced: the recipient learned of it only by listing documents.
+    const said = bridgeDb.addMessage({
+      ts: now, from, fromSession, to, toSession, room: rec.room || '', replyTo: null, topic,
       priority: rec.priority, status: 'info', progress: '',
-      message: `📄 Document "${rec.title}"\n   ${file}\n   Read: read_doc({reader:"${to}", name:"${name}"})`, 
+      message: `📄 Document "${rec.title}"\n   ${file}\n   Read: read_doc({reader:"${to}", name:"${name}"})`,
       file: null, readBy: []
     });
-    writeBoard(board);
+    try { bridgeDb.touchRoom(said.room); } catch (_) {}
   }
 
   ok(id, `📄 Document stored: ${name}\n   ${file}` +

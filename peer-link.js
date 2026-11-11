@@ -29,6 +29,13 @@ const path = require('path');
 const CONFIG_FILE = path.join(__dirname, 'bridge_config.json');
 const RETRY_HOURS = 24;          // mail for a sleeping machine waits this long
 const NOTICE_AFTER_MS = 5 * 60000;
+// What travels with a message: the file the owner attached and its text copy,
+// or the document the message announces. The paths a message names are the
+// sender's; the receiver keeps its own copies and rewrites them.
+const ATT_DIR = path.join(__dirname, 'docs', 'attachments');
+const TEXT_DIR = path.join(__dirname, 'docs', 'converted');
+const DOCS_DIR = path.join(__dirname, 'docs');
+const MAX_BODY = 90e6;           // an attachment is at most 40 MB, base64 adds a third
 
 function readConfig() {
   try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) || {}; } catch (_) { return {}; }
@@ -114,7 +121,7 @@ function request(peer, method, pathname, body, timeoutMs) {
   return new Promise((resolve, reject) => {
     const data = body === undefined ? null : Buffer.from(JSON.stringify(body), 'utf8');
     const req = http.request(peer.url + pathname, {
-      method, timeout: timeoutMs || 8000,
+      method, timeout: timeoutMs || (data && data.length > 1e6 ? 120000 : 8000),
       headers: Object.assign({ 'X-Board-Machine': machineName() },
         data ? { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': data.length } : {})
     }, res => {
@@ -190,6 +197,29 @@ function bodyOf(m) {
   return m.message || '';
 }
 
+// The attachment a message carries (messages.file holds its stored name), with
+// the text copy made for agents when there is one.
+function attachmentOf(m) {
+  const name = path.basename(String(m.file || ''));
+  if (!/^att_[\w.-]+$/.test(name)) return null;
+  const file = path.join(ATT_DIR, name);
+  if (!fs.existsSync(file)) return null;
+  const out = { name, path: file, data: fs.readFileSync(file).toString('base64') };
+  const text = path.join(TEXT_DIR, name.replace(/\.[^.]+$/, '') + '.md');
+  if (fs.existsSync(text)) { out.textPath = text; out.text = fs.readFileSync(text, 'utf8'); }
+  return out;
+}
+
+// The document a message announces: put_doc posts `read_doc({…name:"<file>"})`.
+function documentOf(bridgeDb, m) {
+  const hit = /read_doc\(\{[^}]*name:"([^"]+\.md)"/.exec(String(m.message || ''));
+  if (!hit) return null;
+  const d = (bridgeDb.readDocsIndex() || []).find(x => x.name === hit[1] && !x.archived);
+  if (!d || !d.file || !fs.existsSync(d.file)) return null;
+  return { name: d.name, title: d.title || '', topic: d.topic || '', priority: d.priority || 'normal',
+           created: d.created || '', path: d.file, text: fs.readFileSync(d.file, 'utf8') };
+}
+
 let pumping = false;
 async function pump(deps) {
   if (pumping || !enabled()) return;
@@ -214,6 +244,10 @@ async function pump(deps) {
         topic: m.topic || '', priority: m.priority || 'normal', status: m.status || 'info',
         progress: m.progress || '', message: bodyOf(m), replyToRemote: parent ? parent.remote_id : 0
       };
+      const att = attachmentOf(m);
+      if (att) payload.attachment = att;
+      const doc = documentOf(bridgeDb, m);
+      if (doc) payload.document = doc;
       let r;
       try { r = await request(addr.peer, 'POST', '/api/peer/deliver', payload); }
       catch (e) { waiting(deps, m, addr, e.message); continue; }
@@ -285,11 +319,52 @@ function deliver(deps, machine, p) {
   const agent = human ? '' : router.agentOf(win);
   const parent = Number(p.replyToRemote) ? bridgeDb.getMessageById(Number(p.replyToRemote)) : null;
   const room = human ? ((parent && parent.room) || '') : ((parent && parent.room) || roomFor(bridgeDb, machine, win, agent));
+  const sender = `${String(p.fromSession || 'unknown')}@${machine}`;
+  // The window that wrote becomes a member of the machine's room, so the owner
+  // can pick it there as an addressee of his own.
+  if (room && !/^human/i.test(sender)) {
+    try {
+      const r = bridgeDb.getRoom(room);
+      if (r && !(r.members || []).some(x => x.card === sender)) bridgeDb.addRoomMember(room, sender, String(p.from || ''));
+    } catch (_) {}
+  }
+
+  // What came with it is kept here, under the same names, and the text is
+  // pointed at this machine's copies.
+  let text = String(p.message);
+  let file = null;
+  const att = p.attachment;
+  if (att && /^att_[\w.-]+$/.test(String(att.name || '')) && att.name === path.basename(att.name)) {
+    fs.mkdirSync(ATT_DIR, { recursive: true });
+    const saved = path.join(ATT_DIR, att.name);
+    fs.writeFileSync(saved, Buffer.from(String(att.data || ''), 'base64'));
+    file = att.name;
+    if (att.path) text = text.split(String(att.path)).join(saved);
+    if (typeof att.text === 'string') {
+      fs.mkdirSync(TEXT_DIR, { recursive: true });
+      const md = path.join(TEXT_DIR, att.name.replace(/\.[^.]+$/, '') + '.md');
+      fs.writeFileSync(md, att.text, 'utf8');
+      if (att.textPath) text = text.split(String(att.textPath)).join(md);
+    }
+  }
+  const doc = p.document;
+  if (doc && /^[^\\/:*?"<>|]+\.md$/.test(String(doc.name || '')) && typeof doc.text === 'string') {
+    fs.mkdirSync(DOCS_DIR, { recursive: true });
+    const saved = path.join(DOCS_DIR, doc.name);
+    fs.writeFileSync(saved, doc.text, 'utf8');
+    if (doc.path) text = text.split(String(doc.path)).join(saved);
+    bridgeDb.saveDocIndex({
+      name: doc.name, title: String(doc.title || doc.name), from: String(p.from || '?'), fromSession: sender,
+      to: human ? (readConfig().adminName || 'all') : (agent || 'all'), toSession: human ? 'human/web' : win,
+      topic: String(doc.topic || ''), priority: String(doc.priority || 'normal'), file: saved,
+      created: String(doc.created || new Date().toISOString()), readBy: [], ackedBy: [], room: room || ''
+    });
+  }
   const rec = bridgeDb.addMessage({
-    ts: new Date().toISOString(), from: String(p.from || '?'), fromSession: `${String(p.fromSession || 'unknown')}@${machine}`,
+    ts: new Date().toISOString(), from: String(p.from || '?'), fromSession: sender,
     to: human ? (readConfig().adminName || 'all') : (agent || 'all'), toSession: human ? 'human/web' : win, room,
     replyTo: parent ? parent.id : null, topic: String(p.topic || ''), priority: p.priority === 'P0' ? 'P0' : (p.priority === 'fyi' ? 'fyi' : 'normal'),
-    status: String(p.status || 'info'), progress: String(p.progress || ''), message: String(p.message), file: null, readBy: []
+    status: String(p.status || 'info'), progress: String(p.progress || ''), message: text, file, readBy: []
   });
   setRef(bridgeDb, rec.id, machine, remoteId, 'received');
   try { bridgeDb.touchRoom(room); } catch (_) {}
@@ -342,7 +417,7 @@ async function handle(req, res, deps) {
       } catch (e) { return send(404, { error: e.message }); }
     }
     if (what === 'deliver' && req.method === 'POST') {
-      const out = deliver(deps, peer.name, await readBody(req, 4e6));
+      const out = deliver(deps, peer.name, await readBody(req, MAX_BODY));
       return send(out.status, out.json);
     }
     send(404, { error: 'no such door' });
@@ -350,6 +425,28 @@ async function handle(req, res, deps) {
     send(500, { error: e.message });
   }
 }
+
+// ── the neighbour's windows on the board page ───────────────────────────────────
+
+// The page asks for its list of windows every few seconds and must not wait on
+// another machine, so the neighbours are asked in the background and the page
+// is given what was last heard. A machine that stops answering drops out.
+let heard = [];
+async function refreshCards() {
+  const out = [];
+  for (const p of peers()) {
+    try {
+      const r = await request(p, 'GET', '/api/peer/cards?hours=48', undefined, 4000);
+      for (const c of (r.status === 200 && r.json.cards) || []) {
+        out.push({ agent: c.agent, id: `${c.id}@${p.name}`, name: `${c.name || '(unnamed)'} @ ${p.name}`, project: c.project || '',
+                   projectName: String(c.project || '').split(/[\\/]/).filter(Boolean).pop() || '', machine: p.name,
+                   busy: !!c.busy, archived: false, account: null, activeAt: new Date().toISOString() });
+      }
+    } catch (_) {}
+  }
+  heard = out;
+}
+function neighbourCards() { return heard; }
 
 // ── linking ──────────────────────────────────────────────────────────────────────
 
@@ -374,5 +471,6 @@ function unlink(name) {
 
 module.exports = {
   machineName, peers, enabled, peerByName, parseAddress, isLoopback, admits, peerAt,
-  request, ask, pump, handle, deliver, roomFor, ensureTable, ref, link, unlink, knownProject
+  request, ask, pump, handle, deliver, roomFor, ensureTable, ref, link, unlink, knownProject,
+  refreshCards, neighbourCards
 };
