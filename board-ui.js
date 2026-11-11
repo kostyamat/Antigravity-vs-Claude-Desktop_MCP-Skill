@@ -302,14 +302,6 @@ function apiEdit(data) {
 }
 
 // ── Sessions ────────────────────────────────────────────────────────────────────────────
-const SESSIONS_DIR = path.join(SCRIPTS_DIR, 'docs', 'sessions');
-
-function slug(s, fallback) {
-  const v = String(s || '').trim().toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gui, '-')
-    .replace(/^-+|-+$/g, '');
-  return v || fallback || 'unknown';
-}
 
 // What the board calls a window, so a card with no title of its own still shows
 // the name a human or an agent gave it here.
@@ -383,7 +375,6 @@ function apiSessions() {
   const out = Object.keys(reg).map(k => {
     const s = reg[k];
     const msgs = board.filter(m => (m.fromSession || '') === s.sessionId);
-    const snap = path.join(SESSIONS_DIR, `${slug(s.agent, 'agent')}__${slug(s.sessionId, 'session')}.md`);
     return {
       key: k,
       agent: s.agent,
@@ -399,8 +390,7 @@ function apiSessions() {
       summary: s.summary || '',
       project: s.project || '',
       lastSeen: s.lastSeen || (msgs.length ? msgs[msgs.length - 1].ts : ''),
-      messages: msgs.length,
-      hasSnapshot: fs.existsSync(snap)
+      messages: msgs.length
     };
   });
   out.sort((a, b) => String(b.lastSeen).localeCompare(String(a.lastSeen)));
@@ -451,7 +441,6 @@ function groupByWindow(rows) {
     // rows arrive newest first, so the first one seen is the current label
     head.aliases.push({ sessionId: r.sessionId, lastSeen: r.lastSeen, messages: r.messages });
     head.messages += r.messages;
-    head.hasSnapshot = head.hasSnapshot || r.hasSnapshot;
     for (const t of r.topics || []) {
       if (head.topics.length < 14 && !head.topics.includes(t)) head.topics.push(t);
     }
@@ -461,13 +450,6 @@ function groupByWindow(rows) {
     if (!(head.lineMembers || []).length && (r.lineMembers || []).length) head.lineMembers = r.lineMembers;
   }
   return out;
-}
-
-function apiSnapshot(q) {
-  const file = path.join(SESSIONS_DIR, `${slug(q.agent, 'agent')}__${slug(q.session, 'session')}.md`);
-  if (!fs.existsSync(file)) return { error: 'No snapshot available for this session yet' };
-  try { return { text: fs.readFileSync(file, 'utf8') }; }
-  catch (e) { return { error: e.message }; }
 }
 
 function apiDocs() {
@@ -695,11 +677,6 @@ const server = http.createServer((req, res) => {
       }
     });
     return;
-  }
-  if (req.method === 'GET' && req.url.startsWith('/api/snapshot')) {
-    const q = new URL(req.url, 'http://x').searchParams;
-    const out = apiSnapshot({ agent: q.get('agent'), session: q.get('session') });
-    return send(res, out.error ? 404 : 200, 'application/json; charset=utf-8', JSON.stringify(out));
   }
   if (req.method === 'GET' && req.url === '/api/docs') {
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(apiDocs()));

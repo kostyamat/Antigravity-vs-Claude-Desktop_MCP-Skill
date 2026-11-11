@@ -11,7 +11,7 @@
 //   - Priority levels (P0, normal, fyi) and execution statuses (working, done, blocked)
 //   - Per-session read cursors in SQLite WAL mode
 //   - External file backing for long messages (>4000 chars)
-//   - Context snapshots and document exchange
+//   - Document exchange; a project's slice read from its folder
 // ─────────────────────────────────────────────────────────────────────────────────────────
 
 const fs = require('fs');
@@ -187,7 +187,6 @@ function startWatch() {
     try { logError(`server watcher failed to start: ${e.message}`); } catch (_) {}
   }
 }
-const SESSIONS_DIR = path.join(SCRIPTS_DIR, 'docs', 'sessions');
 
 //
 //
@@ -700,8 +699,8 @@ const TOOLS = [
   {
     name: 'list_sessions',
     description:
-      'Shared registry of sessions across all agents: active sessions, topics covered, last activity timestamp, ' +
-      'and whether a context snapshot is available. Registry updates automatically from board traffic and documents.',
+      'Shared registry of sessions across all agents: active sessions, topics covered and last activity timestamp. ' +
+      'Registry updates automatically from board traffic and documents.',
     inputSchema: {
       type: 'object',
       properties: { agent: { type: 'string', description: 'Filter by agent: "Claude" or "Gemini".' } }
@@ -712,7 +711,7 @@ const TOOLS = [
     description:
       'Put sessions on one line of work, so one job carried by windows in different accounts behaves as one ' +
       'participant: a message to the line name — or to any member — reaches whichever window is alive, and ' +
-      'load_session_context({line}) restores the freshest snapshot any of them saved. Members can be board labels ' +
+      'load_session_context({line}) reads the slice of the project the line stands for. Members can be board labels ' +
       'or the window ids clients issue (Claude Code: get_session({session_id:"self"}).sessionId); link window ids ' +
       'where you can, because every future label of that window then joins by itself. A member belongs to one ' +
       'line at most: linking it elsewhere moves it, and says so. `remove: true` takes the members off the line. ' +
@@ -873,13 +872,12 @@ const TOOLS = [
     description:
       'Read a project\'s slice — .agents/HANDOFF.md in its folder, the one place the state of its work is kept. ' +
       'Pass `line` (a project folder or line of work) or `sessionId` (any window of the project). That file is how ' +
-      'the state crosses from one account or window to the other. Only when a project has no slice does it fall ' +
-      'back to a snapshot saved before slices became the only state, marked as old.',
+      'the state crosses from one account or window to the other. The board keeps no copy of it.',
     inputSchema: {
       type: 'object',
       properties: {
         agent: { type: 'string', description: '"Claude" or "Gemini".' },
-        sessionId: { type: 'string', description: 'Any window of the project whose slice you want. Omit both to list old snapshots.' },
+        sessionId: { type: 'string', description: 'Any window of the project whose slice you want.' },
         line: { type: 'string', description: 'The project: its folder, its line of work, or any member of one.' }
       }
     }
@@ -1985,8 +1983,7 @@ function doListSessions(id, a) {
              `   topics: ${r.topics && r.topics.length ? r.topics.join(', ') : '—'}\n` +
              `   last active: ${r.lastSeen ? ago(r.lastSeen) : '?'}` +
              (r.summary ? `\n   summary: ${r.summary}` : '') +
-             (contacts.length ? `\n   contacted: ${contacts.join(', ')}` : '') +
-             (r.hasSnapshot ? '\n   💾 has context snapshot' : '');
+             (contacts.length ? `\n   contacted: ${contacts.join(', ')}` : '');
     });
   const linesText = describeLines(reg, agent);
   ok(id, (linesText ? linesText + '\n\n' : '') +
@@ -2018,17 +2015,12 @@ function doFindSession(id, a) {
   const rows = hits.slice(0, 8).map(h =>
     `👤 ${h.k}  (score: ${h.score}, active ${h.r.lastSeen ? ago(h.r.lastSeen) : '?'})\n` +
     `   topics: ${(h.r.topics || []).join(', ') || '—'}` +
-    (h.r.summary ? `\n   summary: ${h.r.summary}` : '') +
-    (h.r.hasSnapshot ? `\n   💾 context: load_session_context({agent:"${h.r.agent}", sessionId:"${h.r.sessionId}"})` : ''));
+    (h.r.summary ? `\n   summary: ${h.r.summary}` : ''));
   ok(id, `🔎 Sessions found: ${hits.length}\n\n${rows.join('\n\n')}\n\n` +
         '🔴 Route questions to an existing session when possible: it already retains relevant context.');
 }
 
 //
-
-function ctxFile(agent, sessionId) {
-  return path.join(SESSIONS_DIR, `${slug(agent, 'agent')}__${slug(sessionId, 'session')}.md`);
-}
 
 function doSaveCtx(id, a) {
   // Nothing is stored (project-slice.js says why). The answer names the file to
@@ -2042,86 +2034,22 @@ function doSaveCtx(id, a) {
 }
 
 function doLoadCtx(id, a) {
-  ensureDir(SESSIONS_DIR);
-  const agent = normAgent(a.agent);
-  const sid = String(a.sessionId || '').trim();
-
-  // The slice first: it is the state. What follows it is the old store, kept
-  // readable so nothing saved there is lost, and labelled so nobody trusts it
-  // over the project's own files.
-  let old = '';
-  const slice = projectSlice.find(bridgeDb, String(a.line || sid).trim());
+  const asked = String(a.line || a.sessionId || '').trim();
+  if (!asked) {
+    return fail(id, 'load_session_context: pass `line` (a project folder or its line of work) or `sessionId` (a window of the project).');
+  }
+  const slice = projectSlice.find(bridgeDb, asked);
   if (slice.text) {
     return ok(id, `📄 Slice of ${slice.folder} — ${slice.file}, written ${ago(new Date(slice.mtime).toISOString())}.` +
       (slice.git ? '' : '\n⚠️ This folder is not a git repository: offer the owner `git init`, the commits are the history.') +
       `\n\n───\n\n${slice.text}`);
   }
   if (slice.folder) {
-    old = `📄 ${slice.folder} has no slice yet (${slice.file}). Write one at the first milestone` +
-      (slice.git ? '.' : ', and offer the owner `git init` — this folder is not a git repository.') +
-      '\nBelow is what the old snapshot store holds; it was saved before slices became the only state and may be behind.\n\n';
-  } else if (a.line || sid) {
-    old = '⚠️ No project folder behind this name, so no slice to read. Below is the old snapshot store; it may be behind.\n\n';
+    return ok(id, `📄 ${slice.folder} has no slice yet (${slice.file}). Write one at the first milestone` +
+      (slice.git ? '.' : ', and offer the owner `git init` — this folder is not a git repository.'));
   }
-
-  // A session does not survive a change of account, so a line carries its
-  // context: the freshest snapshot any member saved is the one to pick up from.
-  if (a.line) {
-    const asked = String(a.line).trim();
-    const line = bridgeDb.lineMembers(asked).length ? asked : bridgeDb.lineOf(asked);
-    const members = line ? bridgeDb.lineMembers(line) : [];
-    if (!members.length) {
-      return fail(id, `load_session_context: "${asked}" is neither a project folder, a line, nor a member of one. See list_sessions.`);
-    }
-    let files = [];
-    try { files = fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.md')); } catch (_) {}
-    const suffixes = members.map(m => ({ suffix: `__${slug(m.member, 'session')}.md`, member: m.member }));
-    const found = [];
-    for (const f of files) {
-      const hit = suffixes.find(x => f.endsWith(x.suffix));
-      if (!hit) continue;
-      try { found.push({ f, member: hit.member, mtime: fs.statSync(path.join(SESSIONS_DIR, f)).mtimeMs }); } catch (_) {}
-    }
-    if (!found.length) {
-      return ok(id, old + `🧵 Line «${line}» has ${members.length} members, and none of them has saved a snapshot yet:\n` +
-        members.map(m => `   · ${m.member}`).join('\n'));
-    }
-    found.sort((x, y) => y.mtime - x.mtime);
-    const top = found[0];
-    let text = '';
-    try {
-      text = fs.readFileSync(path.join(SESSIONS_DIR, top.f), 'utf8');
-    } catch (e) {
-      return fail(id, `load_session_context: failed to read ${top.f}: ${e.message}`);
-    }
-    const older = found.slice(1).map(x => `   · ${x.member} — ${ago(new Date(x.mtime).toISOString())}`).join('\n');
-    return ok(id, old + `🧵 Line «${line}» — freshest snapshot is from ${top.member}, saved ${ago(new Date(top.mtime).toISOString())}.` +
-      (older ? `\nOlder snapshots on the same line:\n${older}` : '') + `\n\n───\n\n${text}`);
-  }
-
-  if (!sid) {
-    let files = [];
-    try { files = fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.md')); } catch (e) { /* */ }
-    if (!files.length) return ok(id, old + 'No old session context snapshots found.');
-    const lines = files.map(f => {
-      let when = '';
-      try { when = ago(fs.statSync(path.join(SESSIONS_DIR, f)).mtime.toISOString()); } catch (e) { /* */ }
-      return `   ${f}${when ? `  ·  updated ${when}` : ''}`;
-    });
-    return ok(id, old + `💾 Old session context snapshots (${files.length}):\n${lines.join('\n')}\n\n` +
-      'To load: load_session_context({agent:"…", sessionId:"…"})');
-  }
-
-  const file = ctxFile(agent, sid);
-  if (!fs.existsSync(file)) {
-    return fail(id, `load_session_context: ${slice.folder ? `${slice.folder} has no slice yet (${slice.file})` : `"${sid}" leads to no project folder`}` +
-      `, and the old snapshot store has nothing for ${agent}/${sid}.`);
-  }
-  try {
-    ok(id, old + fs.readFileSync(file, 'utf8'));
-  } catch (e) {
-    fail(id, `load_session_context: failed to read ${file}: ${e.message}`);
-  }
+  fail(id, `load_session_context: "${asked}" leads to no project folder. A slice belongs to a project: pass its folder, ` +
+    'the line of work named by that folder, or a window opened in it (list_sessions shows them).');
 }
 
 function doClear(id, a) {
