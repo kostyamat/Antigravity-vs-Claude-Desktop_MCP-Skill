@@ -97,16 +97,19 @@ def detect_session(agent):
     return ""
 
 
-def urgent_since(agent, window, after):
+def urgent_since(agent, window, after, label=""):
     """What arrived after `after` that is worth waking this window for.
 
     The rule is mailbox.js — the same one the Stop hook and the background watcher
     use. This file used to keep a copy of it, and the copy drifted: it woke a Claude
     window for mail the owner sent to Gemini, and for every "done" posted to a room.
     Raises when the rule cannot be asked, so the caller keeps its place on the board
-    and asks again.
+    and asks again. `label` is the name the session signs with when that is not the
+    window id: until the board ties the two together, mail sent to the label would
+    otherwise be somebody else's.
     """
-    out = subprocess.run(["node", os.path.join(_bridge_home(), "mailbox.js"), "urgent", agent, window, str(after)],
+    out = subprocess.run(["node", os.path.join(_bridge_home(), "mailbox.js"), "urgent", agent, window, str(after)]
+                         + ([label] if label and label != window else []),
                          capture_output=True, timeout=30)
     data = json.loads(out.stdout.decode("utf-8", "replace") or "{}")
     if "list" not in data:
@@ -216,7 +219,7 @@ def main():
                 print("watchman listening at #%d%s" % (top, sess_label), file=sys.stderr, flush=True)
             elif top > last:
                 if me:
-                    rows = urgent_since(args.agent, me, last)
+                    rows = urgent_since(args.agent, me, last, my_session)
                 else:
                     # Session unknown: show everything, directed messages
                     # included. Filtering here would hide exactly the orders

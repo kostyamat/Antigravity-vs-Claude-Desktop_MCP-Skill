@@ -61,7 +61,9 @@ assert.ok(urgent(msg({ to: 'Claude', status: 'done' })), '"done" naming this age
 assert.ok(!urgent(msg({ to: 'Claude', status: 'working' })), 'a status note naming this agent');
 
 // Outside any room, only an address or a P0.
-assert.ok(!urgent(msg({ room: '', status: 'question' })), 'a question on the square');
+assert.ok(!urgent(msg({ room: '', status: 'question' })), 'an agent asking on the square');
+assert.ok(urgent(msg({ room: '', from: 'Kostiantyn', fromSession: 'human/web' })), 'the owner on the square');
+assert.ok(!urgent(msg({ room: 'foreign-room', from: 'Kostiantyn', fromSession: 'human/web' })), 'the owner in a room we are not in');
 assert.ok(urgent(msg({ room: '', priority: 'P0' })), 'a P0 on the square');
 
 // Our own post, and old mail.

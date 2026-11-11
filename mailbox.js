@@ -60,8 +60,10 @@ function createMailbox(bridgeDb, router) {
       if (Date.now() - new Date(m.ts).getTime() > URGENT_HOURS * 3600e3) return false;
       if (m.priority === 'P0') return true;
       if (m.toSession && m.toSession !== 'all') return true;
-      if (!m.room) return false;
+      // The owner is heard wherever he speaks. On the Square he asks "whoever
+      // built this, speak up" exactly because he cannot name the window.
       if (isHuman(m.fromSession)) return true;
+      if (!m.room) return false;
       if (WAITING_STATUSES.includes(m.status)) return true;
       return m.to === reader && URGENT_STATUSES.includes(m.status);
     };
@@ -120,7 +122,7 @@ module.exports = { createMailbox, oneLine, URGENT_STATUSES, WAITING_STATUSES };
 // CLI for the Python side, so the watchman and the session-start brief ask this
 // rule instead of keeping a copy of it (the watchman's copy had drifted: it woke
 // a Claude window for mail sent to Gemini):
-//   node mailbox.js urgent <agent> <window> <afterId>  ->  {"list":[{id, priority, status, topic, toSession, fromSession, message}]}
+//   node mailbox.js urgent <agent> <window> <afterId> [label]  ->  {"list":[{id, priority, status, topic, toSession, fromSession, message}]}
 //   node mailbox.js brief  <agent> <window>            ->  {"fresh":bool, "cursor":N, "unread":N, "urgent":N, "last":["#id …"]}
 if (require.main === module) {
   const [mode, agent, win, after] = process.argv.slice(2);
@@ -131,7 +133,15 @@ if (require.main === module) {
     if (mode === 'brief') {
       process.stdout.write(JSON.stringify(mailbox.briefFor(agent, win, win)));
     } else {
-      const list = mailbox.urgentFor(agent, win, win, Number(after) || 0).map(m => ({
+      // A label the window signs with may not be tied to the window yet (its
+      // first minutes on the board); mail sent to that label is its mail too.
+      const label = String(process.argv[6] || '').trim();
+      // Urgent under either name, and its own under neither: what the window
+      // posted under its old label is still its own echo.
+      const boxes = [win, label].filter((x, i, a) => x && a.indexOf(x) === i).map(sid => mailbox.open(agent, sid, win));
+      const found = bridgeDb.readAllMessages({ since: Math.max(0, Number(after) || 0) })
+        .filter(m => boxes.some(b => b.isUrgent(m)) && !boxes.some(b => b.isMyOwn(m)));
+      const list = found.map(m => ({
         id: m.id, priority: m.priority || 'normal', status: m.status || '', topic: m.topic || '',
         toSession: m.toSession || '', fromSession: m.fromSession || '',
         message: String(m.message || '').replace(/\s+/g, ' ').slice(0, 150) }));
