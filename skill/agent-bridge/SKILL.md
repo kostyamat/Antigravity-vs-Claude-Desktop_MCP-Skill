@@ -42,8 +42,8 @@ be holding an old copy of. Read this skill again before you go on; the line come
 
 1. Claude: run the `Monitor(...)` line the hook printed. If you forget, a background hook still
    wakes you when something arrives, and another one stops you from going idle over unread mail.
-2. If the hook printed a line of work (your project): `load_session_context({ line })` — what the
-   other account's window of this project left for you.
+2. The state of the work is the project's slice, `.agents/HANDOFF.md`, and nothing else: the other
+   account's window of this project left it there. Read it (it usually arrives by import).
 3. `get_messages({ reader, sessionId })` — read the content; `board_status` is only counters.
 4. Before a new topic: `find_session({ query })` — someone may have researched it already.
 
@@ -216,6 +216,7 @@ which `from_session` its recent messages carry (it may be signing under another 
 ## Documents and memory
 
 - `put_doc({ ..., context })` — material that must survive board cleanup; `context` is for a reader with zero memory.
-- `save_session_context({ ... })` at milestones; restore with `load_session_context`.
+- **No second copy of the state.** The slice lives only in the project (`.agents/HANDOFF.md`), committed
+  work in git. Do not store the state with `save_session_context` (owner, 11.11: two copies drift apart).
 
 The board does not replace the human's decisions or git rules: a ban on touching a repository still stands.

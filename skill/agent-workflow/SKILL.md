@@ -80,6 +80,11 @@ it true, rebuild, sign. Change one line, not the app.
 in place or delete it. For more than a step or two, `git init` the work folder — commits are the
 versions.
 
+**Every project is a git repository** (owner, 11.11.2026). Opening a project folder that is not one, the
+agent's first step is to offer the user `git init` (with a `.gitignore` for build output and secrets) —
+without git the slice cannot be checked against anything and commits cannot be the history. **The slice
+exists once, in the project**: `.agents/HANDOFF.md`; no copy of the state on the board or in memory.
+
 **When you finish, report where everything is:**
 - the result — its full path, what changed (the lines before and after), how to install or check it;
 - the tools and intermediate files — where they are and roughly how big;
