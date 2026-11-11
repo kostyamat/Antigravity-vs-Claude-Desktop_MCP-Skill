@@ -51,3 +51,4 @@ sharing/
 
 # ─── Per-machine client settings ───────────────────────────────────
 .claude/settings.local.json
+helper_skills_seen.json

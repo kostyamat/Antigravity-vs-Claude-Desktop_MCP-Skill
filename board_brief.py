@@ -308,6 +308,114 @@ def prompt_invites():
     return 0
 
 
+SOURCE_LINE = "source:"
+
+
+def check_finding(path):
+    """Does a finding name evidence that can be looked up? -> (ok, verdict in one line).
+
+    A finding proves itself with lines of the form
+        Source: <file>[:<line>] | <text that stands in that file, word for word>
+    For each one the file must exist and hold the text (near the line, when a line is given). A stand
+    log counts once it is saved to a file. This cannot tell a true fact from a false one; it refuses the
+    cheap kind of invention - a command, a constant or a log line that is not where the finding says.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except Exception as e:
+        return False, "cannot be read (%s)" % e
+    good, bad = 0, []
+    for raw in lines:
+        s = raw.strip().lstrip("-*> ").strip()
+        if not s.lower().startswith(SOURCE_LINE):
+            continue
+        ref, _, quote = s[len(SOURCE_LINE):].partition("|")
+        ref, quote = ref.strip().strip("`"), quote.strip().strip("`")
+        line_no = 0
+        head, sep, last = ref.rpartition(":")
+        if sep and last.isdigit() and len(head) > 2:
+            ref, line_no = head, int(last)
+        if not quote:
+            bad.append("no quoted text for %s" % os.path.basename(ref)); continue
+        if not os.path.isfile(ref):
+            bad.append("no such file: %s" % ref); continue
+        try:
+            with open(ref, encoding="utf-8", errors="replace") as f:
+                body = f.read().splitlines()
+        except Exception:
+            bad.append("unreadable: %s" % ref); continue
+        scope = body[max(0, line_no - 6):line_no + 5] if line_no else body
+        if any(quote in l for l in scope):
+            good += 1
+        elif line_no and any(quote in l for l in body):
+            bad.append("'%s' is in %s, but not near line %d" % (quote[:40], os.path.basename(ref), line_no))
+        else:
+            bad.append("'%s' is NOT in %s" % (quote[:40], os.path.basename(ref)))
+    if bad:
+        return False, "EVIDENCE DOES NOT HOLD: " + "; ".join(bad[:3]) + (" (+%d ok)" % good if good else "")
+    if not good:
+        return False, "NO CHECKABLE SOURCE (no 'Source: <file>[:<line>] | <text>' line) - treat as a guess"
+    return True, "%d source(s) found where stated - still read them" % good
+
+
+def _helper_skill_files(cfg):
+    """{relative path: sha1} of the markdown in the helper's own skill folder; links to the store are skipped."""
+    import hashlib
+    root = cfg.get("helperSkills") or ""
+    skip = set(x.lower() for x in (cfg.get("helperSkillsIgnore") or []))
+    out = {}
+    if not root or not os.path.isdir(root):
+        return out
+    is_junction = getattr(os.path, "isjunction", lambda p: False)
+    for name in sorted(os.listdir(root)):
+        top = os.path.join(root, name)
+        if not os.path.isdir(top) or name.lower() in skip or os.path.islink(top) or is_junction(top):
+            continue
+        for r, dirs, files in os.walk(top):
+            dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "state")]
+            for f in files:
+                if f.lower().endswith(".md"):
+                    fp = os.path.join(r, f)
+                    try:
+                        with open(fp, "rb") as fh:
+                            out[os.path.relpath(fp, root).replace("\\", "/")] = hashlib.sha1(fh.read().replace(b"\r\n", b"\n")).hexdigest()
+                    except Exception:
+                        pass
+    return out
+
+
+def _helper_seen_path():
+    return os.path.join(_bridge_home(), "helper_skills_seen.json")
+
+
+def helper_skills_changed(cfg):
+    """Skill files the helper wrote or changed in its own folder since a lead last reviewed them."""
+    now = _helper_skill_files(cfg)
+    if not now:
+        return []
+    try:
+        with open(_helper_seen_path(), encoding="utf-8") as f:
+            seen = json.load(f)
+    except Exception:
+        seen = {}
+    return sorted(k for k, v in now.items() if seen.get(k) != v)
+
+
+def accept_helper_skills():
+    """The lead has read the changed skill files: remember their state as reviewed."""
+    try:
+        with open(os.path.join(_bridge_home(), "bridge_config.json"), encoding="utf-8") as f:
+            cfg = (json.load(f) or {}).get("canonReview") or {}
+    except Exception:
+        cfg = {}
+    now = _helper_skill_files(cfg)
+    with open(_helper_seen_path(), "w", encoding="utf-8") as f:
+        json.dump(now, f, indent=1, sort_keys=True)
+    print("reviewed state saved: %d file(s)" % len(now))
+    return 0
+
+
 def canon_review():
     """Findings waiting for the lead's review, where the owner keeps one verified canon.
 
@@ -326,7 +434,17 @@ def canon_review():
     if inbox and os.path.isdir(inbox):
         files = sorted(f for f in os.listdir(inbox) if f.lower().endswith(".md") and f.lower() != "readme.md")
         if files:
-            waiting.append("%d finding(s) in %s: %s" % (len(files), inbox, ", ".join(files[:6]) + (" ..." if len(files) > 6 else "")))
+            waiting.append("%d finding(s) in %s:" % (len(files), inbox))
+            for f in files[:8]:
+                waiting.append("  %s - %s" % (f, check_finding(os.path.join(inbox, f))[1]))
+            if len(files) > 8:
+                waiting.append("  ... and %d more" % (len(files) - 8))
+    changed = helper_skills_changed(cfg)
+    if changed:
+        waiting.append("%d skill file(s) in the helper's own folder are new or changed since the last review: %s" %
+                       (len(changed), ", ".join(changed[:6]) + (" ..." if len(changed) > 6 else "")))
+        waiting.append("  read them: a platform fact there goes to the canon after a check, or is replaced by a pointer; "
+                       "then: python board_brief.py --accept-helper-skills")
     for repo in cfg.get("repos") or []:
         try:
             out = subprocess.run(["git", "-C", repo, "-c", "core.quotepath=off", "status", "--porcelain"],
@@ -346,6 +464,13 @@ def canon_review():
 
 
 def main():
+    if "--accept-helper-skills" in sys.argv:
+        return accept_helper_skills()
+    if "--check-finding" in sys.argv:
+        target = sys.argv[sys.argv.index("--check-finding") + 1] if len(sys.argv) > sys.argv.index("--check-finding") + 1 else ""
+        ok, verdict = check_finding(target)
+        print(verdict)
+        return 0 if ok else 1
     if "--prompt" in sys.argv:
         return prompt_invites()
     if not os.path.exists(DB):
