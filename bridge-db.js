@@ -1446,6 +1446,11 @@ function adoptCard(from, to, agent) {
   const a = String(from || '').trim();
   const b = String(to || '').trim();
   if (!a || !b || a === b) return 0;
+  // A line of work is a project, not a run of one window. A window that once
+  // signed with its line's name ("Claude wDSP") made this take the whole line for
+  // that window: the lead of a pair turned from the project into one window of
+  // the other account, and the project's own lead could no longer task its helper.
+  if (lineMembers(a).length) return 0;
   const db = getDb();
   let n = 0;
   try {
@@ -1454,7 +1459,8 @@ function adoptCard(from, to, agent) {
       db.prepare('DELETE FROM room_members WHERE room = ? AND card = ?').run(r.room, a);
       n++;
     }
-    n += db.prepare('UPDATE helpers SET lead = ? WHERE lead = ?').run(b, a).changes;
+    // The lead of a pair is a project: the window's line when it has one.
+    n += db.prepare('UPDATE helpers SET lead = ? WHERE lead = ?').run(lineOf(b) || b, a).changes;
     if (!db.prepare('SELECT 1 FROM helpers WHERE helper = ?').get(b)) {
       n += db.prepare('UPDATE helpers SET helper = ? WHERE helper = ?').run(b, a).changes;
     }

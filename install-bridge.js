@@ -384,6 +384,8 @@ try {
   // Every Claude window joins the line of the folder it is opened in.
   const by = new Map();
   for (const l of projectLine.adoptAll(bridgeDb, cardsLib)) by.set(l.line, (by.get(l.line) || 0) + 1);
+  // The lead of a pair is its project, never one window of it.
+  try { projectLine.leadsToProjects(bridgeDb); } catch (_) {}
   for (const [line, n] of by) console.log(`  ✅ Project "${projectLine.projectName(line) || line}": ${n} window(s) are now one participant.`);
   if (!by.size) console.log('  ✅ Projects: every window already answers for its project folder.');
 

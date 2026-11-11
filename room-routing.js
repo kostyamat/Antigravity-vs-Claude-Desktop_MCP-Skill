@@ -76,6 +76,8 @@ function createRouter(bridgeDb, cardsLib) {
     const s = String(label || '').trim();
     if (!s || s === 'all') return '';
     if (isHuman(s) || /^local_/.test(s)) return s;
+    // The name of a line of work is that project, whatever window once signed with it.
+    try { if (bridgeDb.lineMembers(s).length) return s; } catch (_) {}
     try {
       const w = cardsLib.claudeWindowOfCli && cardsLib.claudeWindowOfCli(s);
       if (w) return w.id;

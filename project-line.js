@@ -67,6 +67,61 @@ function adoptAll(bridgeDb, cardsLib) {
   return done;
 }
 
+// A project is its folder, and a line somebody once named by hand ("Claude wDSP")
+// is not a second participant of the same project. Such lines are from before
+// folders were the identity. The windows on one kept it, the windows the other
+// account opened later joined the folder's line, and the project became two
+// participants: a lead on the named line started a helper, and the board held
+// that helper for the other half of its own project (owner, 11.11.2026:
+// "the project is the lead's id, not a session or a window").
+//
+// A named line whose Claude windows all live in one folder is folded into that
+// folder's line: its members move there, and a pair, a leave or a stand booking
+// recorded under the old name follows. A line whose windows live in different
+// folders is left alone — it joins projects on purpose.
+// `only` limits it to one named line; `dry` reports without changing anything.
+function foldNamedLines(bridgeDb, cardsLib, opts) {
+  const o = opts || {};
+  const folderOf = new Map();
+  // Only windows that are still in use say where the project is: an archived one
+  // opened in another folder long ago is history, not a second home.
+  for (const c of cardsLib.claudeCardsEverywhere()) {
+    const key = c.archived ? '' : projectKey(c.project);
+    if (key) folderOf.set(c.id, key);
+  }
+  const done = [];
+  for (const [line, members] of bridgeDb.readLines()) {
+    if (isProjectKey(line)) continue;
+    if (o.only && line !== o.only) continue;
+    const folders = new Set(members.map(m => folderOf.get(m.member)).filter(Boolean));
+    if (folders.size !== 1) { if (o.dry) done.push({ line, skipped: folders.size ? 'windows in several folders' : 'no window with a known folder' }); continue; }
+    const into = [...folders][0];
+    const names = members.map(m => m.member);
+    if (!o.dry) {
+      bridgeDb.linkSessions(into, names, 'Claude');
+      const db = bridgeDb.getDb();
+      db.prepare('UPDATE helpers SET lead = ? WHERE lead = ?').run(into, line);
+      try { db.prepare('UPDATE helper_grants SET grantee = ? WHERE grantee = ?').run(into, line); } catch (_) {}
+      try { db.prepare('UPDATE stand_bookings SET holder = ? WHERE holder = ?').run(into, line); } catch (_) {}
+    }
+    done.push({ line, into, members: names });
+  }
+  return done;
+}
+
+// The lead of a pair is a project. A row that names one window of it is moved
+// to that window's project, so every window of the project is the lead.
+function leadsToProjects(bridgeDb, opts) {
+  const done = [];
+  for (const h of bridgeDb.readHelpers()) {
+    const project = bridgeDb.lineOf(h.lead);
+    if (!project || project === h.lead) continue;
+    if (!(opts && opts.dry)) bridgeDb.getDb().prepare('UPDATE helpers SET lead = ? WHERE helper = ?').run(project, h.helper);
+    done.push({ helper: h.helper, from: h.lead, to: project });
+  }
+  return done;
+}
+
 // A room member recorded under a run id becomes the window that run belongs to.
 function adoptRunIds(bridgeDb, cardsLib) {
   const done = [];
@@ -82,7 +137,7 @@ function adoptRunIds(bridgeDb, cardsLib) {
   return done;
 }
 
-module.exports = { projectKey, projectName, isProjectKey, ensureLine, adoptAll, adoptRunIds };
+module.exports = { projectKey, projectName, isProjectKey, ensureLine, adoptAll, adoptRunIds, foldNamedLines, leadsToProjects };
 
 // node project-line.js --adopt  → repair the board once, print what was changed
 if (require.main === module && process.argv.includes('--adopt')) {
