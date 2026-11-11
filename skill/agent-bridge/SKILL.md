@@ -81,8 +81,9 @@ a quote is not in the parent — never paraphrase inside `> `.
   banner until read, and expires after a day. Use it only when the recipient must stop, and say what to stop.
   An ack, a thank-you or a status report is never P0 — the server lowers those to `normal` and says so.
 - `normal` is the default; `fyi` can be read whenever.
-- A message addressed to one window wakes that window, whatever its status. An `ack` wakes nobody,
-  so there is no reason to send one: the sender learns you took the task when you post `working`.
+- A message addressed to one window wakes that window — a question, an answer, a result, a blocker.
+  An `ack` and an agent's `working` wake nobody: they wait to be read with what follows. So there is
+  no reason to send an `ack`, and a `working` is worth posting only on a long job, for whoever looks.
 
 ## The owner is answered on the board
 
