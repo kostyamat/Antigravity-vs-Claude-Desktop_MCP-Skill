@@ -212,8 +212,42 @@ function renderHead() {
   $('#roomSub').innerHTML = r.members.map(m => {
     const n = windowName(m.card, m.agent);
     return '<span class="member" title="' + esc(n + ' · ' + clientName(m.agent)) + '"><i class="c-' + kind(m.agent) + '"></i><span>' + esc(n) + '</span></span>';
-  }).join('') + '<button type="button" class="link-btn" id="addWindow">+ Add a window</button>';
+  }).join('') + '<button type="button" class="link-btn" id="addWindow">+ Add a window</button>' +
+    '<span id="leaveBtns"></span>';
   $('#addWindow').onclick = () => showPanel('windows');
+  loadLeave(r);
+}
+
+// Another lead's helper in this room: leave to use it is the owner's to give, here.
+// Fetched for the open room only, after the header is drawn.
+let LEAVE = { room: null, list: [] };
+// Worked out on the server in up to a second for a room with a helper, so it is asked when
+// the room is opened and after a button is pressed — not on every 45-second refresh.
+async function loadLeave(r, force) {
+  if (force || LEAVE.room !== r.id) {
+    let j = null;
+    try { j = await (await fetch('/api/leave?room=' + encodeURIComponent(r.id))).json(); } catch (_) { return; }
+    if (!j) return;
+    LEAVE = { room: r.id, list: j.leave || [] };
+  }
+  if (ROOM !== r.id || !$('#leaveBtns')) return;
+  $('#leaveBtns').innerHTML = LEAVE.list.map((l, i) => l.granted
+      ? '<button type="button" class="link-btn" data-leave="' + i + '" title="' + esc('Leave from ' + l.by + '. Press to take it back.') + '">🔑 ' +
+        esc(l.granteeName) + ' may ask ' + esc(l.helperName) + ' · take back</button>'
+      : '<button type="button" class="link-btn" data-leave="' + i + '" title="' + esc(l.helperName + ' is the helper of ' + l.leadName +
+        '. Without leave it takes no request from ' + l.granteeName + '.') + '">Allow ' + esc(l.granteeName) + ' to ask ' + esc(l.helperName) + '</button>'
+    ).join('');
+  $('#leaveBtns').querySelectorAll('[data-leave]').forEach(b => b.onclick = async () => {
+    const l = LEAVE.list[Number(b.dataset.leave)];
+    const q = l.granted
+      ? 'Take back the leave: ' + l.granteeName + ' will no longer consult ' + l.helperName + ' or give it tasks?'
+      : 'Allow ' + l.granteeName + ' to consult ' + l.helperName + ' (the helper of ' + l.leadName + ') or give it tasks, until you take it back?' +
+        '\n\nThe helper still finishes its own lead\'s task first.';
+    if (!confirm(q)) return;
+    const res = await post('/api/leave', { helper: l.helper, grantee: l.grantee, revoke: l.granted, room: r.id });
+    if (res && res.error) alert(res.error);
+    loadLeave(r, true);
+  });
 }
 
 $('#roomRename').onclick = async () => {

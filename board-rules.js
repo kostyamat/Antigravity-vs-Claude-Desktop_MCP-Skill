@@ -204,7 +204,36 @@ function createRules(bridgeDb, cardsLib, router) {
       'Both: before an install or a test on a shared device, book_stand.';
   }
 
-  return { identify, helperGuard, describeHelpers, pair, pairNotice, granted };
+  // In one room: which helper another lead there could be given leave to use, and whether
+  // it has it. The owner's board draws a button for each (allow / take back).
+  function leaveIn(room) {
+    const out = [];
+    const members = (room && room.members) || [];
+    // leadOf resolves through the cards on disk and is slow; asked for every member of
+    // every room it made /api/rooms take 17 s. Helpers are few and are stored by their own
+    // window id, so a room with none of them among its members is passed over at once.
+    let helpers = null;
+    try { helpers = new Set(bridgeDb.readHelpers().map(h => String(h.helper))); } catch (_) { helpers = new Set(); }
+    if (!members.some(m => helpers.has(String(m.card)))) return out;
+    let grants = [];
+    try { grants = bridgeDb.readGrants(); } catch (_) {}
+    for (const h of members) {
+      if (!helpers.has(String(h.card))) continue;
+      const boss = router.leadOf(h.card);
+      if (!boss) continue;
+      for (const x of members) {
+        if (x.card === h.card || router.same(x.card, boss.lead) || router.leadOf(x.card)) continue;
+        if (router.agentOf(x.card) !== 'Claude') continue;
+        const who = router.addressOf(x.card) || x.card;
+        const g = grants.find(gr => router.same(gr.helper, h.card) && router.same(gr.grantee, who));
+        out.push({ helper: h.card, helperName: router.nameOf(h.card), lead: boss.lead, leadName: router.nameOf(boss.lead),
+                   grantee: who, granteeName: router.nameOf(who), granted: !!g, until: g ? g.until : '', by: g ? g.by_who : '' });
+      }
+    }
+    return out;
+  }
+
+  return { identify, helperGuard, describeHelpers, pair, pairNotice, granted, leaveIn };
 }
 
 module.exports = { createRules, AGENTS };

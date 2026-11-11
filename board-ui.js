@@ -602,6 +602,39 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // The owner gives (or takes back) leave for another lead to use a helper — the same
+  // record set_helper allow makes — and the room is told, so both leads and the helper see it.
+  // Asked for the open room only: working it out for every room made /api/rooms take 17 s.
+  if (req.method === 'GET' && req.url.startsWith('/api/leave?')) {
+    const id = new URL(req.url, 'http://x').searchParams.get('room') || '';
+    let leave = [];
+    try { const r = bridgeDb.getRoom(id); if (r) leave = rules.leaveIn(r); } catch (_) {}
+    return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ room: id, leave }));
+  }
+  if (req.method === 'POST' && req.url === '/api/leave') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
+    req.on('end', () => {
+      let out;
+      try {
+        const d = JSON.parse(body || '{}');
+        const helper = String(d.helper || '').trim(), grantee = String(d.grantee || '').trim();
+        if (!router.leadOf(helper)) throw new Error('that window is nobody\'s helper');
+        if (!grantee) throw new Error('nobody to give the leave to');
+        if (d.revoke) bridgeDb.revokeGrant(helper, grantee);
+        else bridgeDb.grantHelper(helper, grantee, 'the owner (board)', '');
+        const text = d.revoke
+          ? `Leave taken back: "${router.nameOf(grantee)}" no longer consults "${router.nameOf(helper)}" or gives it tasks.`
+          : `Leave from the owner: "${router.nameOf(grantee)}" may consult "${router.nameOf(helper)}" or give it a task, ` +
+            `until taken back. "${router.nameOf(helper)}": your own lead's task comes first; tell your lead before you take one, ` +
+            'and answer in the room you were asked in.';
+        if (d.room) apiPost({ room: String(d.room), to: 'all', text, topic: 'helper' });
+        out = { ok: true };
+      } catch (e) { out = { error: e.message }; }
+      send(res, 200, 'application/json; charset=utf-8', JSON.stringify(out));
+    });
+    return;
+  }
   if (req.method === 'POST' && req.url === '/api/stand/release') {
     let body = '';
     req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
