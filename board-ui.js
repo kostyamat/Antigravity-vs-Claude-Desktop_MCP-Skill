@@ -1005,11 +1005,15 @@ setInterval(() => {
 // application listens: it waits here and is delivered then. Four minutes, then it is left
 // to the agent's next get_messages.
 const wakeWhenUp = [];
+let upRounds = 0;
 setInterval(() => {
   if (!wakeWhenUp.length) return;
   let up = false;
   try { require('./antigravity-api').locate(); up = true; } catch (_) {}
-  if (up) { for (const p of wakeWhenUp.splice(0)) { try { wakeAntigravity(p.m); } catch (_) {} } return; }
+  // The language server answers a moment before its conversations are loaded: deliver on
+  // the second round it is up, five seconds later, not the first.
+  if (!up) upRounds = 0;
+  else if (++upRounds >= 2) { upRounds = 0; for (const p of wakeWhenUp.splice(0)) { try { wakeAntigravity(p.m); } catch (_) {} } return; }
   while (wakeWhenUp.length && wakeWhenUp[0].until < Date.now()) wakeWhenUp.shift();
 }, 5000).unref();
 

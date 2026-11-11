@@ -45,6 +45,14 @@ function locate() {
 function send(conversationId, text, where) {
   const at = where || locate();
   const child = spawn(at.exe, ['agentapi', 'send-message', conversationId, text], { env: at.env, windowsHide: true, stdio: 'ignore' });
+  // Still fire and forget, but a refused delivery leaves a line instead of vanishing.
+  child.on('exit', code => {
+    if (code) try {
+      fs.appendFileSync(path.join(__dirname, 'bridge_mcp.log'),
+        `${new Date().toISOString()} agentapi send-message ${conversationId} exited ${code}` + '\n');
+    } catch (_) {}
+  });
+  child.on('error', () => {});
   child.unref();
 }
 

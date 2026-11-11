@@ -16,7 +16,6 @@ function wakeAntigravity(rec) {
     const from = (rec.from || '').toLowerCase();
     if (to !== 'gemini' && to !== 'all') return;
 
-    if (id) lastWokenId = id;
 
     // Resolve target conversation IDs
     const targetConvIds = new Set();
@@ -119,6 +118,11 @@ function wakeAntigravity(rec) {
     // Where the running Antigravity listens, and with which token (antigravity-api.js).
     let where;
     try { where = antigravity.locate(); } catch (e) { return giveUp(e.message); }
+    // Marked only now. Marked before, a message posted while Antigravity was closed
+    // failed here, counted as woken anyway, and when the board had started
+    // Antigravity for it the queued delivery was refused as a repeat: the owner
+    // watched the application open and heard nothing.
+    if (id) lastWokenId = id;
 
     const bodyText = rec.text || rec.message || '';
     // The old wording ended with "Give immediate ACK with status: working or
