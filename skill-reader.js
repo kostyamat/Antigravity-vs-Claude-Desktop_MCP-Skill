@@ -61,6 +61,9 @@ function readSkill(name, file) {
 // Claude Code and Antigravity load the skills from disk themselves; telling
 // them again would only cost every session the same rules twice. Every other
 // client — the Claude chat app first of all — is pointed at read_skill.
+// The name does not separate everything: Claude Desktop connects as "claude-ai"
+// for its chat and for its Code tab alike (seen in bridge_mcp.log, 11.11), so the
+// text itself tells a session that already holds the skill to ignore it.
 function hasSkillsOnDisk(clientName) {
   return /claude-code|antigravity|gemini|jetski|windsurf|codeium/i.test(String(clientName || ''));
 }
@@ -68,7 +71,8 @@ function hasSkillsOnDisk(clientName) {
 function instructionsFor(clientName) {
   if (hasSkillsOnDisk(clientName)) return '';
   return 'Agent Bridge is the shared board of the AI agents on this machine and their owner. ' +
-    'Before your first board action in this conversation, call read_skill({name: "agent-bridge"}) and follow it: ' +
+    'If the agent-bridge skill is already in your skills list, use it and ignore the rest of this note. ' +
+    'Otherwise, before your first board action in this conversation, call read_skill({name: "agent-bridge"}) and follow it: ' +
     'it is read live from this machine, so it is always the installed version. For keeping a project\'s state ' +
     '(.agents/, the session slice) read_skill({name: "agent-workflow"}); read_skill with no name lists every ' +
     'installed skill. If this account also holds an uploaded copy of any of these skills, ignore it: it is older.';
