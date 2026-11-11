@@ -884,9 +884,20 @@ const TOOLS = [
     inputSchema: { type: 'object', required: ['scope'], properties: {
       scope: { type: 'string', description: '"square" or a room id.' },
       reason: { type: 'string', description: 'Reason for archiving.' } } }
+  },
+  {
+    name: 'read_skill',
+    description:
+      'Read a skill installed on this machine, live from disk: the agent-bridge rules, agent-workflow (keeping a ' +
+      'project state), or any other. Clients without a skills folder (the Claude chat app) read the rules here ' +
+      'instead of from an uploaded copy, which goes stale. No name: the list of installed skills.',
+    inputSchema: { type: 'object', properties: {
+      name: { type: 'string', description: 'Skill name, e.g. "agent-bridge". Omit to list them.' },
+      file: { type: 'string', description: 'A file inside the skill, e.g. "PROTOCOL.md" or "references/DETAILS.md". Default SKILL.md.' } } }
   }
 ];
 
+const skillReader = require('./skill-reader');
 const pairTools = require('./pair-tools').createPairTools({
   bridgeDb, cardsLib, router, rules, stands, ok, fail, doPost, normAgent });
 
@@ -894,15 +905,17 @@ function handleRequest(req) {
   const { id, method, params } = req;
 
   if (method === 'initialize') {
-    sendResponse({
-      jsonrpc: '2.0',
-      id,
-      result: {
-        protocolVersion: '2024-11-05',
-        capabilities: { tools: {} },
-        serverInfo: { name: 'agent-bridge', version: '2.0.0' }
-      }
-    });
+    // Which client this is decides whether it is told where the rules are: see skill-reader.js.
+    const client = (params && params.clientInfo && params.clientInfo.name) || '';
+    logError(`initialize from client "${client}"`);
+    const result = {
+      protocolVersion: '2024-11-05',
+      capabilities: { tools: {} },
+      serverInfo: { name: 'agent-bridge', version: '2.0.0' }
+    };
+    const instructions = skillReader.instructionsFor(client);
+    if (instructions) result.instructions = instructions;
+    sendResponse({ jsonrpc: '2.0', id, result });
     return;
   }
 
@@ -955,6 +968,10 @@ function handleRequest(req) {
     if (toolName === 'clear_messages') return doClear(id, args);
     if (toolName === 'put_doc') return doPutDoc(id, args);
     if (toolName === 'list_docs') return doListDocs(id, args);
+    if (toolName === 'read_skill') {
+      if (!args.name) return ok(id, skillReader.listSkills().map(k => `${k.name} — ${k.description}`).join(String.fromCharCode(10)) || 'No skills installed.');
+      try { return ok(id, skillReader.readSkill(args.name, args.file)); } catch (e) { return fail(id, e.message); }
+    }
     if (toolName === 'read_doc') return doReadDoc(id, args);
     if (toolName === 'ack_doc') return doAckDoc(id, args);
     if (toolName === 'save_session_context') return doSaveCtx(id, args);

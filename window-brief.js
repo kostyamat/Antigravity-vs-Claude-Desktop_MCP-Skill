@@ -67,11 +67,12 @@ function createBrief(bridgeDb, cardsLib, router, rules, stands) {
   return { describe };
 }
 
-// Skills the owner uploaded to this account that are also installed on disk, and
-// differ. The app keeps an uploaded skill per account and refreshes it from the
-// server, so two accounts follow two versions of one skill unless somebody
-// re-uploads both — which is how one account went on by rules three weeks old.
-// The copy on disk is one file for every account; agents are told to use it.
+// Skills the owner uploaded to this account that are also installed on disk —
+// equal or not. The app keeps an uploaded skill per account, frozen at the day it
+// was uploaded, and Claude Code lists it beside the disk copy; that is how one
+// account went on by rules three weeks old. Nothing needs an uploaded copy any
+// more (the chat app reads the disk copy through read_skill), so every one of
+// them is a duplicate to delete, not only the ones that already drifted.
 function staleAccountSkills(account) {
   const out = new Set();
   const home = process.env.USERPROFILE || os.homedir();
@@ -80,10 +81,18 @@ function staleAccountSkills(account) {
   for (const { dir } of claudeHome.accountSkillDirs(account)) {
     let names = [];
     try { names = fs.readdirSync(dir); } catch (_) { continue; }
+    // Only what the owner uploaded: those have a server id "skill_…" in the account's
+    // manifest. Anthropic's own skills (canvas-design, docx…) carry a plain id and are
+    // not his to delete. An unreadable manifest leaves the list as it is.
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(dir, '..', 'manifest.json'), 'utf8'));
+      const uploaded = new Set((m.skills || []).filter(k => /^skill_/.test(String(k.skillId || ''))).map(k => k.name));
+      names = names.filter(n => uploaded.has(n));
+    } catch (_) {}
     for (const n of names) {
       const mine = text(path.join(disk, n, 'SKILL.md'));
       const theirs = text(path.join(dir, n, 'SKILL.md'));
-      if (mine !== null && theirs !== null && mine !== theirs) out.add(n);
+      if (mine !== null && theirs !== null) out.add(n);
     }
   }
   return [...out].sort();
@@ -110,9 +119,9 @@ if (require.main === module) {
       .describe({ myWindow, win, board: bridgeDb.readAllMessages(), full: true });
     const stale = staleAccountSkills(account || process.env.CLAUDE_CODE_ACCOUNT_UUID || cardsLib.currentAccount() || '');
     if (stale.length) {
-      lines.push('⚠️ This account holds its own uploaded copies of ' + stale.join(', ') + ', and they differ from the ' +
-        'ones on disk. Use the plain skill name (the disk copy, the same for every account), never ' +
-        '`anthropic-skills:<name>`, for these.');
+      lines.push('⚠️ This account holds its own uploaded copies of ' + stale.join(', ') + ' (`anthropic-skills:<name>`). ' +
+        'They are frozen per account and nothing needs them any more: use the plain skill name (the disk copy). ' +
+        'Remind the owner to delete them in Settings → Capabilities → Skills.');
     }
     process.stdout.write(lines.join('\n'));
   } catch (_) {}

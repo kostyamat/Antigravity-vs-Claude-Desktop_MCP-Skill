@@ -105,7 +105,6 @@ let errorCount = 0;
 let warnCount = 0;
 // Claude Desktop takes its Skill only by hand. Remember where the bundle was
 // written so the closing summary can name the one step left to the human.
-const desktopBundlePaths = [];
 const claudePlugin = require('./claude-plugin');
 let pluginHooks = null; // set in 4b, written into the plugin in 4c
 
@@ -414,9 +413,9 @@ try {
     console.warn(`  ⚠️ Account ${emails[acct] || acct.slice(0, 8)} holds its own uploaded copies of: ${stale.join(', ')}.`);
   }
   if (staleAny) {
-    console.warn('     These were uploaded through Claude Desktop (Settings → Capabilities → Skills) and are kept per account,');
-    console.warn('     so the accounts drift apart. The copy on disk is the same for every account and is the one to use:');
-    console.warn('     delete the uploaded copies in each account. Sessions are told at start to prefer the disk copy.');
+    console.warn('     Uploaded copies (Settings → Capabilities → Skills) are frozen per account, and Claude Code sees them');
+    console.warn('     beside the current ones on disk. Nothing needs uploading any more — the chat app reads the installed');
+    console.warn('     skills through the board server — so delete these uploaded copies in each account, once.');
   }
 } catch (e) {
   warnCount++;
@@ -573,74 +572,26 @@ function pruneSkillTree(srcDir, dstDir) {
 // agent-workflow (how to work on a project without losing state or wasting
 // tokens). Each goes to the same places and gets its own Claude Desktop archive.
 const SKILL_ROOT = path.join(SCRIPTS_DIR, 'skill');
-const SKILL_BUNDLE_NAMES = { 'agent-bridge': 'Claude_skill_bridge.zip', 'agent-workflow': 'Claude_skill_workflow.zip' };
 const skillNames = (() => {
   try {
     return fs.readdirSync(SKILL_ROOT).filter(n => fs.existsSync(path.join(SKILL_ROOT, n, 'SKILL.md'))).sort();
   } catch (_) { return []; }
 })();
 
-// Claude Desktop (the chat app) has no skills folder on disk: skills are
-// uploaded through Settings -> Capabilities -> Skills. Build the archive here
-// (SKILL.md at the root) and copy it to the user's real Desktop.
-function buildDesktopBundle(skillSourceDir, zipName) {
-  const shareDir = path.join(SCRIPTS_DIR, 'sharing');
-  const stageDir = path.join(shareDir, path.basename(skillSourceDir));
-  const zipPath = path.join(shareDir, zipName);
-  fs.mkdirSync(shareDir, { recursive: true });
-  fs.rmSync(stageDir, { recursive: true, force: true });
-  copySkillTree(skillSourceDir, stageDir);
-  fs.rmSync(zipPath, { force: true });
-  // Compress-Archive writes entry names with backslashes on Windows
-  // PowerShell. The ZIP format specifies forward slashes; most unpackers
-  // forgive it, but Claude Desktop refuses the archive outright with
-  // "Zip file contains path with invalid characters". Build the entries
-  // by hand so the separator is right.
-    const q = function (v) { return String.fromCharCode(39) + v + String.fromCharCode(39); };
-    const psLines = [
-      'param([string]$Source, [string]$Zip)',
-      '$ErrorActionPreference = ' + q('Stop'),
-      'Add-Type -AssemblyName System.IO.Compression',
-      'Add-Type -AssemblyName System.IO.Compression.FileSystem',
-      'if (Test-Path $Zip) { Remove-Item $Zip -Force }',
-      '$root = (Resolve-Path $Source).Path.TrimEnd(' + q(BS) + ')',
-      '$fs = [System.IO.File]::Open($Zip, ' + q('Create') + ')',
-      // $Zip is declared [string]; PowerShell variables are case
-      // insensitive, so naming the archive $zip would coerce it back
-      // into a string and every method call on it would fail.
-      '$archive = New-Object System.IO.Compression.ZipArchive($fs, ' + q('Create') + ')',
-      'foreach ($f in Get-ChildItem -LiteralPath $root -Recurse -File) {',
-      '  $rel = $f.FullName.Substring($root.Length + 1).Replace(' + q(BS) + ', ' + q('/') + ')',
-      '  $e = $archive.CreateEntry($rel, [System.IO.Compression.CompressionLevel]::Optimal)',
-      '  $s = $e.Open()',
-      '  $b = [System.IO.File]::ReadAllBytes($f.FullName)',
-      '  $s.Write($b, 0, $b.Length)',
-      '  $s.Dispose()',
-      '}',
-      '$archive.Dispose()',
-      '$fs.Dispose()'
-    ];
-    const zipPs = path.join(SCRIPTS_DIR, '_tmp_skillzip.ps1');
-    fs.writeFileSync(zipPs, psLines.join(String.fromCharCode(13, 10)), 'utf8');
-    try {
-      execSync('powershell -NoProfile -ExecutionPolicy Bypass -File "' + zipPs + '" -Source "' + stageDir + '" -Zip "' + zipPath + '"', { stdio: 'ignore' });
-    } finally {
-      try { fs.unlinkSync(zipPs); } catch (_) {}
-    }
-  fs.rmSync(stageDir, { recursive: true, force: true });
-
-  const realDesktop = resolveSpecialFolder('Desktop');
-  if (!realDesktop || !fs.existsSync(realDesktop)) return zipPath;
-  const desktopZip = path.join(realDesktop, zipName);
-  fs.copyFileSync(zipPath, desktopZip);
-  // Clean up stale bundles from an unredirected USER_PROFILE/Desktop.
-  const guessedDesktop = path.join(USER_PROFILE, 'Desktop');
-  if (path.resolve(guessedDesktop) !== path.resolve(realDesktop) && fs.existsSync(guessedDesktop)) {
-    for (const old of [zipName, 'agent-bridge-skill.zip', 'skill_bridge.zip']) {
-      try { fs.unlinkSync(path.join(guessedDesktop, old)); } catch (_) {}
-    }
+// The Claude chat app has no skills folder on disk. It used to get a zip of each
+// skill to upload by hand; an uploaded copy is frozen per account and is seen by
+// Claude Code too, so the copies drifted from the disk. The chat now reads the
+// installed skills through the board's MCP server (read_skill, skill-reader.js):
+// nothing to build, nothing to upload. Archives an older install left behind are
+// removed, so nobody uploads a stale one.
+function removeOldBundles() {
+  const names = ['Claude_skill_bridge.zip', 'Claude_skill_workflow.zip', 'agent-bridge-skill.zip', 'skill_bridge.zip'];
+  const dirs = [path.join(SCRIPTS_DIR, 'sharing'), resolveSpecialFolder('Desktop'), path.join(USER_PROFILE, 'Desktop')].filter(Boolean);
+  let n = 0;
+  for (const d of new Set(dirs)) for (const z of names) {
+    try { fs.unlinkSync(path.join(d, z)); n++; } catch (_) {}
   }
-  return desktopZip;
+  return n;
 }
 
 if (!skillNames.length) {
@@ -665,16 +616,12 @@ for (const skillName of skillNames) {
       console.warn('  ' + target.dir + ': ' + e.message);
     }
   }
-  try {
-    const zip = buildDesktopBundle(skillSourceDir, SKILL_BUNDLE_NAMES[skillName] || ('Claude_skill_' + skillName + '.zip'));
-    desktopBundlePaths.push(zip);
-    console.log('  + Claude Desktop: bundle ready -> ' + zip);
-  } catch (e) {
-    warnCount++;
-    console.warn('  Could not build the Claude Desktop archive for ' + skillName + ': ' + e.message);
-  }
 }
-if (desktopBundlePaths.length) console.log('    (Upload each via Settings > Capabilities > Skills)');
+try {
+  const gone = removeOldBundles();
+  console.log('  + Claude chat app: reads these skills through the board server (read_skill), nothing to upload' +
+    (gone ? ' (' + gone + ' old upload archive' + (gone > 1 ? 's' : '') + ' removed)' : '') + '.');
+} catch (_) {}
 
 // The installed Claude Code copy of the agent-bridge skill becomes the plugin
 // agent-bridge@skills-dir: its manifest and hooks.json are written after the
@@ -880,26 +827,11 @@ try {
   console.error(`  ❌ Configuration error: ${e.message}`);
 }
 
-// Claude Desktop keeps no skills folder on disk, so the installer can build the
-// bundle but cannot upload it. Say so in the closing summary, where it is read.
-function printManualStep() {
-  if (!desktopBundlePaths.length) return;
-  console.log('  One manual step left - Claude Desktop Skills:');
-  for (const p of desktopBundlePaths) console.log('    upload ' + p);
-  console.log('    via Settings > Capabilities > Skills');
-}
-
 // Only what this run actually changed. On a re-run that moved nothing, the honest
 // output is that there is nothing to do — and that is what makes the times it does
 // ask for something worth reading.
 function printNextSteps() {
   const steps = [];
-  if (isFirstInstall || skillChanged) {
-    if (desktopBundlePaths.length) {
-      steps.push(['Upload the Claude Desktop Skills — this is the one thing no installer can do:']
-        .concat(desktopBundlePaths.map(p => '   ' + p), ['   Settings > Capabilities > Skills']));
-    }
-  }
   if (isFirstInstall || serverChanged) {
     steps.push([
       'Restart Claude Desktop and Antigravity.',
