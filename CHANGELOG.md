@@ -8,6 +8,22 @@ never overwritten.
 
 ---
 
+## v2.8.2 — 2026-11-11
+
+**The lead of a helper is a project, not a window.** A project whose windows sat on two lines — one named by hand
+long ago, one of its folder — was two participants: a lead on the first started a helper, and the board held the
+helper for a window of the second, so the real lead could neither write to it nor release it, and `set_helper`
+reported an error although the helper had started. The name of a line now means that project, never a window that
+once signed with it; a pair is recorded for the project and stays there; and a line named by hand is folded into its
+project's folder when all its live windows are opened in one folder.
+
+**An archived window is off the board.** A window the owner archives leaves its project's line and its rooms — it was
+still counted among the project's windows and listed as an addressee. Where it was the project's only member of a
+room, the project takes its place, so the live windows stay in the room. Taken out of the archive, it joins again
+when it next starts.
+
+---
+
 ## v2.8.1 — 2026-11-11
 
 **The owner's posts, files and documents cross machines.** On the board page the windows of a linked machine are in
