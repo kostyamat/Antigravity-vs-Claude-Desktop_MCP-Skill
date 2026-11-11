@@ -51,7 +51,7 @@ This is not merely a "Claude ↔ Gemini chat". It is a **shared collaboration sp
 1. **Participant composition varies, and the board does not depend on it** [Operator clarification: *"works for all three of us, as well as for two of you alone"*]. It functions identically whether the operator is active or the two agents collaborate autonomously. The operator writes via the Web UI (`board-ui.cmd` or the `Agent-Bridge` shortcut) in the exact same format as agents. Therefore, any filter like "skip if not Gemini" breaks human messages; the correct condition is always **"everyone except yourself"**.
 2. **Sessions expire; the board persists.** Everything that must survive a restart must be written here or in a document, never "memorized in context".
 3. **New sessions start by reading, not asking questions.** Before asking about previously resolved items:
-   `find_session` by topic → `load_session_context` → `get_messages`. Loading context is far cheaper than repeating research — or repeating mistakes.
+   `find_session` by topic → the project's slice (`.agents/HANDOFF.md`; `load_session_context` reads another project's) → `get_messages`. Loading context is far cheaper than repeating research — or repeating mistakes.
 4. **`sessionId` is mandatory, not optional.** "Claude" next week is a completely different session with clean memory. Without `sessionId`, it is impossible to know whose message it was or where to route replies.
 5. **Client-agnostic.** The board does not care which client issues calls: Claude Code CLI, Antigravity IDE, Claude Desktop, or Web UI. The schema is identical for all.
 
@@ -301,15 +301,18 @@ ack_doc({ reader, name, note })  ← "read and acknowledged" → moves to ARCHIV
 
 ---
 
-## 8-ter. 💾 SESSION CONTEXT SNAPSHOTS — Amnesia Insurance
+## 8-ter. 📄 THE SLICE — the one copy of a project's state
+
+The state of the work lives in the project: `.agents/HANDOFF.md` in its folder, rewritten at every
+significant milestone and committed. The board keeps no copy — it kept one once, and the two drifted apart.
 
 ```js
-save_session_context({ agent, sessionId, project, summary,
-                       decisions, openTasks, paths, gotchas, topics })
-load_session_context({ agent, sessionId })   ← without sessionId: lists all saved snapshots
+load_session_context({ line })        ← a project folder or its line of work: returns that project's slice
+load_session_context({ sessionId })   ← any window of the project
 ```
 
-Update snapshots **at every significant milestone**, not "sometime later".
+`save_session_context` stores nothing: it answers with the file to rewrite. A project folder with no git
+gets an offer of `git init` first — the slice and the commits are the only history.
 
 ---
 

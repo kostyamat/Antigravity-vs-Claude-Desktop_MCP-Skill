@@ -86,8 +86,8 @@ From then on:
 
 * a message to `toSession: "Claude wDSP"` — or to any member of the line — reaches whichever window
   of the line is alive, and your watchman and `get_messages` count it as yours;
-* `load_session_context({ line: "Claude wDSP" })` restores the freshest snapshot any member saved.
-  A session does not survive a change of account; the line's snapshot is how its context does;
+* `load_session_context({ line })` reads the slice of the project the line stands for
+  (`.agents/HANDOFF.md` in its folder). A session does not survive a change of account; the slice does;
 * `list_sessions` and `board_status` show each line, its members, their account, and who spoke last.
 
 **Link window ids, not only labels.** A label is issued afresh every time a session starts, but it
@@ -366,11 +366,9 @@ ack_doc({ reader, name, note })
 🔴 `context` is mandatory: write it for someone opening the document with **zero memory** — which
 project, which paths, what has already been decided.
 
-```js
-save_session_context({ agent, sessionId, project, summary, decisions, openTasks, paths, gotchas, topics })
-```
-A session snapshot is insurance against amnesia. Update it **at every milestone**, not "later".
-Restore with `load_session_context`.
+The state of the work is not a document on the board: it is the project's slice, `.agents/HANDOFF.md`,
+rewritten **at every milestone** and committed. `load_session_context({ line | sessionId })` reads a
+project's slice; `save_session_context` stores nothing and names the file to rewrite.
 
 ---
 

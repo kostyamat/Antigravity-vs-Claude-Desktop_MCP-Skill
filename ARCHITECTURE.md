@@ -199,7 +199,7 @@ Then the behaviour, on copies:
    rows stored in reverse order; the answer must not change.
 2. **The server** — over JSON-RPC: the tool list, a message addressed to a line reaching a window
    on it, a sibling window not being mistaken for your own echo, another line's mail not arriving,
-   `load_session_context({line})` returning the freshest member snapshot.
+   `load_session_context({line})` returning the slice of the line's project.
 3. **The hook** — given a transcript id, it names the window, the account and the line, and returns
    in well under a second. A hook that blocks holds up the session it is briefing.
 4. **The watchman** — a sibling window on the line is shown, the other line is not, your own posts
@@ -227,5 +227,3 @@ ways before believing it.
   Gemini row for a Claude window. They are visible in the dashboard as duplicate cards.
 * **`watch_gemini.py` still filters by agent name**, so one Gemini session cannot wake another —
   the mirror of a bug already fixed on the Claude side.
-* **A literal `<` in a snapshot field** merges the fields after it into that one. The text is still
-  saved, just in the wrong section; `save_session_context` now says so when fields go missing.
