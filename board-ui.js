@@ -573,9 +573,6 @@ const server = http.createServer((req, res) => {
           out = bridgeDb.createRoom(d.name || 'room', members, cardsLib.currentAccount() || '');
           if (out && out.id) {
             for (const m of members) inviteFromOwner(d.from, out, m.card, known.get(m.card));
-            const p = rules.autoPair(out.id);
-            if (p) apiPost({ from: String(d.from || '').trim() || ownerName(), room: out.id, to: 'Gemini', toSession: p.helper,
-                             topic: 'helper', text: rules.pairNotice(p) });
           }
         } else if (what === 'add') {
           const known = new Map(cardsLib.allCards({ allAccounts: true }).map(c => [c.id, c]));

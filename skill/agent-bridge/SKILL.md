@@ -124,10 +124,10 @@ Square by accident: **the Square is the owner's**, and an agent writes there onl
 A lead (a Claude project) keeps design, review and the talk with the owner, and hands the routine
 to its helper (an Antigravity window): research, adb, logs, clicking through a UI, stand runs.
 
-- **The pair is recorded by the board, not remembered by you.** A room of one Claude project and one
-  Antigravity window *is* a pair from the moment it exists — the owner ticks the two on the board,
-  or the lead calls `create_room`. Otherwise: the lead calls `set_helper({ helper: "<its id>" })`, or
-  the helper, told whose helper it is, calls `set_helper({ lead: "<id or project>" })`. A helper that
+- **A pair exists only when it is recorded.** A shared room is not a pair: one Antigravity window may
+  be consulted by many sessions (the owner's debugger, a researcher) and helps none of them in
+  particular. The lead calls `set_helper({ helper: "<its id>" })`, or `set_helper({ start: true, brief })`
+  for a new one; the helper, told whose helper it is, calls `set_helper({ lead: "<id or project>" })`. A helper that
   does not know its lead **asks the owner for the lead's id before doing anything** and records it.
 - From then on both are told who they are at every start and every read (🧑‍🔧 your helper, 👤 your lead).
 - **A helper reports to its lead, in their room.** A post that names nobody goes there by itself.

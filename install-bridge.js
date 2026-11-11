@@ -387,15 +387,8 @@ try {
   for (const [line, n] of by) console.log(`  ✅ Project "${projectLine.projectName(line) || line}": ${n} window(s) are now one participant.`);
   if (!by.size) console.log('  ✅ Projects: every window already answers for its project folder.');
 
-  // A room of one project and one Antigravity window is a pair; the liveliest room wins a helper.
-  // Only rooms used in the last two weeks: an old room is history, not a working pair.
-  const fresh = new Date(Date.now() - 14 * 86400e3).toISOString();
-  const rooms = bridgeDb.readRooms().filter(r => String(r.last_activity || '') > fresh)
-    .sort((x, y) => String(y.last_activity || '').localeCompare(String(x.last_activity || '')));
-  for (const room of rooms) {
-    const p = rules.autoPair(room.id);
-    if (p) console.log(`  ✅ Pair on record: "${router.nameOf(p.helper)}" helps "${router.nameOf(p.lead)}" (room "${room.name}").`);
-  }
+  // Pairs are not made here any more: a room of one project and one Antigravity
+  // window is not by itself a pair (set_helper records one; see board-rules.js).
 
   // What still differs between accounts, and what does not.
   const accounts = cardsLib.claudeAccounts();

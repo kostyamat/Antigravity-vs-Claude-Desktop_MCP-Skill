@@ -162,29 +162,13 @@ function createRules(bridgeDb, cardsLib, router) {
     bridgeDb.setHelper(helper, router.addressOf(lead) || lead, room || '');
   }
 
-  // A room of one Claude project and one Antigravity window is a pair, and is
-  // recorded as one the moment the room exists: the project leads, the
-  // Antigravity window helps. Nobody has to remember to say so — the owner ticks
-  // two windows on the board, or a lead opens a room with its helper, and both
-  // sides are told who they are from then on. A window that already has a lead
-  // keeps it; a room of two projects is two peers and records nothing.
-  function autoPair(roomId) {
-    let room = null;
-    try { room = bridgeDb.getRoom(roomId); } catch (_) {}
-    if (!room) return null;
-    const who = new Map();
-    for (const m of room.members || []) {
-      const addr = router.addressOf(m.card) || m.card;
-      if (!who.has(addr)) who.set(addr, m.card);
-    }
-    if (who.size !== 2) return null;
-    const cards = [...who.values()];
-    const lead = cards.find(c => router.agentOf(c) === 'Claude');
-    const helper = cards.find(c => router.agentOf(c) === 'Gemini' && isWindowId(c));
-    if (!lead || !helper || router.leadOf(helper)) return null;
-    pair(helper, lead, room.id);
-    return { helper, lead, room: room.id };
-  }
+  // A pair is recorded only when somebody says so (set_helper). It used to be
+  // recorded by itself for every room of one Claude project and one Antigravity
+  // window — and an Antigravity window that many sessions consult (the owner's
+  // "debugger") became the helper of whichever project shared a room with it
+  // first, and was then refused an answer to the owner in any other room
+  // (owner, 11.11: not what he expected). A shared room says who talks, not
+  // who works for whom.
 
   // What the helper is told when a pair is recorded. The lead reads it too: it
   // is posted in their room.
@@ -197,7 +181,7 @@ function createRules(bridgeDb, cardsLib, router) {
       'Both: before an install or a test on a shared device, book_stand.';
   }
 
-  return { identify, helperGuard, describeHelpers, pair, autoPair, pairNotice };
+  return { identify, helperGuard, describeHelpers, pair, pairNotice };
 }
 
 module.exports = { createRules, AGENTS };

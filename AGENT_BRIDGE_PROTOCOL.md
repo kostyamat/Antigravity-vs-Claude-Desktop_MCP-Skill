@@ -23,8 +23,8 @@ them to every call, and a call that breaks one is refused with what to pass inst
    recipient, or the one room the sender is in. Otherwise the call is refused and lists the rooms.
 4. **The Square is the owner's.** An agent writes there only with `square: true`, or in reply to
    what the owner wrote there.
-5. **A room of one Claude project and one Antigravity window is a pair**: the project leads, the
-   Antigravity window helps. Also recorded by `set_helper`. A helper's post that names nobody goes
+5. **A pair is recorded by `set_helper` only**: the project leads, the Antigravity window helps. A
+   shared room alone is not a pair. A helper's post that names nobody goes
    to its lead; a task to another lead's helper, and a helper's answer to another lead, are refused.
 6. **A stand has one holder.** `book_stand` before an install or a test on a shared device; a second
    taker is refused with the holder's name; every window sees the bookings.

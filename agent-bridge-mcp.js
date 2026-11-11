@@ -1066,33 +1066,12 @@ function doCreateRoom(id, a) {
   const members = resolved.map(c => ({ card: c, agent: router.agentOf(c) }));
 
   const room = bridgeDb.createRoom(a.name, members, a.account || cardsLib.currentAccount() || '');
-  const paired = announcePair(room.id, normAgent(a.sender) || '', a.sessionId || '');
   const who = room.members
     .map(m => `${m.agent === 'Claude' ? '🤖' : '✨'} ${router.nameOf(m.card)}`)
     .join(' + ');
   ok(id, `Room "${room.name}" [${room.id}] — ${who}` +
-         (paired ? `\n🧑‍🔧 pair on record: "${router.nameOf(paired.helper)}" is the helper of "${router.nameOf(paired.lead)}"` : '') +
          (unknown.length ? `\n⚠️ not among the open windows: ${unknown.join(', ')}` : '') +
          `\n\nPost into it with room: "${room.id}", read it with get_messages({room: "${room.id}"}).`);
-}
-
-// A room of one Claude project and one Antigravity window is a pair: record it
-// and say so in the room, to the helper. Returns the pair, or null.
-function announcePair(roomId, fromAgent, fromSession) {
-  let p = null;
-  try { p = rules.autoPair(roomId); } catch (e) { logError(`autoPair: ${e.message}`); }
-  if (!p) return null;
-  try {
-    const rec = {
-      ts: new Date().toISOString(), from: fromAgent || router.agentOf(p.lead), fromSession: fromSession || p.lead,
-      room: p.room, to: 'Gemini', toSession: p.helper, replyTo: null, topic: 'helper',
-      priority: 'normal', status: 'info', progress: '', message: rules.pairNotice(p), file: null, readBy: []
-    };
-    rec.id = bridgeDb.addMessage(rec).id;
-    bridgeDb.touchRoom(p.room);
-    wakeAntigravity(rec);
-  } catch (e) { logError(`announcePair: ${e.message}`); }
-  return p;
 }
 
 function doListRooms(id, a) {
@@ -1332,7 +1311,6 @@ function doPost(id, a) {
   const hints = [];
   if (a._identityNote) hints.push('ℹ️ ' + a._identityNote);
   if (quoteHint) hints.push(quoteHint);
-  if (routed.opened) announcePair(routed.opened.id, from, rec.fromSession);
   if (routed.opened) hints.push(`🚪 opened room "${routed.opened.name}" (${routed.opened.id}) for this conversation — the human reads the board by rooms`);
   if (demoted) hints.push(`ℹ️ P0 lowered to normal — a \`${status}\` is not an emergency, so nobody was woken`);
   if (!rec.fromSession) hints.push('⚠️ `sessionId` not specified — recipient will not know which session to reply to');
