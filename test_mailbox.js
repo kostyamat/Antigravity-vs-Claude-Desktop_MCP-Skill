@@ -35,7 +35,10 @@ const urgent = m => board([m]).urgentFor('Claude', WIN, WIN, 0).length === 1;
 
 // Addressed to the window, to a sibling window of its project, or to the project itself.
 assert.ok(urgent(msg({ to: 'Claude', toSession: WIN })), 'sent to this window');
-assert.ok(urgent(msg({ to: 'Claude', toSession: SIBLING, status: 'working' })), 'sent to another window of the project');
+assert.ok(urgent(msg({ to: 'Claude', toSession: SIBLING, status: 'done' })), 'sent to another window of the project');
+assert.ok(!urgent(msg({ to: 'Claude', toSession: WIN, status: 'working' })), 'an agent taking the task wakes nobody');
+assert.ok(urgent(msg({ to: 'Claude', toSession: WIN, status: 'working', priority: 'P0' })), 'unless it is a P0');
+assert.ok(urgent(msg({ to: 'Claude', toSession: WIN, status: 'working', from: 'Kostiantyn', fromSession: 'human/web' })), 'or the owner');
 assert.ok(urgent(msg({ to: 'Claude', toSession: LINE })), 'sent to the project');
 assert.ok(!urgent(msg({ to: 'Claude', toSession: 'local_somebody-else' })), 'sent to a window of another project');
 assert.ok(!urgent(msg({ to: 'Claude', toSession: WIN, status: 'ack' })), 'a receipt never wakes');

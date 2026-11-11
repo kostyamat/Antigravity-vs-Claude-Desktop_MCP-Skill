@@ -59,10 +59,13 @@ function createMailbox(bridgeDb, router) {
       if (!isForMe(m) || isMyOwn(m) || m.status === 'ack') return false;
       if (Date.now() - new Date(m.ts).getTime() > URGENT_HOURS * 3600e3) return false;
       if (m.priority === 'P0') return true;
-      if (m.toSession && m.toSession !== 'all') return true;
       // The owner is heard wherever he speaks. On the Square he asks "whoever
       // built this, speak up" exactly because he cannot name the window.
       if (isHuman(m.fromSession)) return true;
+      // Sent to this window or its project: it wakes, unless it is an agent's
+      // "working" — "I took the task" needs no reaction and cost the lead a turn
+      // each time (owner, 11.11.2026). It is read with the result that follows.
+      if (m.toSession && m.toSession !== 'all') return m.status !== 'working';
       if (!m.room) return false;
       if (WAITING_STATUSES.includes(m.status)) return true;
       return m.to === reader && URGENT_STATUSES.includes(m.status);
