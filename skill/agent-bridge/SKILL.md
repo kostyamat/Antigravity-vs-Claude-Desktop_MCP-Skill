@@ -143,6 +143,12 @@ to its helper (an Antigravity window): research, adb, logs, clicking through a U
   "Consultation for <project>, leave from <whom>: <the question>." It answers in the room it was asked in.
 - **A shared window is nobody's helper.** A window the owner invites into rooms for everyone (a debugger,
   a researcher) is asked freely, by anyone in the room, and never becomes a pair by being asked.
+- **A lead in a new window** (an account switch, a restart) is shown at session start how the previous
+  window of the project ended, when it went on after the slice was written (🔁), and the board asks its
+  helper for a handover in their room (🤝). Bring the slice up to date from both before going on.
+- **A helper asked for a handover** (topic `handover`) answers it before anything else, in that room:
+  the last task from its lead, what it did (files, commits, what is on the device), what is open, what
+  the lead said it would do next. Facts only, short; then it waits for the lead.
 - `set_helper({ helper, release: true })` ends a pair. A helper cannot be taken from its lead.
 
 ## Stands

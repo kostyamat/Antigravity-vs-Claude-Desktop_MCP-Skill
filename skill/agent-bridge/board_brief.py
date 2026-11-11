@@ -235,6 +235,18 @@ def window_state():
         return 0, None
 
 
+def previous_window(sid):
+    """How the previous window of this project ended, when it went on after the slice
+    was written: an account switch or a cut-off session leaves the slice behind, and the
+    transcript in the shared ~/.claude/projects says what happened (handover.js)."""
+    try:
+        args = ["node", os.path.join(_bridge_home(), "handover.js"), os.getcwd(), sid or ""]
+        out = subprocess.run(args, capture_output=True, timeout=15)
+        return [l for l in out.stdout.decode("utf-8", "replace").splitlines() if l.strip()]
+    except Exception:
+        return []
+
+
 def rooms_of_window(sid, win):
     """The rooms this window is in and the invitations it has not acted on, by the
     one rule in room-invite.js. A window that was closed when the owner invited it
@@ -618,6 +630,7 @@ def main():
     lines.append('Then: get_messages({reader:"%s", sessionId:"%s"%s})' % (ME, sid, extra))
 
     lines += rooms_of_window(hook_session, window and window["window"])
+    lines += previous_window(hook_session)
 
     hint = workflow_hint(os.getcwd())
     if hint:

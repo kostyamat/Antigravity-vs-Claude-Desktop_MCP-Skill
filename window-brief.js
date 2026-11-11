@@ -126,6 +126,17 @@ if (require.main === module) {
         'They are frozen per account and nothing needs them any more: use the plain skill name (the disk copy). ' +
         'Remind the owner to delete them in Settings → Capabilities → Skills.');
     }
+    // A lead in a new window asks its helper for a handover (handover.js), once per window.
+    try {
+      const { wakeAntigravity } = require('./wake-antigravity');
+      lines.push(...require('./handover').askHelpers({ bridgeDb, router, win, post: m => {
+        const rec = Object.assign({ ts: new Date().toISOString(), priority: 'normal', status: 'question', progress: '',
+                                    replyTo: null, file: null, readBy: [] }, m);
+        rec.id = bridgeDb.addMessage(rec).id;
+        bridgeDb.touchRoom(rec.room);
+        wakeAntigravity(rec);
+      } }));
+    } catch (_) {}
     process.stdout.write(lines.join('\n'));
   } catch (_) {}
 }
