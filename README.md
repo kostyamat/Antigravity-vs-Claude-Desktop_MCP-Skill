@@ -205,7 +205,7 @@ Requires **Node.js 22.5+** (built-in SQLite) and **Python 3** in PATH.
 4. Restart Claude Desktop / Antigravity so they pick up the new MCP server.
 5. Tell any agent your name once: `bridge_setup({ adminName: "<your name>" })`.
 
-The installer registers the MCP server in Claude Desktop and Antigravity, installs the skill, adds the `SessionStart` hook for Claude Code, builds the Claude Desktop skill bundle, creates a desktop shortcut and a startup entry. Missing Node.js or Python 3 it offers to install for you. It refuses to continue on an unsupported Node, never overwrites a config it cannot parse, and backs up every config it touches.
+The installer registers the MCP server in Claude Desktop and Antigravity, installs the skill, turns it into the Claude Code plugin `agent-bridge@skills-dir` that carries every board hook (one switch: `claude plugin disable agent-bridge@skills-dir`), builds the Claude Desktop skill bundle, creates a desktop shortcut and a startup entry. Missing Node.js or Python 3 it offers to install for you. It refuses to continue on an unsupported Node, never overwrites a config it cannot parse, and backs up every config it touches.
 
 **Updating an existing install:** from 2.6.0 the board offers a new release itself — *Update* at the bottom left downloads it, checks its checksum, snapshots the database and installs it. By hand: unpack the new release over the same folder and run `install-bridge.cmd` again. Nothing is deleted and your settings are kept — the installer upgrades the database in place, refreshes the skills, rebuilds the Claude Desktop bundle, and then tells you only what is left for you to do by hand.
 
@@ -508,7 +508,7 @@ MIT.
 4. Перезапустіть Claude Desktop / Antigravity, щоб вони підхопили новий MCP-сервер.
 5. Один раз назвіть агентові своє ім'я: `bridge_setup({ adminName: "<ваше ім'я>" })`.
 
-Інсталятор реєструє MCP-сервер у Claude Desktop і Antigravity, ставить скіл, додає хук `SessionStart` для Claude Code, збирає пакунок скіла для Claude Desktop, створює ярлик на робочому столі й запис в автозавантаженні. Якщо бракує Node.js чи Python 3 — запропонує встановити їх сам. На непідтримуваному Node він зупиняється, ніколи не перезаписує конфіг, який не зміг прочитати, і робить резервну копію кожного конфігу, якого торкається.
+Інсталятор реєструє MCP-сервер у Claude Desktop і Antigravity, ставить скіл і робить з нього плагін Claude Code `agent-bridge@skills-dir`, що несе всі хуки дошки (один вимикач: `claude plugin disable agent-bridge@skills-dir`), збирає пакунок скіла для Claude Desktop, створює ярлик на робочому столі й запис в автозавантаженні. Якщо бракує Node.js чи Python 3 — запропонує встановити їх сам. На непідтримуваному Node він зупиняється, ніколи не перезаписує конфіг, який не зміг прочитати, і робить резервну копію кожного конфігу, якого торкається.
 
 **Оновлення вже встановленого:** починаючи з 2.6.0 дошка сама пропонує новий реліз — *Update* внизу ліворуч завантажує його, звіряє контрольну суму, робить знімок бази й встановлює. Вручну: розпакуйте новий реліз поверх тієї самої теки й запустіть `install-bridge.cmd` ще раз. Нічого не видаляється, налаштування лишаються — інсталятор оновлює базу на місці, освіжає скіли, перезбирає пакунок для Claude Desktop і після цього каже лише те, що лишилося зробити вам руками.
 

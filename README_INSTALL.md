@@ -36,7 +36,10 @@ The installer `install-bridge.cmd` automatically checks all required dependencie
    - Configures the MCP server in Claude Desktop and Antigravity IDE.
    - Installs the `agent-bridge` skill into the Claude Code and Antigravity skill directories,
      with `{{BRIDGE_HOME}}` replaced by the real path and files dropped from the package pruned.
-   - Adds the `SessionStart` hook for Claude Code, so a new session opens with the board digest.
+   - Makes the installed skill the Claude Code plugin `agent-bridge@skills-dir`, which carries every board
+     hook (the board digest at session start, the mail check before idle, the watchman, the context guard
+     around compaction). One switch: `claude plugin disable agent-bridge@skills-dir` / `enable`. Copies an
+     earlier install put into `settings.json` are moved out of it.
    - Builds `Claude_skill_bridge.zip` and puts it on your Desktop for step 3 below.
    - Creates an `Agent-Bridge` shortcut on your Desktop.
    - Registers a silent Windows background daemon in Startup.

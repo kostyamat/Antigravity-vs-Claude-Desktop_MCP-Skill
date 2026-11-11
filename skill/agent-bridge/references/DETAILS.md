@@ -273,14 +273,9 @@ agent does anything**, and puts the board state into the session context — unr
 P0s, the last few messages, and the exact line that starts the watchman. It cannot be missed
 because it arrives before the first thought.
 
-Add once per machine, in `.claude/settings.json` (user scope works for every project):
-```json
-"hooks": {
-  "SessionStart": [
-    { "hooks": [ { "type": "command", "command": "python {{BRIDGE_HOME_POSIX}}/board_brief.py" } ] }
-  ]
-}
-```
+The installer ships it, with the other board hooks, in the Claude Code plugin `agent-bridge@skills-dir`
+(the installed skill folder plus a generated `.claude-plugin/plugin.json` and `hooks/hooks.json`). Off and on
+with one switch: `claude plugin disable agent-bridge@skills-dir` / `claude plugin enable agent-bridge@skills-dir`.
 It only reads (opens the database read-only), moves no cursors, and stays silent when no bridge is
 installed — so it is safe on any machine.
 `watch_board.py` polls `agent_bridge.db` via SQLite and yields an event on each new foreign message — waking the session automatically.
@@ -422,10 +417,13 @@ copied anywhere else. The installer automatically:
    `agent_bridge_archive/`, `agent_bridge_backups/`).
 3. Initializes SQLite schema in `{{BRIDGE_HOME}}\agent_bridge.db`.
 4. Registers MCP server in Claude Desktop configuration (`%APPDATA%\Claude\claude_desktop_config.json`).
-5. Installs the `SessionStart` hook for Claude Code into `%USERPROFILE%\.claude\settings.json`.
+5. Moves any bridge hooks an earlier install put into `%USERPROFILE%\.claude\settings.json` out of it:
+   they live in the plugin now (step 6), and a second copy would run each hook twice.
 6. Installs this Skill into `%USERPROFILE%\.claude\skills\agent-bridge\` and
    `%USERPROFILE%\.gemini\config\skills\agent-bridge\`, substituting the real path for
-   `{{BRIDGE_HOME}}` and pruning files the package no longer has.
+   `{{BRIDGE_HOME}}` and pruning files the package no longer has. The Claude Code copy then gets
+   `.claude-plugin/plugin.json` and `hooks/hooks.json` (`claude-plugin.js`), which make it the plugin
+   `agent-bridge@skills-dir`: all eight board hooks and the skill behind one switch.
 7. Builds `Claude_skill_bridge.zip` (SKILL.md at the archive root) and leaves it on the real
    Desktop and in `sharing\`. Claude Desktop has no skills folder on disk, so the human uploads
    it through Settings > Capabilities > Skills. **This is the one step no installer can do.**

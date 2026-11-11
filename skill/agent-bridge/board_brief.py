@@ -15,13 +15,8 @@ board into the session context. It cannot be missed.
 Prints only: how much is unread, whether a P0 is pending, the last few messages — and the one
 line needed to start the watchman. Changes nothing, moves no read cursors.
 
-Install (once per machine), in .claude/settings.json:
-
-    "hooks": {
-      "SessionStart": [
-        { "hooks": [ { "type": "command", "command": "python {{BRIDGE_HOME_POSIX}}/board_brief.py" } ] }
-      ]
-    }
+Installed by install-bridge.js as one of the hooks of the Claude Code plugin agent-bridge@skills-dir
+(claude-plugin.js); nothing to add to settings.json by hand.
 """
 import json
 import subprocess
