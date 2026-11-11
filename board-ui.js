@@ -76,8 +76,14 @@ const MIME_BY_EXT = {
   '.webp': 'image/webp',
   '.gif': 'image/gif'
 };
-const HOST = '127.0.0.1';
-const PORT_FROM = 8787;
+// Two boards on one local network (peer-link.js). The board listens beyond this
+// machine only when a neighbour is linked, and then lets in nothing but that
+// neighbour, on /api/peer/ alone: every other route stays this machine's.
+const peerLink = require('./peer-link');
+const HOST = peerLink.enabled() ? '0.0.0.0' : '127.0.0.1';
+// The port is fixed so that a neighbour machine and every client know where the
+// board is; the variable is for a second board on one machine, which only a test needs.
+const PORT_FROM = Number(process.env.AGENT_BRIDGE_PORT) || 8787;
 const INLINE_LIMIT = 4000;
 
 const PRIORITIES = ['P0', 'normal', 'fyi'];
@@ -502,6 +508,8 @@ function send(res, code, type, body) {
 }
 
 const server = http.createServer((req, res) => {
+  if (!peerLink.admits(req)) return send(res, 403, 'text/plain; charset=utf-8', 'Forbidden');
+  if (req.url.startsWith('/api/peer/')) return void peerLink.handle(req, res, peerDeps);
   if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) {
     return send(res, 200, 'text/html; charset=utf-8', uiPage());
   }
@@ -999,6 +1007,8 @@ setInterval(() => {
     if (top > lastSeenId) {
       for (const m of board) {
         if ((m.id || 0) <= lastSeenId) continue;
+        // Mail for a window on a neighbour machine: that machine's board wakes it.
+        if (peerLink.parseAddress(m.toSession)) continue;
         const started = raiseTargetEnvironment(m) || [];
         if (started.includes('antigravity')) wakeWhenUp.push({ m, until: Date.now() + 4 * 60000 });
         else wakeAntigravity(m);
@@ -1023,5 +1033,9 @@ setInterval(() => {
   else if (++upRounds >= 2) { upRounds = 0; for (const p of wakeWhenUp.splice(0)) { try { wakeAntigravity(p.m); } catch (_) {} } return; }
   while (wakeWhenUp.length && wakeWhenUp[0].until < Date.now()) wakeWhenUp.shift();
 }, 5000).unref();
+
+// What the neighbour's door and the outgoing mail need from this board.
+const peerDeps = { bridgeDb, cardsLib, router, projectSlice: require('./project-slice'), skillReader: require('./skill-reader') };
+setInterval(() => { peerLink.pump(peerDeps); }, 5000).unref();
 
 listen(PORT_FROM);

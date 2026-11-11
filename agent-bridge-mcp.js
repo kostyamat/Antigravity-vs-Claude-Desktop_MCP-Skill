@@ -21,6 +21,7 @@ const readline = require('readline');
 const { spawn } = require('child_process');
 const bridgeDb = require('./bridge-db');
 const projectSlice = require('./project-slice');
+const peerLink = require('./peer-link');
 const cardsLib = require('./cards');
 const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
 const { workflowHint } = require('./workflow-hint');
@@ -94,20 +95,6 @@ function writeConfig(cfg) {
  *
  *
  */
-function watchmanRuleBanner() {
-  try {
-    const cfg = readConfig();
-    if (cfg.watchmanRule) return '';
-    const watchPath = path.join(SCRIPTS_DIR, 'watch_board.py').replace(/\\/g, '/');
-    return '🔔 THE WATCHMAN RULE IS NOT YET IN PROJECT INSTRUCTIONS.\n'
-      + '   Write it into CLAUDE.md (or AGENTS.md — standing instructions read by EVERY session):\n'
-      + `     "First action of session: Monitor({command:\"python3 ${watchPath}\", persistent:true})"\n`
-      + '   The hook reminds you, but its output can be missed — that happened multiple times.\n'
-      + '   Once written, confirm: bridge_setup({watchmanRule: true}). Until then this stays.\n'
-      + '──────────────────────────────────────────────\n';
-  } catch (e) { return ''; }
-}
-
 function setupBanner() {
   try {
     const cfg = readConfig();
@@ -487,7 +474,7 @@ function pendingP0Banner() {
 function ok(id, text) {
   sendResponse({ jsonrpc: '2.0', id,
     result: { content: [{ type: 'text',
-      text: setupBanner() + watchmanRuleBanner() + pendingP0Banner() + text }] } });
+      text: setupBanner() + pendingP0Banner() + text }] } });
 }
 
 function fail(id, message) {
@@ -583,8 +570,7 @@ const TOOLS = [
         adminName: { type: 'string', description: 'Human administrator name, e.g. "Alex (Admin)".' },
         agents: { type: 'array', items: { type: 'string' }, description: 'List of agent names participating on the board.' },
         uiPort: { type: 'number', description: 'Web UI port (board-ui).' },
-        language: { type: 'string', description: 'Preferred language code, e.g. "en".' },
-        watchmanRule: { type: 'boolean', description: 'Confirmation that the rule "FIRST ACTION OF SESSION — start watcher" is recorded in project persistent rules (CLAUDE.md / AGENTS.md).' }
+        language: { type: 'string', description: 'Preferred language code, e.g. "en".' }
       }
     }
   },
@@ -739,7 +725,27 @@ const TOOLS = [
       properties: {
         agent: { type: 'string', description: 'Only "Claude" or only "Gemini".' },
         sinceHours: { type: 'number', description: 'Only windows touched this recently. Default 48; there are hundreds otherwise.' },
-        account: { type: 'string', description: 'A Claude account id, to look at its windows without switching to it.' }
+        account: { type: 'string', description: 'A Claude account id, to look at its windows without switching to it.' },
+        machine: { type: 'string', description: 'A linked machine: its windows instead of this machine\'s. Address one as "<id or project>@<machine>".' }
+      }
+    }
+  },
+  {
+    name: 'link_machine',
+    description:
+      'Link this board to the board of another machine on the same local network (a laptop and a build desktop). ' +
+      'Each machine keeps its own board and database; linked, a window here can see the other machine\'s windows ' +
+      '(list_cards({machine})), read a project\'s slice or a skill from it (load_session_context / read_skill with ' +
+      '`machine`), and send it a task or a question: post_message with toSession "<window id or project>@<machine>" — ' +
+      'the other board stores it and wakes the recipient, and the answer comes back into the same thread. ' +
+      'Link on BOTH machines, each naming the other, then restart each board once. No arguments: the linked machines ' +
+      'and whether each answers. Only for a network the owner trusts: the neighbour is recognised by its address alone.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'What to call the other machine, e.g. "desktop". Letters, digits, dashes.' },
+        url: { type: 'string', description: 'Its board, e.g. "192.168.1.50" or "http://192.168.1.50:8787".' },
+        remove: { type: 'boolean', description: 'true = unlink that machine.' }
       }
     }
   },
@@ -878,7 +884,8 @@ const TOOLS = [
       properties: {
         agent: { type: 'string', description: '"Claude" or "Gemini".' },
         sessionId: { type: 'string', description: 'Any window of the project whose slice you want.' },
-        line: { type: 'string', description: 'The project: its folder, its line of work, or any member of one.' }
+        line: { type: 'string', description: 'The project: its folder, its line of work, or any member of one.' },
+        machine: { type: 'string', description: 'A linked machine: read that project\'s slice from there (`line` = the project folder name).' }
       }
     }
   },
@@ -899,6 +906,7 @@ const TOOLS = [
       'instead of from an uploaded copy, which goes stale. No name: the list of installed skills.',
     inputSchema: { type: 'object', properties: {
       name: { type: 'string', description: 'Skill name, e.g. "agent-bridge". Omit to list them.' },
+      machine: { type: 'string', description: 'A linked machine: read the skill installed there (a canon this machine does not have).' },
       file: { type: 'string', description: 'A file inside the skill, e.g. "PROTOCOL.md" or "references/DETAILS.md". Default SKILL.md.' } } }
   }
 ];
@@ -974,7 +982,14 @@ function handleRequest(req) {
     if (toolName === 'clear_messages') return doClear(id, args);
     if (toolName === 'put_doc') return doPutDoc(id, args);
     if (toolName === 'list_docs') return doListDocs(id, args);
+    if (toolName === 'link_machine') return doLinkMachine(id, args);
     if (toolName === 'read_skill') {
+      if (args.machine) {
+        const q = args.name ? `?name=${encodeURIComponent(args.name)}${args.file ? '&file=' + encodeURIComponent(args.file) : ''}` : '';
+        return void peerLink.ask(args.machine, '/api/peer/skill' + q).then(r => ok(id, r.text !== undefined ? r.text
+          : (r.skills || []).map(k => `${k.name} — ${k.description}`).join(String.fromCharCode(10)) || 'No skills installed there.'),
+          e => fail(id, 'read_skill: ' + e.message));
+      }
       if (!args.name) return ok(id, skillReader.listSkills().map(k => `${k.name} — ${k.description}`).join(String.fromCharCode(10)) || 'No skills installed.');
       try { return ok(id, skillReader.readSkill(args.name, args.file)); } catch (e) { return fail(id, e.message); }
     }
@@ -1022,8 +1037,43 @@ function boardNames() {
   return names;
 }
 
+function doLinkMachine(id, a) {
+  if (a.name && a.remove === true) {
+    return ok(id, peerLink.unlink(a.name) ? `Machine "${a.name}" unlinked. Restart the board to close the door if no machine is left.`
+                                          : `No machine "${a.name}" was linked.`);
+  }
+  if (a.name || a.url) {
+    if (!a.name || !a.url) return fail(id, 'link_machine: both `name` and `url` are needed.');
+    let p;
+    try { p = peerLink.link(a.name, a.url); } catch (e) { return fail(id, 'link_machine: ' + e.message); }
+    const tail = `\nThis machine calls itself "${peerLink.machineName()}" — on "${p.name}" run link_machine({name: "${peerLink.machineName()}", url: "<this machine's address>"}).` +
+      '\nThen restart the board on each machine once (its shortcut): only a board started with a linked machine listens on the network.';
+    return void peerLink.ask(p.name, '/api/peer/hello').then(
+      r => ok(id, `🖧 Linked "${p.name}" at ${p.url}: its board answers as "${r.machine}"` +
+        (r.knowsYou ? ` and knows this machine as "${r.knowsYou}".` : ', and does not know this machine yet.') + tail),
+      e => ok(id, `🖧 Linked "${p.name}" at ${p.url}, but it does not answer yet (${e.message}).` + tail));
+  }
+  const list = peerLink.peers();
+  if (!list.length) return ok(id, 'No machine is linked. link_machine({name, url}) links one; do it on both machines.');
+  Promise.all(list.map(p => peerLink.ask(p.name, '/api/peer/hello').then(
+    r => `🖧 ${p.name} — ${p.url} — answers as "${r.machine}"` + (r.knowsYou ? '' : ' — it has NOT linked this machine back'),
+    e => `🖧 ${p.name} — ${p.url} — no answer (${e.message})`)))
+    .then(lines => ok(id, `This machine: "${peerLink.machineName()}". Linked machines:\n` + lines.join('\n')));
+}
+
 function doListCards(id, a) {
   const hours = typeof a.sinceHours === 'number' ? a.sinceHours : 48;
+  if (a.machine) {
+    return void peerLink.ask(a.machine, '/api/peer/cards?hours=' + hours).then(r => {
+      const want = normAgent(a.agent);
+      const list = (r.cards || []).filter(c => !want || want === 'all' || c.agent === want);
+      if (!list.length) return ok(id, `No window on machine "${r.machine}" has been touched in the last ${hours}h.`);
+      ok(id, `Windows on machine "${r.machine}" touched in the last ${hours}h:\n` + list.map(c => {
+        const project = String(c.project || '').split(/[\\/]/).filter(Boolean).pop() || '';
+        return `${c.agent === 'Claude' ? '🤖' : '✨'} ${c.name || '(unnamed)'}${project ? ` · ${project}` : ''}${c.busy ? ' · busy' : ''}\n     ${c.id}@${r.machine}`;
+      }).join('\n') + `\n\nAddress one with toSession "<id>@${r.machine}", or a whole project with "<folder name>@${r.machine}".`);
+    }, e => fail(id, 'list_cards: ' + e.message));
+  }
   let list = cardsLib.allCards({ sinceHours: hours, account: a.account, names: boardNames() });
   const want = normAgent(a.agent);
   if (want && want !== 'all') list = list.filter(c => c.agent === want);
@@ -1109,7 +1159,6 @@ function doSetup(id, a) {
   if (typeof a.language === 'string' && a.language.trim()) {
     cfg.language = a.language.trim(); changed.push('language');
   }
-  if (a.watchmanRule === true) { cfg.watchmanRule = true; changed.push('watchmanRule'); }
 
   if (!changed.length) {
     return ok(id,
@@ -1119,7 +1168,6 @@ function doSetup(id, a) {
       `   ring on P0:    ${cfg.ringOnP0 ? 'enabled' : 'disabled'}\n` +
       `   web UI:        http://127.0.0.1:${cfg.uiPort}/\n` +
       `   language:      ${cfg.language}\n` +
-      `   watchman rule: ${cfg.watchmanRule ? 'recorded' : '❗ NOT RECORDED — reminder remains'}\n` +
       (cfg.adminName ? '' : '\nAsk the human what to call them, then call bridge_setup({adminName:"…"}).'));
   }
 
@@ -1210,7 +1258,10 @@ function doPost(id, a) {
   // The address is the recipient's window (or its project), never whatever the
   // other side happened to sign with: a run id dies with the run, and a label
   // nobody registered reaches nobody.
-  if (toSession && toSession !== 'all' && !isHuman(toSession)) {
+  // `<window or project>@<machine>`: a window on a linked machine. Its own board
+  // knows whether it exists; this one stores the message and hands it over.
+  const peerAddr = peerLink.parseAddress(toSession);
+  if (toSession && toSession !== 'all' && !isHuman(toSession) && !peerAddr) {
     const w = router.windowOf(toSession);
     if (w) toSession = w;
     else if (isAgent) {
@@ -1220,13 +1271,21 @@ function doPost(id, a) {
     }
   }
   if (!toAgent) toAgent = 'all';
-  if (toAgent === 'all' && toSession && toSession !== 'all' && !isHuman(toSession)) toAgent = router.agentOf(toSession);
+  if (toAgent === 'all' && toSession && toSession !== 'all' && !isHuman(toSession) && !peerAddr) toAgent = router.agentOf(toSession);
 
-  const routed = resolveRoom(a, toSession, toAgent, replyTo);
+  let routed;
+  if (peerAddr) {
+    // Mail across machines lives in one room per machine, on both boards.
+    const parentRoom = replyTo ? ((bridgeDb.getMessageById(replyTo) || {}).room || '') : '';
+    const me = mineWin || String(a.sessionId || '').trim();
+    routed = { room: parentRoom || (me ? peerLink.roomFor(bridgeDb, peerAddr.machine, me, from) : '') };
+  } else {
+    routed = resolveRoom(a, toSession, toAgent, replyTo);
+  }
   if (routed.refuse && isAgent) return fail(id, `post_message: ${routed.refuse} Message NOT recorded.`);
   const room = routed.room;
 
-  if (isAgent) {
+  if (isAgent && !peerAddr) {
     const no = rules.helperGuard({ mine: mineWin, theirs: toSession && toSession !== 'all' ? toSession : '', room, replyTo });
     if (no) return fail(id, `post_message: ${no} Message NOT recorded.`);
   }
@@ -1309,12 +1368,14 @@ function doPost(id, a) {
   // learns there is something to look into. The waker limits it to the room.
   const toRoom = Boolean(rec.room) && WAKING_STATUSES.includes(status);
 
-  if (priority === 'P0' || rollCall || toOneSession || toAgentOnly || toRoom) {
+  if (!peerAddr && (priority === 'P0' || rollCall || toOneSession || toAgentOnly || toRoom)) {
     raiseTargetEnvironment(rec);
     wakeAntigravity(rec);
   }
 
   const hints = [];
+  if (peerAddr) hints.push(`🖧 for machine "${peerAddr.machine}": this board hands it over within seconds and that board wakes the recipient; ` +
+    'if the machine is asleep or does not know the address, you are told here in this thread');
   if (a._identityNote) hints.push('ℹ️ ' + a._identityNote);
   if (quoteHint) hints.push(quoteHint);
   if (routed.opened) hints.push(`🚪 opened room "${routed.opened.name}" (${routed.opened.id}) for this conversation — the human reads the board by rooms`);
@@ -2035,6 +2096,13 @@ function doSaveCtx(id, a) {
 
 function doLoadCtx(id, a) {
   const asked = String(a.line || a.sessionId || '').trim();
+  if (a.machine) {
+    if (!asked) return fail(id, 'load_session_context: with `machine`, pass `line` — the project folder name on that machine.');
+    return void peerLink.ask(a.machine, '/api/peer/slice?project=' + encodeURIComponent(asked)).then(r =>
+      ok(id, `📄 Slice of ${r.folder} on machine "${r.machine}", written ${ago(new Date(r.mtime).toISOString())}.` +
+        '\nIt describes that machine: its paths, its commits, what is installed there.' + `\n\n───\n\n${r.text}`),
+      e => fail(id, 'load_session_context: ' + e.message));
+  }
   if (!asked) {
     return fail(id, 'load_session_context: pass `line` (a project folder or its line of work) or `sessionId` (a window of the project).');
   }
