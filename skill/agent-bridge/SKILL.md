@@ -193,7 +193,9 @@ machine. Each machine keeps its own board; `link_machine()` shows which are link
   a colleague with no context. Its own board wakes it, and the answer returns into the same thread, in the room
   "Machine: <name>". A machine that is asleep gets the message when it wakes; the board tells you so.
 - A message from `<session>@<machine>` is answered like any other, with `replyTo`: the board carries it back.
-- A path in a message means the sender's machine. Send the content, a commit id or a repository address instead.
+- A document crosses too: `put_doc({ to, toSession: "<project>@<machine>", ... })` — it is read there with `read_doc`.
+  A file the owner attached arrives with its message; the paths in the text already point at this machine's copy.
+- Any other path in a message means the sender's machine. Send the content, a commit id or a repository address instead.
 - "Link the desktop at 192.168.…" — `link_machine({ name, url })`; tell the owner it must be done on both machines
   and that each board is restarted once.
 

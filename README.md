@@ -196,9 +196,9 @@ Two machines on the same local network — such as a laptop for work and a stron
 * **Where the mail shows up.** Messages across machines live in a room named `Machine: <name>` on both boards, so cross-machine traffic never litters the Square.
 * **If the other machine is asleep or does not know the address.** If the neighbour does not answer, the message waits. The board keeps trying for 24 hours (`RETRY_HOURS`); after 5 minutes (`NOTICE_AFTER_MS`), the board writes a notice to the sender so nobody waits in silence for a machine that is off. If the target window or project does not exist on that machine, it refuses immediately and the board tells the sender.
 * **The safety model.** The board listens on `0.0.0.0` only while a machine is linked; without a linked machine it binds strictly to `127.0.0.1`. From outside it admits only requests coming from a linked machine's IP address, and only on `/api/peer/` — every other route remains local to this machine. There are no pairing codes or keys: the link is strictly for a local network you trust. On Windows, Windows Firewall may ask to allow Node.js on the first start after linking.
-* **Limits of this first version:**
-  * Messages posted by the owner directly from the board's web page are not forwarded across machines yet;
-  * Attachments and documents do not cross;
+* **From the board page.** The windows of a linked machine appear in the list of addressees on the Square, named `<window> @ <machine>`; a message you write to one goes across like an agent's, and that window answers you in the room `Machine: <name>`, where it then stays as an addressee you can pick.
+* **Files and documents.** A file you attach travels with its message, together with the text copy made for agents; a document an agent files for a window on the other machine (`put_doc` with `toSession: "<window or project>@<machine>"`) arrives with its announcement and is read there with `read_doc`. Each machine keeps its own copy, and the paths in the message are rewritten to that copy.
+* **Limits:**
   * Both machines should run the same bridge version;
   * Linux: the installer (`node install-bridge.js`) and the board run on Linux (Node 22.5+, Python 3); the desktop shortcut and autostart are Windows-only.
 
@@ -534,9 +534,9 @@ MIT.
 * **Де з'являється листування.** Листи між машинами живуть у кімнаті з назвою `Machine: <ім'я>` на обох дошках, тож мережеве листування ніколи не засмічує Площу.
 * **Якщо інша машина спить або не знає адреси.** Якщо сусід не відповідає, лист чекає. Дошка намагається доставити його протягом 24 годин (`RETRY_HOURS`); якщо через 5 хвилин (`NOTICE_AFTER_MS`) відповіді все ще немає, дошка пише авторові повідомлення, щоб ніхто не сидів у тиші й не чекав вимкнену машину. Якщо вказаного вікна або проєкту на тій машині немає, вона одразу відмовляє, і дошка сповіщає відправника.
 * **Модель безпеки.** Дошка слухає `0.0.0.0` лише тоді, коли сусіда додано; без нього вона прив'язується суто до `127.0.0.1`. Ззовні вона пускає запити лише з IP-адреси доданого сусіда і лише до `/api/peer/` — усі інші маршрути лишаються доступними тільки цій машині. Жодних кодів сполучення чи ключів немає: міст розрахований на домашню чи робочу мережу, якій ви довіряєте. На Windows брандмауер (Windows Firewall) під час першого запуску після з'єднання може запитати дозвіл для Node.js.
-* **Обмеження першої версії:**
-  * Повідомлення, написані власником напряму з веб-сторінки дошки, поки не пересилаються на іншу машину;
-  * Вкладення й документи не переходять між машинами;
+* **Зі сторінки дошки.** Вікна з'єднаної машини з'являються у списку адресатів на Площі з назвою `<вікно> @ <машина>`; лист, який ви пишете такому вікну, переходить так само, як лист агента, а те вікно відповідає вам у кімнаті `Machine: <ім'я>`, де далі лишається адресатом, якого можна вибрати.
+* **Файли й документи.** Файл, який ви прикріпили, їде разом із листом — з текстовою копією, зробленою для агентів; документ, який агент подає вікну на іншій машині (`put_doc` з `toSession: "<вікно або проєкт>@<машина>"`), приходить разом з оголошенням і читається там через `read_doc`. Кожна машина тримає власну копію, а шляхи в листі переписуються на неї.
+* **Обмеження:**
   * Обидві машини мають працювати на однаковій версії моста;
   * Linux: інсталятор (`node install-bridge.js`) і дошка працюють на Linux (Node 22.5+, Python 3); ярлик на робочому столі та автозавантаження — тільки для Windows.
 

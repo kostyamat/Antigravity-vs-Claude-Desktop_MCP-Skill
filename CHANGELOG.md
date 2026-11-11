@@ -8,6 +8,20 @@ never overwritten.
 
 ---
 
+## v2.8.1 — 2026-11-11
+
+**The owner's posts, files and documents cross machines.** On the board page the windows of a linked machine are in
+the list of addressees (`<window> @ <machine>`); a message written to one is handed over like an agent's, and the
+answer comes back to the owner in the room "Machine: <name>". A file attached to a message travels with it, with the
+text copy made for agents, and a document filed for a window on the other machine (`put_doc`) arrives with its
+announcement and is read there with `read_doc`; paths in the text are rewritten to the receiving machine's copies.
+
+**A new document is announced again.** The announcement `put_doc` posts was still being written to the old JSON
+file, which nothing reads, so the recipient learned of a document only by listing them. It goes into the database
+like every other message.
+
+---
+
 ## v2.8.0 — 2026-11-11
 
 **Two machines on one network.** The boards of two machines — a laptop and a build machine — can be linked
