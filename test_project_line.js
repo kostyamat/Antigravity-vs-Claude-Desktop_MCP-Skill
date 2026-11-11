@@ -70,4 +70,46 @@ assert.deepStrictEqual(out, [{ helper: 'gem-2', from: 'local_a2', to: 'c:/work/a
 assert.strictEqual(b.helpers[1].lead, 'c:/work/app');
 assert.strictEqual(b.helpers[2].lead, 'c:/work/other', 'a lead that is already a project stays');
 
+// An archived window leaves its line and its rooms; where it was the project's only
+// member of a room, the project takes its place.
+{
+  const lines = new Map([['c:/work/app', ['local_a1', 'local_arch']], ['c:/work/b', ['local_b1']]]);
+  const rooms = [
+    { room: 'both', card: 'local_arch', agent: 'Claude' }, { room: 'both', card: 'local_a1', agent: 'Claude' },
+    { room: 'alone', card: 'local_arch', agent: 'Claude' }, { room: 'alone', card: 'gem-1', agent: 'Gemini' },
+    { room: 'stray', card: 'local_arch2', agent: 'Claude' }
+  ];
+  const db = {
+    lineOf: m => { for (const [l, ms] of lines) if (ms.includes(m)) return l; return ''; },
+    lineMembers: l => (lines.get(l) || []).map(m => ({ member: m })),
+    cluster: l => [l, ...(lines.get(l) || [])],
+    unlinkSessions: (l, ms) => lines.set(l, lines.get(l).filter(m => !ms.includes(m))),
+    getDb: () => ({ prepare: q => ({
+      all: (a, b) => /SELECT room, agent/.test(q) ? rooms.filter(r => r.card === a).map(r => ({ room: r.room, agent: r.agent }))
+                                                 : rooms.filter(r => r.room === a && r.card !== b).map(r => ({ card: r.card })),
+      run: (a, b, c) => {
+        if (/^INSERT/.test(q)) { if (!rooms.some(r => r.room === a && r.card === b)) rooms.push({ room: a, card: b, agent: c }); }
+        else { const i = rooms.findIndex(r => r.room === a && r.card === b); if (i >= 0) rooms.splice(i, 1); }
+      } }) })
+  };
+  const cards = { claudeCardsEverywhere: () => [
+    { id: 'local_a1', project: 'C:\\Work\\App', archived: false },
+    { id: 'local_arch', project: 'C:\\Work\\App', archived: true, name: 'old' },
+    { id: 'local_arch2', project: 'C:\\Work\\B', archived: true },      // never joined a line, but its folder has one
+    { id: 'local_arch3', project: 'C:\\Work\\App', archived: true }     // archived and nowhere on the board: nothing to do
+  ] };
+  const before = JSON.stringify([...lines]) + JSON.stringify(rooms);
+  assert.strictEqual(pl.dropArchived(db, cards, { dry: true }).length, 2, 'a dry run names the two it would drop');
+  assert.strictEqual(JSON.stringify([...lines]) + JSON.stringify(rooms), before, 'and changes nothing');
+
+  const dropped = pl.dropArchived(db, cards);
+  assert.deepStrictEqual(dropped.map(d => d.window), ['local_arch', 'local_arch2']);
+  assert.deepStrictEqual(lines.get('c:/work/app'), ['local_a1'], 'it left the line');
+  const in_ = room => rooms.filter(r => r.room === room).map(r => r.card).sort();
+  assert.deepStrictEqual(in_('both'), ['local_a1'], 'a room that still has the project just loses the window');
+  assert.deepStrictEqual(in_('alone'), ['c:/work/app', 'gem-1'], 'the project takes the place of its only window');
+  assert.deepStrictEqual(in_('stray'), ['c:/work/b'], 'a window with no line is replaced by its folder line');
+  assert.strictEqual(pl.dropArchived(db, cards).length, 0, 'a second run finds nothing');
+}
+
 console.log('project-line: all checks passed');

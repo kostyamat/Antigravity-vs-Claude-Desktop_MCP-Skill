@@ -1046,6 +1046,9 @@ setInterval(() => {
   while (wakeWhenUp.length && wakeWhenUp[0].until < Date.now()) wakeWhenUp.shift();
 }, 5000).unref();
 
+// A window the owner archives leaves the board within the hour, not at the next install.
+setInterval(() => { try { require('./project-line').dropArchived(bridgeDb, cardsLib); } catch (_) {} }, 3600e3).unref();
+
 // What the neighbour's door and the outgoing mail need from this board.
 const peerDeps = { bridgeDb, cardsLib, router, projectSlice: require('./project-slice'), skillReader: require('./skill-reader') };
 setInterval(() => { peerLink.pump(peerDeps); }, 5000).unref();

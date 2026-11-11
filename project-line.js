@@ -109,6 +109,45 @@ function foldNamedLines(bridgeDb, cardsLib, opts) {
   return done;
 }
 
+// An archived window is not on the board (owner, 11.11.2026: "archived sessions
+// the board must ignore"). The owner put it away; it reads nothing and answers
+// nobody, yet it stayed a member of its project's line and of rooms, so it was
+// counted among the project's windows, listed as an addressee and kept in
+// rosters. It leaves the line. In a room where it was the project's only member
+// the project itself takes its place, so the project's live windows stay in the
+// room. A window the owner takes out of the archive joins its folder's line again
+// the next time it starts.
+// `dry` reports without changing anything.
+function dropArchived(bridgeDb, cardsLib, opts) {
+  const dry = Boolean(opts && opts.dry);
+  const db = bridgeDb.getDb();
+  const done = [];
+  for (const c of cardsLib.claudeCardsEverywhere()) {
+    if (!c.archived) continue;
+    const onLine = bridgeDb.lineOf(c.id);
+    // A window that never joined a line still has a project: its folder's line, when there is one.
+    const folder = projectKey(c.project);
+    const line = onLine || (folder && bridgeDb.lineMembers(folder).length ? folder : '');
+    const rooms = db.prepare('SELECT room, agent FROM room_members WHERE card = ?').all(c.id);
+    if (!onLine && !rooms.length) continue;
+    const mates = new Set(line ? bridgeDb.cluster(line) : []);
+    mates.delete(c.id);
+    const kept = [];
+    for (const r of rooms) {
+      const others = db.prepare('SELECT card FROM room_members WHERE room = ? AND card <> ?').all(r.room, c.id).map(x => x.card);
+      const projectStays = others.some(card => mates.has(card));
+      if (!dry) {
+        if (line && !projectStays) db.prepare('INSERT OR IGNORE INTO room_members (room, card, agent) VALUES (?, ?, ?)').run(r.room, line, r.agent || 'Claude');
+        db.prepare('DELETE FROM room_members WHERE room = ? AND card = ?').run(r.room, c.id);
+      }
+      kept.push(r.room + (line && !projectStays ? ' (project takes its place)' : ''));
+    }
+    if (onLine && !dry) bridgeDb.unlinkSessions(onLine, [c.id]);
+    done.push({ window: c.id, name: c.name || '', line, rooms: kept });
+  }
+  return done;
+}
+
 // The lead of a pair is a project. A row that names one window of it is moved
 // to that window's project, so every window of the project is the lead.
 function leadsToProjects(bridgeDb, opts) {
@@ -137,7 +176,7 @@ function adoptRunIds(bridgeDb, cardsLib) {
   return done;
 }
 
-module.exports = { projectKey, projectName, isProjectKey, ensureLine, adoptAll, adoptRunIds, foldNamedLines, leadsToProjects };
+module.exports = { projectKey, projectName, isProjectKey, ensureLine, adoptAll, adoptRunIds, foldNamedLines, leadsToProjects, dropArchived };
 
 // node project-line.js --adopt  → repair the board once, print what was changed
 if (require.main === module && process.argv.includes('--adopt')) {
