@@ -116,10 +116,31 @@ function waiting(win) {
 function prompt(input) {
   const win = windowOf(input);
   if (!win) return;
+  const parts = [];
   const text = waiting(win);
-  if (!text) return;
+  if (text) parts.push('agent-bridge: ' + text + ' Do what the owner just asked as well.');
+  // An old conversation reopened (often in the other account) after another window of the
+  // project worked on: no session start fires, so the prompt is where it learns (handover.js).
+  try {
+    const handover = require('./handover');
+    const behind = handover.briefLines(input.cwd || process.cwd(), input.session_id || '');
+    if (behind.length) {
+      parts.push(behind.join('\n'));
+      const bridgeDb = require('./bridge-db');
+      const router = require('./room-routing').createRouter(bridgeDb, require('./cards'));
+      const { wakeAntigravity } = require('./wake-antigravity');
+      parts.push(...handover.askHelpers({ bridgeDb, router, win, post: m => {
+        const rec = Object.assign({ ts: new Date().toISOString(), priority: 'normal', status: 'question', progress: '',
+                                    replyTo: null, file: null, readBy: [] }, m);
+        rec.id = bridgeDb.addMessage(rec).id;
+        bridgeDb.touchRoom(rec.room);
+        wakeAntigravity(rec);
+      } }));
+    }
+  } catch (_) {}
+  if (!parts.length) return;
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit',
-    additionalContext: 'agent-bridge: ' + text + ' Do what the owner just asked as well.' } }));
+    additionalContext: parts.join('\n\n') } }));
 }
 
 function stop(input) {

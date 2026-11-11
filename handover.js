@@ -53,8 +53,26 @@ function readTail(file) {
   } finally { fs.closeSync(fd); }
 }
 
-// The previous window of this project, if it went on after the slice was written:
-// { file, endedAt, turns: [{who, text}] } or null.
+// When this window last answered: the newest assistant entry of its own transcript,
+// or 0 for a window that has not answered yet (a new one).
+function lastAnswer(file) {
+  let last = 0;
+  try {
+    for (const line of readTail(file)) {
+      if (line.indexOf('"assistant"') < 0) continue;
+      let e; try { e = JSON.parse(line); } catch (_) { continue; }
+      if (e && e.type === 'assistant' && !e.isSidechain && e.timestamp) last = Math.max(last, Date.parse(e.timestamp) || 0);
+    }
+  } catch (_) {}
+  return last;
+}
+
+// Another window of this project that went on after this one knew the state:
+// { file, endedAt, sliceAt, since, resumed, turns: [{who, text}] } or null.
+// A new window knows the state from the slice, so the slice is the mark. A window
+// that comes back — an old conversation reopened, possibly in the other account —
+// knows it from its own last answer, and is behind whenever another window worked
+// after that, even when that window did update the slice: it read the slice long ago.
 function previousWindow(cwd, currentSession, opts) {
   const o = opts || {};
   const dir = transcriptDir(cwd);
@@ -65,7 +83,9 @@ function previousWindow(cwd, currentSession, opts) {
   if (!newest || Date.now() - newest.m > FRESH_MS) return null;
   let slice = 0;
   try { slice = fs.statSync(path.join(cwd, '.agents', 'HANDOFF.md')).mtimeMs; } catch (_) {}
-  if (newest.m <= slice + 60e3) return null;        // the slice already covers it
+  const mine = currentSession ? lastAnswer(path.join(dir, String(currentSession) + '.jsonl')) : 0;
+  const since = mine || slice;
+  if (newest.m <= since + 60e3) return null;        // nothing happened elsewhere since
   const turns = [];
   for (const line of readTail(newest.f)) {
     let e;
@@ -76,17 +96,30 @@ function previousWindow(cwd, currentSession, opts) {
   }
   if (!turns.length) return null;
   return { file: newest.f, endedAt: new Date(newest.m).toISOString(), sliceAt: slice ? new Date(slice).toISOString() : '',
-           turns: turns.slice(-(o.turns || 6)) };
+           since: new Date(since).toISOString(), resumed: !!mine, mtime: newest.m, turns: turns.slice(-(o.turns || 6)) };
 }
+
+const RUN_DIR = process.env.BRIDGE_RUN_DIR || path.join(__dirname, 'run');
 
 function briefLines(cwd, currentSession) {
   const p = previousWindow(cwd, currentSession);
   if (!p) return [];
+  // Once per piece of work done elsewhere: the start brief and every prompt ask, the
+  // first one to see it tells, the rest stay quiet until that window works again.
+  const mark = path.join(RUN_DIR, 'catchup_' + String(currentSession || 'none').replace(/[^A-Za-z0-9_-]/g, '_') + '.json');
+  try { if (JSON.parse(fs.readFileSync(mark, 'utf8')).seen >= p.mtime) return []; } catch (_) {}
+  try { fs.mkdirSync(RUN_DIR, { recursive: true }); fs.writeFileSync(mark, JSON.stringify({ seen: p.mtime })); } catch (_) {}
   const cut = s => s.length > 420 ? s.slice(0, 420).replace(/\s+\S*$/, '') + ' …' : s;
-  return [
-    `🔁 The previous window of this project went on until ${p.endedAt.slice(0, 16)}Z, ` +
+  const head = p.resumed
+    ? `🔁 Another window of this project (maybe the other account) worked after this one last answered ` +
+      `(${p.since.slice(0, 16)}Z), until ${p.endedAt.slice(0, 16)}Z. What you remember is behind: reread ` +
+      `.agents/HANDOFF.md (written ${p.sliceAt ? p.sliceAt.slice(0, 16) + 'Z' : 'never'}) and git log since ${p.since.slice(0, 16)}Z ` +
+      'before you act on anything from memory. How that window ended:'
+    : `🔁 The previous window of this project went on until ${p.endedAt.slice(0, 16)}Z, ` +
       (p.sliceAt ? `after the slice was last written (${p.sliceAt.slice(0, 16)}Z)` : 'and this project has no slice') +
-      ' — so the slice may be behind. How it ended:',
+      ' — so the slice may be behind. How it ended:';
+  return [
+    head,
     ...p.turns.map(t => `   ${t.who === 'owner' ? '👤 owner' : '🤖 lead'}: ${cut(t.text.replace(/\s+/g, ' '))}`),
     `   Full transcript: ${p.file.split(path.sep).join('/')} (read its end if this is not enough).`,
     '   Before you go on: bring the slice up to date from this, and from your helper\'s handover if one is asked below.'
@@ -109,7 +142,7 @@ function askHelpers({ bridgeDb, router, win, post, now }) {
     if (!lastLead || String(lastLead.fromSession) === String(win)) continue;     // same window, nothing changed
     if (router.windowOf(lastLead.fromSession) === win) continue;
     if (t - new Date(lastLead.ts).getTime() > 3 * 86400e3) continue;            // old work: the slice is the source
-    if (inRoom.some(m => m.topic === 'handover' && String(m.fromSession) === String(win))) {
+    if (inRoom.some(m => m.topic === 'handover' && String(m.fromSession) === String(win) && m.id > lastLead.id)) {
       out.push(`🤝 Handover from your helper "${router.nameOf(h.helper)}" was asked in room "${h.room}" — read it there.`);
       continue;
     }
@@ -125,7 +158,7 @@ function askHelpers({ bridgeDb, router, win, post, now }) {
   return out;
 }
 
-module.exports = { transcriptDir, textOf, previousWindow, briefLines, askHelpers };
+module.exports = { transcriptDir, textOf, lastAnswer, previousWindow, briefLines, askHelpers };
 
 // node handover.js <cwd> <sessionId> → the transcript lines for the session-start brief.
 if (require.main === module) {

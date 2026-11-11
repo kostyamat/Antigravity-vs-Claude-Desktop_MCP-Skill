@@ -8,6 +8,7 @@ const path = require('path');
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'abho-'));
 process.env.USERPROFILE = home;
+process.env.BRIDGE_RUN_DIR = path.join(home, 'run');
 const handover = require('./handover');
 let n = 0;
 const t = (name, fn) => { fn(); n++; console.log('ok ' + name); };
@@ -28,6 +29,10 @@ try {
     line({ type: 'user', message: { content: '<task-notification>bg</task-notification>' } }) +
     line({ type: 'assistant', message: { content: [{ type: 'text', text: 'Parser fixed in parse.js, now running the tests' }] } }));
   fs.writeFileSync(path.join(dir, 'this-session.jsonl'), line({ type: 'user', message: { content: 'current window' } }));
+  // Written within the same millisecond or two: give each file the age the story needs.
+  const age = (f, sec) => { const s = Date.now() / 1000 - sec; fs.utimesSync(f, s, s); };
+  age(path.join(dir, 'this-session.jsonl'), 7200);
+  age(old, 0);
 
   const past = Date.now() / 1000 - 3600;
   fs.utimesSync(slice, past, past);                    // the slice is an hour old, the transcript fresh
@@ -42,6 +47,26 @@ try {
     const now = Date.now() / 1000 + 120;
     fs.utimesSync(slice, now, now);
     assert.deepStrictEqual(handover.briefLines(proj, 'this-session'), []);
+  });
+
+  // ── an old conversation comes back after another window worked (the other account) ──
+  const back = path.join(dir, 'old-window.jsonl');
+  fs.writeFileSync(back,
+    line({ type: 'user', message: { content: 'start the export' }, timestamp: '2026-11-01T10:00:00Z' }) +
+    line({ type: 'assistant', message: { content: [{ type: 'text', text: 'export started' }] }, timestamp: '2026-11-01T10:01:00Z' }));
+  t('a window that comes back is told, even when the slice is newer than the other window', () => {
+    const later = Date.now() / 1000 + 300;
+    fs.utimesSync(slice, later, later);                  // the other window did update the slice
+    const l = handover.briefLines(proj, 'old-window').join('\n');
+    assert.match(l, /Another window of this project/);
+    assert.match(l, /reread/);
+    assert.match(l, /Parser fixed in parse\.js/);
+  });
+  t('…once, until the other window works again', () => {
+    assert.deepStrictEqual(handover.briefLines(proj, 'old-window'), []);
+    const t2 = Date.now() / 1000 + 600;
+    fs.utimesSync(old, t2, t2);
+    assert.match(handover.briefLines(proj, 'old-window').join('\n'), /Another window/);
   });
 
   // ── the helper's handover ──
@@ -74,7 +99,13 @@ try {
     handover.askHelpers({ bridgeDb, router, win: 'local_new', post });
     assert.strictEqual(posted.length, before);
   });
+  t('the old window coming back asks the helper again', () => {
+    const before = posted.length;
+    handover.askHelpers({ bridgeDb, router, win: 'local_old', post });
+    assert.strictEqual(posted.length, before + 1);
+    assert.strictEqual(posted[posted.length - 1].fromSession, 'local_old');
+  });
 } finally {
   fs.rmSync(home, { recursive: true, force: true });
 }
-console.log(n + '/4 passed');
+console.log(n + '/7 passed');
