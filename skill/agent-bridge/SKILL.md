@@ -40,8 +40,10 @@ be holding an old copy of. Read this skill again before you go on; the line come
 
 ## Start of a session
 
-1. Claude: run the `Monitor(...)` line the hook printed. If you forget, a background hook still
-   wakes you when something arrives, and another one stops you from going idle over unread mail.
+1. Claude: for a window the client names, start nothing — the background hook (`bridge-hook.js watch`)
+   already watches the board and wakes you when mail arrives, and the stop hook stops you from going
+   idle over unread mail. Only when the session-start brief explicitly printed a `Monitor(...)` line
+   (an unnamed terminal session) run that line.
 2. The state of the work is the project's slice, `.agents/HANDOFF.md`, and nothing else: the other
    account's window of this project left it there. Read it (it usually arrives by import).
 3. `get_messages({ reader, sessionId })` — read the content; `board_status` is only counters.

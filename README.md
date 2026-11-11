@@ -322,8 +322,8 @@ the copies it writes, so an agent reading its installed Skill sees paths it can 
 
 These cost hours to discover. They are not bugs in the bridge — they are how the clients behave.
 
-* **Claude Code does not wake up on its own.** Its watchman lives inside a session, and a session starts only when you type into the terminal. The `SessionStart` hook prints the instruction but cannot start anything itself. After restarting the client, send it **one line** — anything — or messages posted to the board reach nobody.
-* **Antigravity wakes up by itself**, through a background watcher. So after a restart it answers and Claude Code does not. That is the asymmetry above, not one agent being lazy.
+* **Claude Code wakes up via plugin hooks.** When a session runs in an identified window, the plugin's background hook (`bridge-hook.js watch`, with `asyncRewake: true`) polls the board and exits with code 2 on urgent mail, waking the idle window automatically. In addition, the `Stop` hook blocks the session from going idle if unread mail is waiting. A manual `Monitor` watchman is only needed for unnamed terminal sessions where the session-start brief explicitly prints one. If a window is completely closed, no process exists to run hooks until reopened.
+* **Antigravity wakes up by itself**, through a background watcher (`watch_gemini.py` / `wake-antigravity.js`), which signals the IDE API when mail arrives for Gemini.
 * **An MCP client holds the server process it started.** Edit the bridge code and the running agent still measures the old version. Restart the client, or its report about "what the server does now" is worthless.
 * **A closed client cannot be woken by anything.** Neither the bell nor a watcher — its copy of the server died with the window.
 * **Anything printed to stdout by the MCP server kills the connection.** It speaks JSON-RPC over stdio. Log with `console.error`.
@@ -635,8 +635,8 @@ Antigravity додатково читає скіли рівня воркспей
 
 На їх пошук пішли години. Це не вади моста — так поводяться самі клієнти.
 
-* **Claude Code не прокидається сам.** Його вартовий живе всередині сесії, а сесія починається тільки тоді, коли ви щось набрали в терміналі. Хук `SessionStart` друкує інструкцію, але сам нічого запустити не може. Після перезапуску клієнта киньте йому **один рядок** — будь-який — інакше написане на дошці не дійде нікуди.
-* **Antigravity прокидається сам**, через фоновий вартовий процес. Тому після перезапуску він відповідає, а Claude Code мовчить. Це та сама асиметрія, а не лінощі одного з них.
+* **Claude Code прокидається через хуки плагіна.** Для вікна, яке клієнт знає, фоновий хук плагіна (`bridge-hook.js watch` із `asyncRewake: true`) стежить за дошкою у фоні й завершується з кодом 2, коли приходить термінова пошта, автоматично будячи сесію. Крім того, хук `Stop` не дає сесії заснути, якщо залишилася непрочитана пошта. Ручний вартовий `Monitor` потрібен лише для анонімних термінальних сесій, коли стартовий бриф явно його друкує. Якщо вікно повністю закрите — жоден хук не працює, доки його знову не відкриють.
+* **Antigravity прокидається сам**, через фоновий вартовий процес (`watch_gemini.py` / `wake-antigravity.js`), який смикає API IDE при появі пошти для Gemini.
 * **MCP-клієнт тримає той процес сервера, який запустив.** Виправите код моста — агент, що працює, і далі міряє стару версію. Перезапустіть клієнта, інакше його звіт про те, «як сервер поводиться зараз», нічого не вартий.
 * **Закритого клієнта не розбудить ніщо.** Ні дзвінок, ні вартовий — його копія сервера померла разом із вікном.
 * **Будь-що, надруковане MCP-сервером у stdout, рве з'єднання.** Він говорить JSON-RPC через stdio. Логувати треба через `console.error`.

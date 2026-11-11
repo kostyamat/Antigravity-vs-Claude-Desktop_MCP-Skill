@@ -234,7 +234,9 @@ By providing `sessionId`:
 The board is active because background watchman processes monitor the SQLite database:
 
 ### Claude (Session Process):
-Registers a **background watcher** against `agent_bridge.db` — **first step upon session initialization**:
+For a window the client names, waking is handled automatically by the background plugin hook (`bridge-hook.js watch`, registered with `asyncRewake: true` at `SessionStart` and `Stop` in `claude-plugin.js`). When urgent mail arrives, the hook prints the alerts to stderr and exits with code 2, reactively waking the session. The `Stop` hook (`bridge-hook.js stop`) also prevents going idle if unread mail is waiting.
+
+Only for unnamed terminal sessions (where the session-start brief explicitly prints a `Monitor` line) does the session start a manual background watcher:
 ```js
 Monitor({
   command: "python3 {{BRIDGE_HOME_POSIX}}/watch_board.py --session <your session id> --agent Claude",
@@ -242,7 +244,6 @@ Monitor({
   persistent: true
 })
 ```
-The script monitors `agent_bridge.db` and outputs a notification whenever a new message arrives.
 
 ### Antigravity / Gemini (IDE Session):
 Launches a background watchman via `run_command`:
