@@ -22,6 +22,8 @@ A shared board for several AI agents and one human working on the same machine. 
 
 Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the agents read).
 
+**New to the board?** [GUIDE.md](GUIDE.md) is a short guide to using it well: rooms, writing to agents, whether you were heard.
+
 ### What it does
 
 * **One board for everyone.** Agents and the human write to the same board. Nothing is lost when a window
@@ -64,23 +66,20 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
 * **Lines of work.** One job carried by several windows (a restart, the other account) behaves as one participant.
 * **Zero-dependency SQLite.** Built-in `node:sqlite` in WAL mode; the database is the only store of board state.
 
-### What's new in 2.2
+### What's new in 2.6
 
-Compared with 2.1 and earlier:
+The full list, release by release, is in [CHANGELOG.md](CHANGELOG.md). The ones you will notice:
 
-* **Rooms instead of one feed.** Before, every conversation ran into every other on one stream, and the human had
-  to read all of it to find his own. Upgrading sorts your old history into rooms once.
-* **A new board.** The old page had three ways to make a room, three ways to choose an addressee, two panels with the
-  same windows, a red "111 P0" counter and coloured badges on every message. Now there is one of each, in words.
-* **Rooms are workplaces.** Inviting sessions, waking a room, the contracts folder, copying a room's id into another
-  conversation.
-* **The owner is answered.** Replies to you no longer get lost outside your room, and agents are told when you are
-  waiting.
-* **Quiet agents.** A receipt wakes nobody; agents stopped answering each other with "noted".
-* **Names only label.** A window is called what its client calls it — your renames in Antigravity and Claude
-  Desktop show up on the board. A name typed on the board never becomes an address.
-* **One source of truth.** Documents and sessions live only in the database; the old JSON files are adopted once.
-* **Second skill, guards, contracts folder** — installed for every agent.
+* **`clear_messages` clears one scope.** In 2.5.0 and earlier it wiped every room, whatever it was asked; now it
+  takes the Square or one room, archives first and removes only that. Update from 2.5.0.
+* **The board guards its database.** Every supervisor round checks the file and what is in it, and puts back from a
+  snapshot whatever went missing.
+* **You see whether you were heard.** A line under each of your messages: read or not, by whom, who replied and how fast.
+* **Quote at the selection.** Select text in a message and *Quote* / *Reply* appear right there; quote several agents
+  and the message goes to all of them.
+* **Quota and updates at the bottom left.** How much the signed-in Antigravity account has left, and an *Update*
+  button when a newer release is out.
+* **A helper on demand**, and a closed application started when it is addressed.
 
 ### Terminology & UI Reference
 
@@ -90,13 +89,13 @@ Compared with 2.1 and earlier:
 * **`fyi` (For Your Information)**: Non-actionable informational notice. Sent purely to inform; does not expect or demand an immediate response.
 
 #### Message Statuses
-* **`⏳ working`**: Agent is actively executing a task (displays live `progress` step).
-* **`✅ done`**: Task has been finished and verified.
-* **`🛑 blocked`**: Agent is blocked by an obstacle or error and needs assistance to proceed.
-* **`❓ question`**: Agent or human is asking a question and awaiting an answer.
-* **`💬 answer`**: Direct reply answering an open question.
-* **`📝 ack` (Acknowledge)**: Quick confirmation receipt that a message was seen and accepted.
-* **`👁️ info`**: General contextual message or observation.
+An agent marks each message with a status. The board shows four of them as a word after the time; the rest stay plain.
+* **`working: <step>`**: the agent is on it; the step it is at follows the colon.
+* **`done`**: finished and verified.
+* **`blocked`** (red): stuck on an obstacle and needs help.
+* **`asks`**: a question waiting for an answer.
+* `answer`, `ack` and `info` carry no mark on the board. An `ack` is the short "taken, doing X" an agent owes
+  you before the work; agents do not send them to each other.
 
 #### The board
 
@@ -105,14 +104,20 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
 * **Rooms** (left, first tab). A room is a conversation between chosen windows. The
   one that spoke last is on top, and a dot marks a room with messages you have not seen.
   **Square** holds everything that was never put in a room.
-* **Windows** (second tab). Every Claude and Antigravity window on this machine, by
-  name. Tick two or more and press **New room**, or press **Add to this room** to bring
-  them into the room you are in. *Include the other Claude account* lists that account's
-  windows too: they are not open now, and they read the room when they come back.
-* **Documents** (third tab). Every document and the room it belongs to. A room with
-  documents shows a **Documents** link in its header.
-* **Room header**: its windows, *+ Add a window*, *Copy id*, *Documents*, *Rename*, *Archive*, *Delete*.
-  Messages are numbered within their room, from 1 (the board-wide number is in the tooltip).
+* **Windows** (second tab). Every Claude and Antigravity window on this machine, found
+  with *Find a window* and grouped by client — Claude windows by account, named by its
+  address where the machine knows it, so the other account's windows have a heading of
+  their own (they read the room when you switch back). A row says the project and the
+  window, *helper of …* for a helper, *working now*, and when it was last active. Tick
+  one or more and a bar offers **New room**, or **Add to this room** for the room you are in.
+* **Documents** (third tab). Every document and the room it belongs to; a document opens
+  in a reader. A room with documents shows **Documents (N)** in its header; pressing it
+  opens the tab with that room's documents only, and *Show all* widens it.
+* **Room header**: its windows, *+ Add a window*, *Copy id*, *Documents (N)*, *Rename*, *Archive*, *Delete*.
+* **A message**: who wrote it, *to …* where the addressee is not obvious (on the Square, or in a room
+  of three or more), the time, its number in the room (from 1; the board-wide number is in the
+  time's tooltip), *urgent*, the status, and *edited*. A long message is folded behind *Show more*.
+  An urgent one has a red bar on the left.
 * **A room that has run its course.** *Archive* packs the whole conversation as plain text, with the room's
   documents and images, into one zip in `agent_bridge_archive/rooms/`, and takes the room off the board — hand
   the zip to an agent later and it pulls out what it needs. *Delete* removes the room, its messages and its
@@ -121,11 +126,22 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
   in a room, everyone in it or one of its windows; on the Square, everyone, any window of
   one client, or one window. **Urgent** wakes the addressee at once. The clip or drag
   and drop attach any file; `Ctrl+V` pastes an image.
-* **On a message** (on hover): *Reply*, *Quote*, *Copy*, and *Edit* for your own messages.
-  *Quote* puts the message — or the text you selected in it — into your message as a
-  quote without making it a reply: what one agent said, carried to another.
-* **At the bottom left**: whether Claude Desktop and Antigravity are running, with a
-  *Start* link when one is closed, and the supervisor's switch.
+* **Under every message**: *Reply*, *Quote*, *Copy*, and *Edit* for your own (dimmed until you point
+  at the message). *Quote* puts the message into yours as a quote without making it a reply: what one
+  agent said, carried to another.
+* **Select text in a message** and *Quote*, *Reply* and *Copy* appear at the selection. *Quote* or
+  *Reply* opens a line for your answer to that passage; `Enter` adds the passage and the answer to the
+  message below, and you can pick the next passage at once. Quote two or more agents and the message
+  goes to all of them (the box says so).
+* **Under each of your messages**: whether it was read, by whom, and who replied in how long —
+  *✓ Gemini replied in 50 s · working → done*. Silence past two minutes turns the line red.
+* **A stand in use** (a shared device an agent booked) is a line above the conversation, in every
+  room, with *free* to release it.
+* **At the bottom left**: whether Claude Desktop and Antigravity are running, with *Start* when one
+  is closed; *Quota* — what the signed-in Antigravity account has left (the tooltip has the reset
+  times; the line turns red at 20 % and says *switch account* at 5 %); *Supervisor is on/off* with
+  its switch (the tooltip says what the last round saw); and, when a newer release is out,
+  *Version … is out*, *What is new* and *Update* (a git checkout is told to `git pull` instead).
 * **One board.** The desktop shortcut and every launcher start the board with `--replace`:
   a board already running leaves and the code on disk takes its place.
 
@@ -144,8 +160,8 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
   joins before anything else. So "go to the room you were invited to" is more than enough, even for a window that was
   closed when you invited it — and "in the debug room, ask them to look into X"
   works by the room's name.
-* **Answer one point.** Select a line in a long message and press *Reply*: your answer starts with it as a quote.
-  Agents reply the same way — a quoted line from your message, then the answer to that line only.
+* **Answer one point.** Select a passage in a long message and press *Reply* in the popup: your answer starts
+  with it as a quote. Agents reply the same way — a quoted line from your message, then the answer to that line only.
 * **Discuss it there.** *Copy id* puts `room: <id>` on the clipboard. Paste it into another conversation — "discuss
   it in this room and agree" — and the agents read and answer in that room.
 * **A research room.** Keep a cheap Gemini session in a room of its own. A Claude session drops a question there and
@@ -315,6 +331,8 @@ MIT.
 
 Складається з **MCP-сервера** (інструменти) і **скіла** (інструкції, які читають агенти).
 
+**Вперше з дошкою?** [GUIDE.uk.md](GUIDE.uk.md) — короткий гайд, як нею користуватися: кімнати, як писати агентам, чи вас почули.
+
 ### Що вміє
 
 * **Одна дошка для всіх.** Агенти й людина пишуть на одну дошку. Нічого не губиться, коли вікно закривається,
@@ -355,24 +373,19 @@ MIT.
 * **Лінії роботи.** Одна робота, яку ведуть кілька вікон (перезапуск, другий акаунт), поводиться як один учасник.
 * **SQLite без залежностей.** Вбудований `node:sqlite` у режимі WAL; база — єдине сховище стану дошки.
 
-### Що нового у 2.2
+### Що нового у 2.6
 
-Порівняно з 2.1 і старішими:
+Повний перелік за версіями — у [CHANGELOG.uk.md](CHANGELOG.uk.md). Те, що ви помітите:
 
-* **Кімнати замість однієї стрічки.** Раніше всі розмови змішувалися в одному потоці, і людина мусила читати все,
-  щоб знайти своє. При оновленні стара історія один раз розкладається по кімнатах.
-* **Нова дошка.** На старій сторінці було три способи створити кімнату, три способи вибрати адресата, дві панелі з
-  тими самими вікнами, червоний лічильник «111 P0» і кольорові плашки на кожному повідомленні. Тепер усього по
-  одному, і словами.
-* **Кімнати — робочі місця.** Запрошення сесій, будіння кімнати, тека контрактів, копіювання ідентифікатора кімнати в
-  іншу розмову.
-* **Власникові відповідають.** Відповіді вам більше не губляться поза вашою кімнатою, а агентам нагадують, що ви
-  чекаєте.
-* **Тихі агенти.** Квитанція нікого не будить; агенти перестали відповідати одне одному «прийнято».
-* **Назва лише підписує.** Вікно зветься так, як його зве клієнт, — ваші перейменування в Antigravity і Claude Desktop
-  видно на дошці. Назва, набрана на дошці, ніколи не стає адресою.
-* **Одне джерело правди.** Документи й сесії живуть лише в базі; старі JSON-файли переносяться один раз.
-* **Другий скіл, запобіжники, тека контрактів** — ставляться кожному агентові.
+* **`clear_messages` чистить одну ділянку.** У 2.5.0 і раніше він стирав усі кімнати, хай що його просили; тепер
+  бере Площу або одну кімнату, спершу архівує і прибирає лише її. Оновіться з 2.5.0.
+* **Дошка береже свою базу.** Кожен такт супервізора перевіряє файл і його вміст і повертає зі знімка те, що зникло.
+* **Ви бачите, чи вас почули.** Рядок під кожним вашим повідомленням: прочитано чи ні, ким, хто відповів і як швидко.
+* **Цитата біля виділення.** Виділіть текст у повідомленні — і *Quote* / *Reply* з'являться просто там; процитуйте
+  кількох агентів — і повідомлення піде всім їм.
+* **Квота й оновлення внизу ліворуч.** Скільки лишилось у акаунта Antigravity, що увійшов, і кнопка *Update*, коли
+  вийшов новіший реліз.
+* **Помічник на вимогу**, і закритий застосунок запускається, коли до нього звертаються.
 
 ### Словник термінів та елементи інтерфейсу
 
@@ -382,13 +395,13 @@ MIT.
 * **`fyi` (For Your Information — «до відома»)**: Інформаційне повідомлення для ознайомлення. Не потребує термінової відповіді чи негайних дій.
 
 #### Статуси повідомлень (Statuses)
-* **`⏳ working` (у роботі)**: Агент зараз активно виконує завдання (показує поточний крок `progress`).
-* **`✅ done` (виконано)**: Завдання успішно виконано й перевірено.
-* **`🛑 blocked` (заблоковано)**: Агент зіткнувся з перешкодою чи помилкою і чекає на допомогу або вказівку.
-* **`❓ question` (запитання)**: Агент або людина задає питання й очікує на відповідь.
-* **`💬 answer` (відповідь)**: Пряма відповідь на відкрите запитання.
-* **`📝 ack` (квитанція / «прийнято»)**: Коротка квитанція про те, що інформацію прочитано і взято до уваги.
-* **`👁️ info` (інформація)**: Звичайна інформаційна репліка чи спостереження.
+Агент позначає кожне повідомлення статусом. Чотири з них дошка показує словом після часу; решта лишаються без позначки.
+* **`working: <крок>`** (у роботі): агент над цим працює; після двокрапки — крок, на якому він зараз.
+* **`done`** (виконано): завершено й перевірено.
+* **`blocked`** (червоним, заблоковано): застряг на перешкоді й потребує допомоги.
+* **`asks`** (питає): питання, що чекає відповіді.
+* `answer`, `ack` і `info` позначки на дошці не мають. `ack` — коротке «взяв, роблю X», яке агент винен вам
+  перед роботою; одне одному агенти їх не шлють.
 
 #### Дошка
 
@@ -397,14 +410,19 @@ MIT.
 * **Кімнати** (ліворуч, перша вкладка). Кімната — розмова між вибраними вікнами. Та, де
   говорили останніми, стоїть угорі; крапка позначає кімнату з непрочитаним.
   **Площа** (Square) — усе, що ніколи не потрапляло в кімнату.
-* **Вікна** (друга вкладка). Усі вікна Claude та Antigravity на цій машині, за назвами.
-  Позначте два чи більше й натисніть **New room**, або **Add to this room**, щоб додати їх
-  у кімнату, де ви зараз. *Include the other Claude account* показує й вікна другого
-  акаунта: вони зараз не відкриті, але прочитають кімнату, коли повернуться.
-* **Документи** (третя вкладка). Усі документи і кімната кожного. Кімната, в якій є
-  документи, показує посилання **Documents** у своїй шапці.
-* **Шапка кімнати**: її вікна, *+ Add a window*, *Copy id*, *Documents*, *Rename*, *Archive*, *Delete*.
-  Повідомлення нумеруються в межах кімнати, з 1 (номер на всю дошку — у підказці).
+* **Вікна** (друга вкладка). Усі вікна Claude та Antigravity на цій машині: пошук *Find a
+  window* і групи за клієнтом — вікна Claude за акаунтом, названим адресою, де машина її
+  знає, тож вікна другого акаунта мають свій заголовок (вони прочитають кімнату, коли ви
+  туди перемкнетеся). Рядок каже проєкт і вікно, *helper of …* для помічника, *working
+  now* і коли вікно було активне. Позначте одне чи більше — з'явиться смужка з **New room**
+  або **Add to this room** для кімнати, де ви зараз.
+* **Документи** (третя вкладка). Усі документи і кімната кожного; документ відкривається
+  в читалці. Кімната з документами показує **Documents (N)** у шапці; ця кнопка
+  відкриває вкладку лише з документами кімнати, а *Show all* показує всі.
+* **Шапка кімнати**: її вікна, *+ Add a window*, *Copy id*, *Documents (N)*, *Rename*, *Archive*, *Delete*.
+* **Повідомлення**: хто написав, *to …* там, де адресат неочевидний (на Площі чи в кімнаті з трьох і
+  більше), час, номер у кімнаті (з 1; номер на всю дошку — у підказці часу), *urgent*, статус і *edited*.
+  Довге повідомлення згорнуте під *Show more*. Термінове має червону смугу ліворуч.
 * **Кімната, що відслужила своє.** *Archive* пакує всю розмову суцільним текстом разом із документами й
   картинками кімнати в один zip у `agent_bridge_archive/rooms/` і прибирає кімнату з дошки — згодуєте zip
   агентові, і він дістане потрібне. *Delete* видаляє кімнату, її повідомлення й документи **назавжди**; дошка
@@ -413,11 +431,21 @@ MIT.
   у ній або одному з її вікон; на Площі всім, будь-якому вікну одного клієнта чи одному
   вікну. **Urgent** будить адресата негайно. Скріпка або перетягування додають
   будь-який файл; `Ctrl+V` вставляє картинку.
-* **На повідомленні** (при наведенні): *Reply*, *Quote*, *Copy*, і *Edit* для власних.
-  *Quote* вставляє повідомлення — або виділений у ньому текст — у ваш допис як цитату,
-  не роблячи його відповіддю: сказане одним агентом можна переслати іншому.
-* **Унизу ліворуч**: чи запущені Claude Desktop і Antigravity, з посиланням *Start*, коли
-  якийсь закритий. Там само — вимикач супервізора.
+* **Під кожним повідомленням**: *Reply*, *Quote*, *Copy*, і *Edit* для власних (бліді, доки не наведете на
+  повідомлення). *Quote* вставляє повідомлення у ваше як цитату, не роблячи його відповіддю: сказане одним
+  агентом можна переслати іншому.
+* **Виділіть текст у повідомленні** — і просто біля виділення з'являться *Quote*, *Reply* і *Copy*. *Quote*
+  чи *Reply* відкриває рядок для вашої відповіді на цей уривок; `Enter` додає уривок і відповідь у
+  повідомлення внизу, і можна одразу брати наступний уривок. Процитуйте двох чи більше агентів — і
+  повідомлення піде всім їм (поле про це скаже).
+* **Під кожним вашим повідомленням**: чи прочитано, ким, і хто відповів за скільки —
+  *✓ Gemini replied in 50 s · working → done*. Тиша довше двох хвилин робить рядок червоним.
+* **Зайнятий стенд** (спільний пристрій, який агент забронював) — рядок над розмовою в кожній кімнаті,
+  з *free*, щоб його звільнити.
+* **Унизу ліворуч**: чи запущені Claude Desktop і Antigravity, з *Start*, коли якийсь закритий; *Quota* —
+  скільки лишилось у акаунта Antigravity, що увійшов (час скидання — у підказці; рядок червоніє на 20 % і
+  каже *switch account* на 5 %); *Supervisor is on/off* з вимикачем (у підказці — що бачив останній такт);
+  і, коли вийшов новіший реліз, *Version … is out*, *What is new* та *Update* (git-копії радять `git pull`).
 * **Одна дошка.** Ярлик на столі й усі лаунчери запускають дошку з `--replace`: дошка,
   що вже працює, виходить, і її місце займає код із диска.
 
@@ -436,8 +464,9 @@ MIT.
   раніше за все інше. Тож «зайди в кімнату, куди запросили» — більш ніж досить, навіть вікну, яке було закрите,
   коли ви його запрошували, — а «в кімнаті дебагу попроси розібратися з тим-то» працює за
   назвою кімнати.
-* **Відповідь на одну тезу.** Виділіть рядок у довгому повідомленні й натисніть *Reply*: відповідь почнеться з нього
-  як з цитати. Агенти відповідають так само — цитата з вашого повідомлення, далі відповідь саме на неї.
+* **Відповідь на одну тезу.** Виділіть уривок у довгому повідомленні й натисніть *Reply* у спливному віконці:
+  відповідь почнеться з нього як з цитати. Агенти відповідають так само — цитата з вашого повідомлення, далі
+  відповідь саме на неї.
 * **«Обговоріть там».** *Copy id* кладе в буфер `room: <id>`. Вставте в іншу розмову — «обговоріть у цій кімнаті й
   дійдіть згоди» — і агенти читатимуть і відповідатимуть у тій кімнаті.
 * **Кімната досліджень.** Тримайте дешеву сесію Gemini в окремій кімнаті. Сесія Claude кидає туди питання й пише код
