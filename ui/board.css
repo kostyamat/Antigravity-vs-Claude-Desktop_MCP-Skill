@@ -109,6 +109,14 @@ code { font-family: var(--mono); font-size: .92em; }
 .row.here .row-meta::after { content: " · in this room"; color: var(--accent); }
 .group { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); padding: 10px 8px 4px; }
 .group .plain { text-transform: none; letter-spacing: 0; }
+details.machine { border-top: 1px solid var(--line, rgba(127,127,127,.25)); }
+details.machine:first-child { border-top: 0; }
+details.machine > summary { cursor: pointer; list-style: none; font-size: 12px; font-weight: 600; color: var(--ink-2, inherit);
+  padding: 10px 8px 2px; user-select: none; }
+details.machine > summary::-webkit-details-marker { display: none; }
+details.machine > summary::before { content: '\25be'; display: inline-block; width: 14px; transition: transform .15s; }
+details.machine:not([open]) > summary::before { transform: rotate(-90deg); }
+details.machine .group { padding-left: 22px; }
 .divider { height: 1px; background: var(--line); margin: 6px 8px; }
 
 .tray {

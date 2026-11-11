@@ -320,7 +320,10 @@ function renderWindows() {
     '<div class="row-meta">' + esc([c.projectName ? '' : project(c), c.helperOf ? 'helper of ' + c.helperOf : '', c.busy ? 'working now' : '',
       c.activeAt ? ago(c.activeAt) : ''].filter(Boolean).join(' · ')) + '</div></div></label>';
   const group = (title, list) => list.length ? '<div class="group">' + title + '</div>' + list.map(row).join('') : '';
-  const shown = CARDS.filter(match);
+  const shownAll = CARDS.filter(match);
+  // Windows of another machine get a section of their own, below this machine's:
+  // mixed into this machine's list they read as windows open here.
+  const shown = shownAll.filter(c => !c.machine);
   const claude = shown.filter(c => c.agent === 'Claude');
 
   // Grouped by account, not ticked window by window. With two accounts open at
@@ -350,13 +353,34 @@ function renderWindows() {
     : others.map(a => group(head(a, 'account ' + String(a).slice(0, 8)),
         claude.filter(c => c.elsewhere && c.account === a))).join('');
 
+  const here = mine + elsewhere + group('Antigravity', shown.filter(c => c.agent !== 'Claude'));
+  const machines = [...new Set(shownAll.filter(c => c.machine).map(c => c.machine))].sort();
+  // A filter typed in the box opens every section, so a match is never hidden.
+  const section = (key, title, body) => body ? '<details class="machine" data-sec="' + esc(key) + '"' +
+    (q || !CLOSED.has(key) ? ' open' : '') + '><summary>' + title + '</summary>' + body + '</details>' : '';
+  const theirs = m => {
+    const list = shownAll.filter(c => c.machine === m);
+    return group('Claude', list.filter(c => c.agent === 'Claude')) + group('Antigravity', list.filter(c => c.agent !== 'Claude'));
+  };
+  const body = machines.length
+    ? section('here', 'This machine', here) + machines.map(m => section('m:' + m, '\ud83d\udda7 ' + esc(m), theirs(m))).join('')
+    : here;
+
   $('#winList').innerHTML =
     (CARD_PROBLEM ? '<div class="hint warn" style="padding:8px">' + esc(CARD_PROBLEM) + '</div>' : '') +
-    mine + elsewhere +
-    group('Antigravity', shown.filter(c => c.agent !== 'Claude')) ||
+    body ||
     '<div class="hint" style="padding:8px">' + (q ? 'No window matches.' : 'No windows found.') + '</div>';
   updateTray();
 }
+
+// Which machine sections the owner folded; kept in this browser only.
+const CLOSED = new Set((() => { try { return JSON.parse(localStorage.getItem('closedSections') || '[]'); } catch (_) { return []; } })());
+document.addEventListener('toggle', e => {
+  const d = e.target;
+  if (!d.matches || !d.matches('details.machine') || $('#winFilter').value.trim()) return;
+  if (d.open) CLOSED.delete(d.dataset.sec); else CLOSED.add(d.dataset.sec);
+  try { localStorage.setItem('closedSections', JSON.stringify([...CLOSED])); } catch (_) {}
+}, true);
 
 // Stands somebody holds: one line above the feed, in every room, because a
 // stand is shared by rooms that do not see each other.
@@ -684,8 +708,10 @@ function fillTo(keep) {
     html = '<option value="">Everyone</option>' +
       '<option value="agent:Claude">Any Claude window</option>' +
       '<option value="agent:Gemini">Any Antigravity window</option>' +
-      '<optgroup label="Claude">' + CARDS.filter(c => c.agent === 'Claude' && !c.elsewhere).map(opt).join('') + '</optgroup>' +
-      '<optgroup label="Antigravity">' + CARDS.filter(c => c.agent !== 'Claude').map(opt).join('') + '</optgroup>';
+      '<optgroup label="Claude">' + CARDS.filter(c => c.agent === 'Claude' && !c.elsewhere && !c.machine).map(opt).join('') + '</optgroup>' +
+      '<optgroup label="Antigravity">' + CARDS.filter(c => c.agent !== 'Claude' && !c.machine).map(opt).join('') + '</optgroup>' +
+      [...new Set(CARDS.filter(c => c.machine).map(c => c.machine))].sort().map(m =>
+        '<optgroup label="Machine ' + esc(m) + '">' + CARDS.filter(c => c.machine === m).map(opt).join('') + '</optgroup>').join('');
   }
   sel.innerHTML = html;
   if (keep && [...sel.options].some(o => o.value === keep)) sel.value = keep;
