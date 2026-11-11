@@ -188,6 +188,9 @@ function reasonFor(label) {
 const HEREDOC_REASON = 'Blocked by the agent-bridge guard: this heredoc has a backslash in it, and a heredoc in ' +
   'this shell does not keep backslashes (doubled ones arrive single, \\n inside a string becomes a line break). ' +
   'Write the script or the text with the Write tool, then run the file from Bash.';
+const HEREDOC_REASON_ANTIGRAVITY = 'Blocked by the agent-bridge guard: this heredoc has a backslash in it, and a heredoc ' +
+  'passed through the command line does not keep backslashes (doubled ones arrive single, \\n inside a string becomes ' +
+  'a line break). Write the script or the text to a file with your file-writing tool, then run that file.';
 function heredocWithBackslash(line) {
   const m = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(String(line || ''));
   if (!m) return false;
@@ -199,6 +202,10 @@ function main(input) {
   try { p = JSON.parse(input || '{}'); } catch (_) { return ''; }
   if (p.toolCall) {                                   // Antigravity
     const line = (p.toolCall.args || {}).CommandLine || (p.toolCall.args || {}).commandLine || '';
+    // The same ban for Antigravity (owner, 11.11.2026). Its shell is PowerShell, so
+    // a heredoc there is always inside a bash or wsl call, with one more layer of
+    // quoting between the script and the shell that finally reads it.
+    if (heredocWithBackslash(line)) return JSON.stringify({ decision: 'deny', reason: HEREDOC_REASON_ANTIGRAVITY });
     const hit = judge(line);
     if (hit) return JSON.stringify({ decision: 'deny', reason: reasonFor(hit) });
     // Antigravity requires a decision for every call: {} reads as a denial with

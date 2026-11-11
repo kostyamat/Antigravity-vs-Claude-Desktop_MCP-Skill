@@ -15,4 +15,13 @@ assert.strictEqual(heredocWithBackslash('echo a ' + bs + '| b'), false, 'no here
 assert.strictEqual(deny(withBs).hookSpecificOutput.permissionDecision, 'deny');
 assert.strictEqual(main(JSON.stringify({ tool_name: 'Bash', tool_input: { command: plain } })), '');
 assert.strictEqual(main(JSON.stringify({ tool_name: 'PowerShell', tool_input: { command: withBs } })), '', 'Bash only');
-console.log('ok 7/7');
+
+// Antigravity: the same ban on run_command, and an ordinary command still gets its decision.
+const gemini = cmd => JSON.parse(main(JSON.stringify({ toolCall: { args: { CommandLine: cmd } } })));
+const viaWsl = 'wsl -u root -e bash -c "cat > /tmp/x.py <<' + "'EOF'" + nl + 'print(' + "'a" + bs + "nb')" + nl + 'EOF"';
+assert.strictEqual(gemini(viaWsl).decision, 'deny');
+assert.ok(/file-writing tool/.test(gemini(viaWsl).reason));
+assert.strictEqual(gemini(plain).decision, 'ask', 'a heredoc without a backslash is not refused');
+assert.strictEqual(gemini("@'" + nl + 'C:' + bs + 'repos' + nl + "'@ | Set-Content x.txt").decision, 'ask', 'a PowerShell here-string keeps its backslashes');
+assert.strictEqual(gemini('git status').decision, 'ask');
+console.log('ok 12/12');
