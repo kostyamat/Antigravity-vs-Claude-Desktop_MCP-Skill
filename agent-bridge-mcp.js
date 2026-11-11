@@ -1242,7 +1242,7 @@ function doPost(id, a) {
   const room = routed.room;
 
   if (isAgent) {
-    const no = rules.helperGuard({ mine: mineWin, theirs: toSession && toSession !== 'all' ? toSession : '', room });
+    const no = rules.helperGuard({ mine: mineWin, theirs: toSession && toSession !== 'all' ? toSession : '', room, replyTo });
     if (no) return fail(id, `post_message: ${no} Message NOT recorded.`);
   }
 

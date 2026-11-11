@@ -96,8 +96,17 @@ function createRules(bridgeDb, cardsLib, router) {
 
   // A helper takes work from its lead and from the owner, and reports to its
   // lead. Returns the reason to refuse, or ''.
-  function helperGuard({ mine, theirs, room }) {
+  function helperGuard({ mine, theirs, room, replyTo }) {
     if (!mine) return '';
+
+    // The owner is above lead and helper. An answer to what he wrote, in the room he
+    // wrote it in, is always allowed: refused, it went to the lead's room instead and
+    // the owner, reading the room he had written in, saw no answer (11.11, #2621 → #2622).
+    if (replyTo && room) {
+      let parent = null;
+      try { parent = bridgeDb.getMessageById(Number(replyTo)); } catch (_) {}
+      if (parent && isHuman(parent.fromSession) && String(parent.room || '') === String(room)) return '';
+    }
     const target = theirs && !isHuman(theirs) ? theirs : '';
 
     // Somebody else's helper is not mine to task.
