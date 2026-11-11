@@ -19,9 +19,9 @@ anywhere else.
 | `agent-bridge-mcp.js` | the MCP server: the tools an agent sees | one per client, spawned by the client over stdio, ends with it |
 | `bridge-db.js` | the SQLite layer — schema, migrations, resolution | a module, loaded in-process by the server and the dashboard |
 | `board-ui.js` | the human's board on `127.0.0.1:8787` | always on, started from Startup, outlives every session |
-| `watch_board.py` | the Claude watchman: polls the board, emits events | one per agent session, ends when its parent does |
+| `watch_board.py` | the Claude watchman for a session with no window id: polls the board, asks `mailbox.js` what is urgent, emits events | started by the agent, ends when its parent does |
 | `watch_gemini.py` | the Antigravity wake-up | background, ends when its parent does |
-| `board_brief.py` | the `SessionStart` hook: digest, window, line, watchman command | runs once per session start, must never block |
+| `board_brief.py` | the `SessionStart` hook: the window's own unread mail, window, line; a watchman command only for a session with no window id | runs once per session start, must never block |
 | `wake-antigravity.js` | routes a wake-up to the right Antigravity window | called by the server and the dashboard |
 | `install-bridge.*` | the installer: configs, skills, shortcuts, the Claude Desktop bundle | run by hand |
 
@@ -143,7 +143,7 @@ run. WAL mode, `busy_timeout = 5000`; several processes read and write at once b
 ## 5. Working on this repository
 
 ```
-first three actions of a session   get_session self → watchman with --session and --window → get_messages
+first actions of a session         get_messages when the brief says mail waits; a watchman only when the brief prints one
 root and skill/ copies             must stay byte-identical; the guard refuses a commit otherwise
 absolute paths                     never; write {{BRIDGE_HOME}} or {{BRIDGE_HOME_POSIX}}
 language                           English everywhere, except README.md and any *.uk.md

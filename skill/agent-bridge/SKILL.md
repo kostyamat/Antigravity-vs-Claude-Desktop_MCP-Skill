@@ -192,7 +192,8 @@ Recognise the intent in the user's own words:
   `list_docs({room})`), answer in it, reach agreement there.
 - **"Agree a contract" · "shake hands"** — negotiate in the room; when both sides agree, file the text
   in the contracts folder and post its path in the room.
-- **"Arm the watchman"** — run the Monitor line the session-start hook printed.
+- **"Arm the watchman"** — a hook already watches the board for a window the client names, and wakes it;
+  start nothing. Only when the session-start brief printed a Monitor line (a terminal session) run that line.
 - **"This is your helper" · "work with the Antigravity window" · "you are X's helper"** — `set_helper`, once.
 - **"Take the stand" · "is 198 free?"** — `book_stand` (`action: "list"` shows who has what).
 
