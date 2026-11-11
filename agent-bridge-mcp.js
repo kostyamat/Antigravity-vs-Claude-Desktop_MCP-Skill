@@ -365,43 +365,10 @@ setInterval(() => {
 // ═════════════════════════════════════════════════════════════════════════════════════════
 // ═════════════════════════════════════════════════════════════════════════════════════════
 
-function isProcessRunning(pattern) {
-  try {
-    const { spawnSync } = require('child_process');
-    const r = spawnSync('tasklist', ['/NH'], { encoding: 'utf8', windowsHide: true });
-    return (r.stdout || '').toLowerCase().includes(pattern.toLowerCase());
-  } catch (_) {
-    return false;
-  }
-}
-
-function isClaudeDesktopRunning() {
-  try {
-    const { spawnSync } = require('child_process');
-    const r = spawnSync('tasklist', ['/FI', 'IMAGENAME eq claude.exe', '/V', '/FO', 'CSV'], { encoding: 'utf8', windowsHide: true });
-    return (r.stdout || '').toLowerCase().includes('claude.exe') && (r.stdout || '').includes('"Claude"');
-  } catch (_) {
-    return false;
-  }
-}
-
-function launchAntigravity() {
-  if (isProcessRunning('Antigravity.exe')) return;
-  const antPath = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'antigravity', 'Antigravity.exe');
-  if (!fs.existsSync(antPath)) return;
-  spawn('cmd.exe', ['/c', 'start', '""', antPath], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
-  logError('launched Antigravity.exe for a message addressed to it');
-}
-
-function launchClaudeDesktop() {
-  if (isClaudeDesktopRunning()) return;
-  spawn('cmd.exe', ['/c', 'start', '""', 'explorer.exe', 'shell:AppsFolder\\Claude_pzs8sxrjxfjjc!Claude'], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true
-  }).unref();
-  logError('launched Claude Desktop for a message addressed to it');
-}
+// Whether an application is open, and starting it: app-presence.js, shared with the board.
+const presence = require('./app-presence');
+function launchAntigravity() { presence.launch('antigravity', m => logError(m + ' for a message addressed to it')); }
+function launchClaudeDesktop() { presence.launch('claude', m => logError(m + ' for a message addressed to it')); }
 
 // A closed environment is usually closed on purpose, so nothing starts it at
 // startup any more: opening one client used to drag the other one up with it,

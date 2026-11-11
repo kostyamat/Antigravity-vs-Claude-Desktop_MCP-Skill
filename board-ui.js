@@ -784,8 +784,8 @@ const server = http.createServer((req, res) => {
   }
   if (req.method === 'GET' && req.url === '/api/agents') {
     return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({
-      antigravity: isProcessRunning('Antigravity.exe'),
-      claude: isClaudeDesktopRunning()
+      antigravity: presence.current().antigravity,
+      claude: presence.current().claude
     }));
   }
   if (req.method === 'POST' && req.url.startsWith('/api/agents/launch')) {
@@ -797,48 +797,11 @@ const server = http.createServer((req, res) => {
   send(res, 404, 'text/plain; charset=utf-8', 'Not found');
 });
 
-function isProcessRunning(pattern) {
-  try {
-    const { spawnSync } = require('child_process');
-    const r = spawnSync('tasklist', ['/NH'], { encoding: 'utf8', windowsHide: true });
-    return (r.stdout || '').toLowerCase().includes(pattern.toLowerCase());
-  } catch (_) {
-    return false;
-  }
-}
-
-function isClaudeDesktopRunning() {
-  try {
-    const { spawnSync } = require('child_process');
-    const r = spawnSync('tasklist', ['/FI', 'IMAGENAME eq claude.exe', '/V', '/FO', 'CSV'], { encoding: 'utf8', windowsHide: true });
-    return (r.stdout || '').toLowerCase().includes('claude.exe') && (r.stdout || '').includes('"Claude"');
-  } catch (_) {
-    return false;
-  }
-}
-
+// Whether an application is open, and starting it: app-presence.js, shared with the MCP server.
+const presence = require('./app-presence');
+presence.refresh();
 function launchApp(app) {
-  const started = [];
-  if (app === 'antigravity' || app === 'all') {
-    if (!isProcessRunning('Antigravity.exe')) {
-      const antPath = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'antigravity', 'Antigravity.exe');
-      if (fs.existsSync(antPath)) {
-        spawn('cmd.exe', ['/c', 'start', '""', antPath], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
-        started.push('antigravity');
-      }
-    }
-  }
-  if (app === 'claude' || app === 'all') {
-    if (!isClaudeDesktopRunning()) {
-      spawn('cmd.exe', ['/c', 'start', '""', 'explorer.exe', 'shell:AppsFolder\\Claude_pzs8sxrjxfjjc!Claude'], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true
-      }).unref();
-      started.push('claude');
-    }
-  }
-  return started;
+  return presence.launch(app, msg => console.log('📡 ' + msg + ' (addressed on the board)'));
 }
 
 // A closed environment is usually closed on purpose. Starting both of them

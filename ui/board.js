@@ -904,10 +904,10 @@ async function checkApps() {
   try { upd = await (await fetch('/api/update')).json(); } catch (_) {}
   if (j.antigravity) { try { quo = await (await fetch('/api/quota')).json(); } catch (_) {} }
   $('#apps').innerHTML = line('Claude Desktop', j.claude, 'claude') + line('Antigravity', j.antigravity, 'antigravity') +
-    quotaLine(quo) + supervisorLine(sup) + updateLine(upd);
+    quotaLine(quo) + supervisorLine(sup, j.antigravity) + updateLine(upd);
 }
 // The supervisor is the owner's to switch. The tooltip says what its last round saw.
-function supervisorLine(s) {
+function supervisorLine(s, antigravityUp) {
   if (!s || s.error) return '';
   const st = s.status || {};
   const tip = [
@@ -916,7 +916,11 @@ function supervisorLine(s) {
     (st.sleepers || []).length ? 'Unanswered: ' + st.sleepers.map(x => x.name || x).join(', ') : '',
     st.sent || '', st.lastError ? 'Error: ' + st.lastError : ''
   ].filter(Boolean).join('\n');
-  return '<div title="' + esc(tip) + '"><i class="' + (s.enabled ? 'up' : '') + '"></i>Supervisor is ' + (s.enabled ? 'on' : 'off') +
+  // On, but not working: its rounds run in an Antigravity conversation, so with Antigravity
+  // closed, or the last round failed, the switch alone would be a lie.
+  const stuck = s.enabled && (!antigravityUp ? 'waits for Antigravity' : st.lastError ? 'last round failed' : '');
+  return '<div title="' + esc(tip) + '"' + (stuck ? ' class="receipt late"' : '') + '><i class="' + (s.enabled && !stuck ? 'up' : '') + '"></i>Supervisor is ' +
+    (s.enabled ? 'on' + (stuck ? ' — ' + stuck : '') : 'off') +
     ' <button type="button" class="link-btn" data-sup="' + (s.enabled ? 'off' : 'on') + '">' + (s.enabled ? 'Turn off' : 'Turn on') + '</button></div>';
 }
 // How much quota the signed-in Antigravity account has left; red when it is time to switch.
