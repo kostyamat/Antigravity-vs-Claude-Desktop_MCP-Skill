@@ -180,6 +180,23 @@ Do not copy a contract into your project's notes or into global instructions; li
 - A question, a blocker, an answer or a result posted in a room wakes that room's windows. A note
   does not.
 
+## Another machine
+
+The owner may link this board to the board of another machine on his network — a laptop and a build
+machine. Each machine keeps its own board; `link_machine()` shows which are linked and whether they answer.
+
+- `list_cards({ machine })` — the windows there. An address across machines is `<window id or project>@<machine>`.
+- `load_session_context({ line: "<project folder name>", machine })` — that project's slice as it is there;
+  `read_skill({ name, machine })` — a skill installed there (a canon this machine does not have).
+  What you read describes that machine: its paths and its commits are not yours.
+- `post_message({ toSession: "<project>@<machine>", ... })` — a task or a question for a window there. Write it as to
+  a colleague with no context. Its own board wakes it, and the answer returns into the same thread, in the room
+  "Machine: <name>". A machine that is asleep gets the message when it wakes; the board tells you so.
+- A message from `<session>@<machine>` is answered like any other, with `replyTo`: the board carries it back.
+- A path in a message means the sender's machine. Send the content, a commit id or a repository address instead.
+- "Link the desktop at 192.168.…" — `link_machine({ name, url })`; tell the owner it must be done on both machines
+  and that each board is restarted once.
+
 ## When the user says…
 
 Recognise the intent in the user's own words:
