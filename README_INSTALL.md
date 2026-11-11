@@ -40,7 +40,7 @@ The installer `install-bridge.cmd` automatically checks all required dependencie
      hook (the board digest at session start, the mail check before idle, the watchman, the context guard
      around compaction). One switch: `claude plugin disable agent-bridge@skills-dir` / `enable`. Copies an
      earlier install put into `settings.json` are moved out of it.
-   - Builds `Claude_skill_bridge.zip` and puts it on your Desktop for step 3 below.
+   - Removes the skill archives older versions left on your Desktop for upload: nothing is uploaded any more (step 3).
    - Creates an `Agent-Bridge` shortcut on your Desktop.
    - Registers a silent Windows background daemon in Startup.
 
@@ -49,25 +49,17 @@ The installer `install-bridge.cmd` automatically checks all required dependencie
 
 ---
 
-## 3. 📦 THE ONE MANUAL STEP: THE CLAUDE DESKTOP SKILL
+## 3. 📦 NO MANUAL STEP FOR THE SKILLS
 
-Claude Code and Antigravity read skills from a folder on disk, so the installer writes them
-there itself. **Claude Desktop does not** — it keeps no skills folder, and takes a skill only
-as an upload through its own screen. Nothing outside the app can do that for you.
+Claude Code and Antigravity read skills from a folder on disk, and the installer writes them there.
+The Claude chat app keeps no skills folder; instead the board server tells it, when it connects, to
+read the installed skills with `read_skill` — the same files, always the installed version. Nothing
+to upload.
 
-So the installer prepares the archive and leaves it where you cannot miss it:
-
-1. Find `Claude_skill_bridge.zip` **on your Desktop** (the real one — OneDrive-redirected and
-   localized Desktops such as `Escritorio` or `Bureau` are resolved correctly). A second copy
-   stays in `sharing\Claude_skill_bridge.zip`.
-2. In Claude Desktop open **Settings ➔ Capabilities ➔ Skills**.
-3. Upload the archive there.
-
-The bundle keeps `SKILL.md` at the archive root with forward-slash separators, which is the
-layout Claude Desktop accepts; an archive nested one folder deeper is rejected outright.
-
-Skip this step entirely if you do not use Claude Desktop — the MCP server is already registered
-for it either way, and only the Skill (the board discipline) needs the upload.
+If you uploaded `Claude_skill_bridge.zip` or `Claude_skill_workflow.zip` with an older version,
+delete those uploaded copies in **Settings ➔ Capabilities ➔ Skills** of each Claude account. An
+uploaded copy is frozen at the day it was uploaded, and Claude Code sees it beside the current one
+on disk. The installer and every session start remind you while any are left.
 
 ---
 
@@ -146,13 +138,11 @@ message bodies, the documents and `bridge_config.json` are not in it and are nev
 database schema upgrades itself on first use, in place.
 
 **What the installer does for you:** refreshes the MCP registration in both clients, rewrites the
-skill folders of Claude Code and Antigravity (removing files the new version dropped), rebuilds
-`Claude_skill_bridge.zip` on your Desktop, and restarts the dashboard if its own code changed.
+skill folders of Claude Code and Antigravity (removing files the new version dropped), and restarts
+the dashboard if its own code changed.
 
 **What it asks of you — and only when it applies:**
 
-* **Upload the Claude Desktop skill** again, if the skill changed. No installer can do this: the app
-  keeps no skills folder on disk.
 * **Restart Claude Desktop and Antigravity**, if the MCP server changed. Each client holds the server
   process it spawned, so until they restart they keep running the previous one — and their tools will
   not show anything new.

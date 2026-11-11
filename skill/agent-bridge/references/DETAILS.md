@@ -424,9 +424,9 @@ copied anywhere else. The installer automatically:
    `{{BRIDGE_HOME}}` and pruning files the package no longer has. The Claude Code copy then gets
    `.claude-plugin/plugin.json` and `hooks/hooks.json` (`claude-plugin.js`), which make it the plugin
    `agent-bridge@skills-dir`: all eight board hooks and the skill behind one switch.
-7. Builds `Claude_skill_bridge.zip` (SKILL.md at the archive root) and leaves it on the real
-   Desktop and in `sharing\`. Claude Desktop has no skills folder on disk, so the human uploads
-   it through Settings > Capabilities > Skills. **This is the one step no installer can do.**
+7. Builds nothing for the Claude chat app: it reads the installed skills through the board
+   server's `read_skill` tool, and the server's connect-time instructions point it there. Upload
+   archives an older version left on the Desktop or in `sharing\` are removed.
 8. Registers MCP server in Antigravity configuration (`%USERPROFILE%\.gemini\config\mcp_config.json`).
 9. Creates Desktop shortcut (`Agent-Bridge.lnk`).
 10. Configures Windows Startup autorun (`Agent-Bridge-Server.lnk`).

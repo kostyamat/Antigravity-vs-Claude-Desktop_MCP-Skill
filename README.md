@@ -199,15 +199,12 @@ Requires **Node.js 22.5+** (built-in SQLite) and **Python 3** in PATH.
    installs in place: the board database, the message bodies and the documents are all
    created next to these files, and nothing is copied anywhere else.
 2. Run `install-bridge.cmd`.
-3. Claude Desktop only: upload `Claude_skill_bridge.zip` and `Claude_skill_workflow.zip`, which
-   the installer leaves on your Desktop, through **Settings > Capabilities > Skills**. This is the
-   one step the installer cannot do for you; skip it if you do not use Claude Desktop.
-4. Restart Claude Desktop / Antigravity so they pick up the new MCP server.
-5. Tell any agent your name once: `bridge_setup({ adminName: "<your name>" })`.
+3. Restart Claude Desktop / Antigravity so they pick up the new MCP server.
+4. Tell any agent your name once: `bridge_setup({ adminName: "<your name>" })`.
 
-The installer registers the MCP server in Claude Desktop and Antigravity, installs the skill, turns it into the Claude Code plugin `agent-bridge@skills-dir` that carries every board hook (one switch: `claude plugin disable agent-bridge@skills-dir`), builds the Claude Desktop skill bundle, creates a desktop shortcut and a startup entry. Missing Node.js or Python 3 it offers to install for you. It refuses to continue on an unsupported Node, never overwrites a config it cannot parse, and backs up every config it touches.
+The installer registers the MCP server in Claude Desktop and Antigravity, installs the skill, turns it into the Claude Code plugin `agent-bridge@skills-dir` that carries every board hook (one switch: `claude plugin disable agent-bridge@skills-dir`), creates a desktop shortcut and a startup entry. Missing Node.js or Python 3 it offers to install for you. It refuses to continue on an unsupported Node, never overwrites a config it cannot parse, and backs up every config it touches.
 
-**Updating an existing install:** from 2.6.0 the board offers a new release itself — *Update* at the bottom left downloads it, checks its checksum, snapshots the database and installs it. By hand: unpack the new release over the same folder and run `install-bridge.cmd` again. Nothing is deleted and your settings are kept — the installer upgrades the database in place, refreshes the skills, rebuilds the Claude Desktop bundle, and then tells you only what is left for you to do by hand.
+**Updating an existing install:** from 2.6.0 the board offers a new release itself — *Update* at the bottom left downloads it, checks its checksum, snapshots the database and installs it. By hand: unpack the new release over the same folder and run `install-bridge.cmd` again. Nothing is deleted and your settings are kept — the installer upgrades the database in place, refreshes the skills, and then tells you only what is left for you to do by hand.
 
 **Upgrading from 2.1 or earlier** — the board gains rooms, and the installer arranges your
 history once:
@@ -286,20 +283,21 @@ And it puts **guards** around every agent:
 ### Where the Skill ends up
 
 The bridge is an MCP server **plus** a Skill, and the Skill is what teaches an agent
-the board discipline. Each client takes it differently, so `install-bridge.cmd` handles
-what it can and leaves you exactly one manual step.
+the board discipline. There is one copy of every skill, on disk, and nothing to upload.
 
-| Client | How the Skill is installed | Done by |
+| Client | How it gets the Skill | Done by |
 |---|---|---|
 | Claude Code | folder written to `%USERPROFILE%\.claude\skills\agent-bridge\` | installer |
 | Antigravity | folder written to `%USERPROFILE%\.gemini\config\skills\agent-bridge\` | installer |
-| Claude Desktop | archive uploaded through the app's own skill-upload screen | **you** |
+| Claude chat app | reads the installed folder through the board server (`read_skill`) | nothing to do |
 
-Claude Desktop keeps no skills folder on disk, so nothing can install into it from the
-outside. The installer therefore builds `Claude_skill_bridge.zip` (with `SKILL.md` directly
-at the root) and copies it directly to your real Desktop (taking into account OneDrive and
-localized paths) as well as `sharing\Claude_skill_bridge.zip`; open Claude Desktop's settings,
-find the skill upload screen, and drop that file in. That is the whole manual step.
+The chat app keeps no skills folder on disk. It used to get an archive to upload by hand, but an
+uploaded skill is frozen in the account the day it is uploaded, and Claude Code sees it too, beside
+the current one on disk — the copies drifted and agents read the old one. Now the board server tells
+the chat app, when it connects, to read the rules with `read_skill`, which serves the installed files:
+always the version that is installed. If you uploaded these skills before, delete the uploaded copies
+in **Settings > Capabilities > Skills** of each account; the installer and every session start say so
+while any are left.
 
 Antigravity also reads workspace-local skills from `<workspace>\.agents\skills\`, if you
 would rather scope the bridge to one project than install it globally.
@@ -502,15 +500,12 @@ MIT.
    база дошки, тіла повідомлень і документи створюються поряд із цими файлами, і нікуди
    більше нічого не копіюється.
 2. Запустіть `install-bridge.cmd`.
-3. Тільки для Claude Desktop: завантажте `Claude_skill_bridge.zip` і `Claude_skill_workflow.zip`,
-   які інсталятор кладе вам на робочий стіл, через **Settings > Capabilities > Skills**. Це єдиний
-   крок, який інсталятор не може зробити за вас; пропустіть його, якщо не користуєтесь Claude Desktop.
-4. Перезапустіть Claude Desktop / Antigravity, щоб вони підхопили новий MCP-сервер.
-5. Один раз назвіть агентові своє ім'я: `bridge_setup({ adminName: "<ваше ім'я>" })`.
+3. Перезапустіть Claude Desktop / Antigravity, щоб вони підхопили новий MCP-сервер.
+4. Один раз назвіть агентові своє ім'я: `bridge_setup({ adminName: "<ваше ім'я>" })`.
 
-Інсталятор реєструє MCP-сервер у Claude Desktop і Antigravity, ставить скіл і робить з нього плагін Claude Code `agent-bridge@skills-dir`, що несе всі хуки дошки (один вимикач: `claude plugin disable agent-bridge@skills-dir`), збирає пакунок скіла для Claude Desktop, створює ярлик на робочому столі й запис в автозавантаженні. Якщо бракує Node.js чи Python 3 — запропонує встановити їх сам. На непідтримуваному Node він зупиняється, ніколи не перезаписує конфіг, який не зміг прочитати, і робить резервну копію кожного конфігу, якого торкається.
+Інсталятор реєструє MCP-сервер у Claude Desktop і Antigravity, ставить скіл і робить з нього плагін Claude Code `agent-bridge@skills-dir`, що несе всі хуки дошки (один вимикач: `claude plugin disable agent-bridge@skills-dir`), створює ярлик на робочому столі й запис в автозавантаженні. Якщо бракує Node.js чи Python 3 — запропонує встановити їх сам. На непідтримуваному Node він зупиняється, ніколи не перезаписує конфіг, який не зміг прочитати, і робить резервну копію кожного конфігу, якого торкається.
 
-**Оновлення вже встановленого:** починаючи з 2.6.0 дошка сама пропонує новий реліз — *Update* внизу ліворуч завантажує його, звіряє контрольну суму, робить знімок бази й встановлює. Вручну: розпакуйте новий реліз поверх тієї самої теки й запустіть `install-bridge.cmd` ще раз. Нічого не видаляється, налаштування лишаються — інсталятор оновлює базу на місці, освіжає скіли, перезбирає пакунок для Claude Desktop і після цього каже лише те, що лишилося зробити вам руками.
+**Оновлення вже встановленого:** починаючи з 2.6.0 дошка сама пропонує новий реліз — *Update* внизу ліворуч завантажує його, звіряє контрольну суму, робить знімок бази й встановлює. Вручну: розпакуйте новий реліз поверх тієї самої теки й запустіть `install-bridge.cmd` ще раз. Нічого не видаляється, налаштування лишаються — інсталятор оновлює базу на місці, освіжає скіли і після цього каже лише те, що лишилося зробити вам руками.
 
 **Перехід із 2.1 і старіших** — на дошці з'являються кімнати, і інсталятор один раз
 розкладає вашу історію:
@@ -587,21 +582,22 @@ MIT.
 
 ### Куди потрапляє скіл
 
-Міст — це MCP-сервер **плюс** скіл, і саме скіл навчає агента дисципліни дошки. Кожен клієнт
-приймає його по-своєму, тож `install-bridge.cmd` робить усе, що може, і лишає вам рівно один
-ручний крок.
+Міст — це MCP-сервер **плюс** скіл, і саме скіл навчає агента дисципліни дошки. Кожен скіл існує
+в одній копії, на диску, і завантажувати нічого не треба.
 
-| Клієнт | Як ставиться скіл | Хто робить |
+| Клієнт | Як отримує скіл | Хто робить |
 |---|---|---|
 | Claude Code | тека в `%USERPROFILE%\.claude\skills\agent-bridge\` | інсталятор |
 | Antigravity | тека в `%USERPROFILE%\.gemini\config\skills\agent-bridge\` | інсталятор |
-| Claude Desktop | архів через власний екран завантаження скілів | **ви** |
+| чат Claude | читає встановлену теку через сервер дошки (`read_skill`) | нічого |
 
-У Claude Desktop немає теки скілів на диску, тож ззовні туди нічого не покладеш. Тому інсталятор
-збирає `Claude_skill_bridge.zip` (зі `SKILL.md` безпосередньо в корені) і копіює його прямо на
-ваш справжній Робочий стіл (враховуючи OneDrive та локалізовані шляхи) і в `sharing\Claude_skill_bridge.zip`:
-відкрийте налаштування Claude Desktop, знайдіть екран завантаження скіла й перетягніть туди цей файл.
-Це і є весь ручний крок.
+У чату Claude немає теки скілів на диску. Раніше він отримував архів для ручного завантаження, але
+завантажений скіл застигає в обліковому записі в день завантаження, і Claude Code бачить його теж,
+поруч зі свіжим з диска, — копії розходились, і агенти читали стару. Тепер сервер дошки під час
+підключення каже чату читати правила через `read_skill`, який віддає встановлені файли: завжди ту
+версію, що стоїть. Якщо ви завантажували ці скіли раніше, видаліть завантажені копії в
+**Settings > Capabilities > Skills** кожного облікового запису; інсталятор і кожен старт сесії
+нагадують про це, доки вони є.
 
 Antigravity додатково читає скіли рівня воркспейсу з `<workspace>\.agents\skills\` — якщо
 хочете обмежити міст одним проєктом, а не ставити глобально.

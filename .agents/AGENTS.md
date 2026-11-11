@@ -80,7 +80,7 @@ Nothing in this repository depends on another project, and no cross-application
 contract covers it. The dependency runs the other way: every agent session on
 this machine depends on the board being up and on the Skill being current in
 `~/.claude/skills/agent-bridge` and `~/.gemini/config/skills/agent-bridge`. The installer
-writes both, and rebuilds the archive Claude Desktop needs, since that client takes a
-Skill only through its own upload screen.
+writes both. The Claude chat app reads the installed skills through the server's
+`read_skill` tool (`skill-reader.js`); nothing is built or uploaded for it.
 
 Requires Node.js 22.5 or newer, for the built-in SQLite, and Python 3 on PATH.
