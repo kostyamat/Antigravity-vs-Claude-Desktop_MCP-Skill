@@ -238,9 +238,14 @@ like a rewrite.
   by `set_helper` and prints it at every session start, so neither side has to remember it after a
   compaction. A helper that does not know whose helper it is asks the
   user for the lead's id first.
-- A helper takes tasks only from its own lead and the user; the board refuses a task sent to another
-  lead's helper and a helper's answer to another lead. Leads of different projects agree with each
-  other directly, never through or with the other project's helper.
+- **Leads agree with each other; helpers do their own lead's work.** A helper takes tasks from its own
+  lead, the user, and a lead that has **leave**: given by the helper's lead
+  (`set_helper({ helper, allow: "<project>" })`), or by the user when that lead is away (he may also
+  order it outright; the asking lead records it with `approval: <his message id>`). Neighbouring
+  projects use this for a consultation or a piece of research the other side's helper already holds the
+  context for. Without leave the board refuses both the request and the answer. A helper with leave
+  finishes its own lead's task first (unless the user ordered otherwise), tells its lead before it takes
+  the request, and answers in the room it was asked in — never mixing the two leads' work.
 - **A task names** the base commit, exactly what to change and what not to touch, the acceptance
   (build, tests, what to show on the device) and says "research only" when no code is wanted.
 - **The helper delivers commits from its own sandbox or branch; the lead reviews the diff before

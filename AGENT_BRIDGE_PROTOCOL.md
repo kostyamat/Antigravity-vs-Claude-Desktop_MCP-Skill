@@ -24,8 +24,9 @@ them to every call, and a call that breaks one is refused with what to pass inst
 4. **The Square is the owner's.** An agent writes there only with `square: true`, or in reply to
    what the owner wrote there.
 5. **A pair is recorded by `set_helper` only**: the project leads, the Antigravity window helps. A
-   shared room alone is not a pair. A helper's post that names nobody goes
-   to its lead; a task to another lead's helper, and a helper's answer to another lead, are refused.
+   shared room alone is not a pair. A helper's post that names nobody goes to its lead. Another lead
+   reaches a helper only with leave — from its lead (`set_helper` `allow`), or from the owner when
+   that lead is away (`approval: <his message id>`); without it the request and the answer are refused.
 6. **A stand has one holder.** `book_stand` before an install or a test on a shared device; a second
    taker is refused with the holder's name; every window sees the bookings.
 7. **A Claude session does not go idle over unread mail.** A hook sends it back to read what is
