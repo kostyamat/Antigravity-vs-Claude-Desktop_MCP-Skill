@@ -94,8 +94,16 @@ function createRules(bridgeDb, cardsLib, router) {
       : ' (list_cards({agent: "Gemini"}) shows them).');
   }
 
-  // A helper takes work from its lead and from the owner, and reports to its
-  // lead. Returns the reason to refuse, or ''.
+  // Has `who` leave to consult `helper` or give it a task? Leave comes from the
+  // helper's lead, or from the owner when that lead is away (set_helper allow).
+  function granted(helper, who) {
+    if (!helper || !who) return false;
+    try { return bridgeDb.readGrants().some(g => router.same(g.helper, helper) && router.same(g.grantee, who)); }
+    catch (_) { return false; }
+  }
+
+  // A helper takes work from its lead, from the owner, and from a lead its own lead
+  // (or the owner) gave leave to; it reports to its lead. Returns the reason to refuse, or ''.
   function helperGuard({ mine, theirs, room, replyTo }) {
     if (!mine) return '';
 
@@ -112,16 +120,17 @@ function createRules(bridgeDb, cardsLib, router) {
     // Somebody else's helper is not mine to task.
     if (target && !router.same(mine, target)) {
       const theirBoss = router.leadOf(target);
-      if (theirBoss && !router.same(theirBoss.lead, mine)) {
+      if (theirBoss && !router.same(theirBoss.lead, mine) && !granted(target, mine)) {
         return `"${router.nameOf(target)}" is the helper of "${router.nameOf(theirBoss.lead)}" and takes tasks only from it. ` +
-          `Write to its lead (toSession: "${theirBoss.lead}") or ask the owner.`;
+          `For a consultation or a task, ask its lead (toSession: "${theirBoss.lead}") for leave — it calls ` +
+          `set_helper({helper: "${target}", allow: "<your project>"}) — or, if that lead is away, ask the owner.`;
       }
     }
 
     const boss = router.leadOf(mine);
     if (!boss) return '';
     const where = boss.room ? ` in room "${boss.room}"` : '';
-    if (target && !router.same(target, boss.lead)) {
+    if (target && !router.same(target, boss.lead) && !granted(mine, target)) {
       return `you are the helper of "${router.nameOf(boss.lead)}": you report to it${where}, and a task from ` +
         `"${router.nameOf(target)}" is not yours to answer. Tell your lead (toSession: "${boss.lead}").`;
     }
@@ -129,7 +138,11 @@ function createRules(bridgeDb, cardsLib, router) {
       let r = null;
       try { r = bridgeDb.getRoom(room); } catch (_) {}
       const lead = new Set(bridgeDb.cluster(boss.lead));
-      if (r && !(r.members || []).some(m => lead.has(String(m.card)))) {
+      // A room shared with a lead that has leave is a room the helper may answer in.
+      let guests = [];
+      try { guests = bridgeDb.readGrants().filter(g => router.same(g.helper, mine)).map(g => g.grantee); } catch (_) {}
+      const guestHere = r && (r.members || []).some(m => guests.some(gu => router.same(gu, String(m.card))));
+      if (r && !guestHere && !(r.members || []).some(m => lead.has(String(m.card)))) {
         return `you are the helper of "${router.nameOf(boss.lead)}", and room "${r.name}" [${r.id}] is not its room. ` +
           `Report${where || ' to your lead'} (toSession: "${boss.lead}").`;
       }
@@ -146,6 +159,16 @@ function createRules(bridgeDb, cardsLib, router) {
       out.push(`👤 You are the helper of "${router.nameOf(boss.lead)}" [${boss.lead}]` +
         (boss.room ? `, room "${boss.room}"` : '') +
         '. Take tasks from it and from the owner only; a post that names nobody goes to it.');
+    }
+    let grants = [];
+    try { grants = bridgeDb.readGrants(); } catch (_) {}
+    for (const g of grants.filter(x => router.same(x.helper, win))) {
+      out.push(`🔑 "${router.nameOf(g.grantee)}" may consult you or give you a task (leave from ${g.by_who}` +
+        (g.until ? `, until ${g.until.slice(0, 16)}Z` : '') + '). Your own lead\'s task comes first; tell your lead before you take one.');
+    }
+    for (const g of grants.filter(x => router.same(x.grantee, win))) {
+      out.push(`🔑 You may consult "${router.nameOf(g.helper)}" or give it a task (leave from ${g.by_who}` +
+        (g.until ? `, until ${g.until.slice(0, 16)}Z` : '') + ').');
     }
     let mine = [];
     try { mine = bridgeDb.readHelpers().filter(h => router.same(h.lead, win)); } catch (_) {}
@@ -181,7 +204,7 @@ function createRules(bridgeDb, cardsLib, router) {
       'Both: before an install or a test on a shared device, book_stand.';
   }
 
-  return { identify, helperGuard, describeHelpers, pair, pairNotice };
+  return { identify, helperGuard, describeHelpers, pair, pairNotice, granted };
 }
 
 module.exports = { createRules, AGENTS };

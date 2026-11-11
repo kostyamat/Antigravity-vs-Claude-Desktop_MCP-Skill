@@ -43,10 +43,45 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
     return doSetHelper(id, Object.assign({}, a, { start: false, helper, lead: '' }));
   }
 
+  // Leave for another lead to consult a helper or give it a task. Given by the helper's
+  // own lead, or — when that lead is away — by the owner: then the caller passes the id of
+  // the owner's board message that says so, and the board checks it is his.
+  function doGrant(id, a, me) {
+    const helper = router.windowOf(String(a.helper || '').trim());
+    const cur = helper ? router.leadOf(helper) : null;
+    if (!cur) return fail(id, `set_helper: "${a.helper || ''}" is nobody's helper; anyone may write to it, no leave is needed.`);
+    const raw = String(a.allow || a.revoke).trim();
+    const grantee = router.windowOf(raw);
+    if (!grantee || isHuman(grantee)) return fail(id, `set_helper: "${raw}" is no window and no project the board knows.`);
+    let by = '';
+    if (router.same(cur.lead, me)) by = `its lead "${router.nameOf(cur.lead)}"`;
+    else if (a.approval) {
+      const m = bridgeDb.getMessageById(Number(a.approval));
+      if (m && isHuman(m.fromSession)) by = `the owner, #${m.id}`;
+      else return fail(id, `set_helper: #${a.approval} is not a message from the owner.`);
+    } else {
+      return fail(id, `set_helper: only the lead of "${router.nameOf(helper)}" ("${router.nameOf(cur.lead)}") gives leave to use it. ` +
+        'If that lead is away, the owner can: pass approval: <the id of his message that allows it>.');
+    }
+    const who = router.addressOf(grantee) || grantee;
+    if (a.revoke) {
+      const gone = bridgeDb.revokeGrant(helper, who);
+      return ok(id, gone ? `✅ "${router.nameOf(who)}" no longer has leave to use "${router.nameOf(helper)}".` : 'There was no such leave.');
+    }
+    const hours = Number(a.hours);
+    const until = hours > 0 ? new Date(Date.now() + hours * 3600e3).toISOString() : '';
+    bridgeDb.grantHelper(helper, who, by, until);
+    return ok(id, `✅ "${router.nameOf(who)}" may consult "${router.nameOf(helper)}" or give it a task` +
+      (until ? ` until ${until.slice(0, 16)}Z` : ', until the leave is taken back') + ` (leave from ${by}). ` +
+      'Both see it at every start. The helper finishes its own lead\'s task first and tells its lead before it takes one. ' +
+      `Take it back: set_helper({helper: "${helper}", revoke: "${who}"}).`);
+  }
+
   function doSetHelper(id, a) {
     const me = router.windowOf(a.canonicalId) || router.windowOf(a.sessionId);
     if (!me) return fail(id, 'set_helper: the board does not know which window you are — pass sessionId.');
     if (a.start === true) return startHelper(id, a, me).catch(e => fail(id, 'set_helper: ' + e.message));
+    if (String(a.allow || a.revoke || '').trim()) return doGrant(id, a, me);
     const asHelper = Boolean(String(a.lead || '').trim());
     const otherRaw = String((asHelper ? a.lead : a.helper) || '').trim();
     if (!otherRaw) {

@@ -239,6 +239,17 @@ function initSchema(db) {
       since TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_helpers_lead ON helpers(lead);
+    -- Another lead may consult a helper, or give it a task, only with leave: from the
+    -- helper's own lead, or from the owner when that lead is away. One row per helper
+    -- and the project allowed; until = '' lasts until it is taken back.
+    CREATE TABLE IF NOT EXISTS helper_grants (
+      helper TEXT NOT NULL,
+      grantee TEXT NOT NULL,
+      by_who TEXT DEFAULT '',
+      until TEXT DEFAULT '',
+      since TEXT,
+      PRIMARY KEY (helper, grantee)
+    );
     CREATE TABLE IF NOT EXISTS removed_messages (
       id INTEGER PRIMARY KEY,
       at TEXT,
@@ -1464,6 +1475,26 @@ function dropHelper(helper) {
   return getDb().prepare('DELETE FROM helpers WHERE helper = ?').run(String(helper).trim()).changes > 0;
 }
 
+function grantHelper(helper, grantee, byWho, until) {
+  getDb().prepare('INSERT INTO helper_grants (helper, grantee, by_who, until, since) VALUES (?, ?, ?, ?, ?) ' +
+    'ON CONFLICT(helper, grantee) DO UPDATE SET by_who = excluded.by_who, until = excluded.until, since = excluded.since')
+    .run(String(helper).trim(), String(grantee).trim(), String(byWho || ''), String(until || ''), new Date().toISOString());
+}
+
+function revokeGrant(helper, grantee) {
+  return getDb().prepare('DELETE FROM helper_grants WHERE helper = ? AND grantee = ?')
+    .run(String(helper).trim(), String(grantee).trim()).changes > 0;
+}
+
+// Grants still in force; an expired one is left in the table and simply not returned.
+function readGrants() {
+  const now = new Date().toISOString();
+  try {
+    return getDb().prepare('SELECT helper, grantee, by_who, until, since FROM helper_grants ORDER BY since').all()
+      .filter(g => !g.until || g.until > now);
+  } catch (_) { return []; }
+}
+
 function readHelpers() {
   try { return getDb().prepare('SELECT helper, lead, room, since FROM helpers ORDER BY since').all(); } catch (_) { return []; }
 }
@@ -1562,6 +1593,9 @@ module.exports = {
   setHelper,
   dropHelper,
   readHelpers,
+  grantHelper,
+  revokeGrant,
+  readGrants,
   readStands,
   takeStand,
   releaseStand,

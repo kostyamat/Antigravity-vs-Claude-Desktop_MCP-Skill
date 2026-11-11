@@ -789,7 +789,9 @@ const TOOLS = [
       'The pair survives compaction, restarts and account switches — it is printed at every session start and at ' +
       'the top of get_messages. release: true ends it. ' +
       'A lead with no helper starts one itself: set_helper({start: true, brief: "<the project, where it lives, what the helper will do, ' +
-      'what it must not touch>"}) opens a new Antigravity conversation, gives it that context, pairs it and makes the room.',
+      'what it must not touch>"}) opens a new Antigravity conversation, gives it that context, pairs it and makes the room. ' +
+      'Leave for ANOTHER lead to consult your helper or give it a task: set_helper({helper: "<your helper>", allow: "<that lead or project>", hours?}); ' +
+      'take it back with revoke. When the helper\'s lead is away, the owner can give the leave: pass approval: <id of his message saying so>.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -802,7 +804,11 @@ const TOOLS = [
         another: { type: 'boolean', description: 'With start: start one more helper although one is on record.' },
         lead: { type: 'string', description: 'The lead\'s window id or project name. Given by the helper.' },
         room: { type: 'string', description: 'The room the two talk in, if it is not the one they already share.' },
-        release: { type: 'boolean', description: 'true = the pair is over.' }
+        release: { type: 'boolean', description: 'true = the pair is over.' },
+        allow: { type: 'string', description: 'With helper: give this other lead (window id or project) leave to consult the helper or give it a task.' },
+        revoke: { type: 'string', description: 'With helper: take that leave back from this lead.' },
+        hours: { type: 'number', description: 'With allow: the leave ends after this many hours (default: until revoked).' },
+        approval: { type: 'number', description: 'With allow/revoke when you are not the helper\'s lead: the id of the owner\'s board message that gives the leave.' }
       },
       required: ['sender', 'sessionId']
     }
