@@ -31,7 +31,22 @@ function hasMainProcess(commandLines) {
     .some(cmd => !/\s--type=/.test(cmd) && !/\s--import=/.test(cmd));
 }
 
+// Outside Windows there is no tasklist, no PowerShell and no shell:AppsFolder. A
+// board on Linux (the build machine) asks the process table instead and starts an
+// application only when its command is on PATH. Run under WSL, the Windows
+// commands are reachable too, and the first Linux board reached through them and
+// "started" the Claude Desktop of the Windows host.
+const WINDOWS = process.platform === 'win32';
+function onPath(cmd) {
+  try { return spawnSync('which', [cmd], { encoding: 'utf8', timeout: 5000 }).status === 0; } catch (_) { return false; }
+}
+function processRunning(pattern) {
+  try { return spawnSync('pgrep', ['-f', pattern], { encoding: 'utf8', timeout: 5000 }).status === 0; } catch (_) { return false; }
+}
+const LINUX_APPS = { antigravity: 'antigravity', claude: 'claude-desktop' };
+
 function antigravityRunning() {
+  if (!WINDOWS) return processRunning('(^|/)' + LINUX_APPS.antigravity + '( |$)');
   try {
     const r = spawnSync('powershell', PS_ARGS, { encoding: 'utf8', windowsHide: true, timeout: 15000 });
     return hasMainProcess(r.stdout);
@@ -39,6 +54,7 @@ function antigravityRunning() {
 }
 
 function antigravityRunningAsync() {
+  if (!WINDOWS) return Promise.resolve(antigravityRunning());
   return new Promise(resolve => {
     execFile('powershell', PS_ARGS, { encoding: 'utf8', windowsHide: true, timeout: 15000 },
       (err, stdout) => resolve(err ? null : hasMainProcess(stdout)));
@@ -53,6 +69,7 @@ function claudeDesktopFromTasklist(csv) {
 const TASKLIST_ARGS = ['/FI', 'IMAGENAME eq claude.exe', '/V', '/FO', 'CSV'];
 
 function claudeDesktopRunning() {
+  if (!WINDOWS) return processRunning('(^|/)' + LINUX_APPS.claude + '( |$)');
   try {
     const r = spawnSync('tasklist', TASKLIST_ARGS, { encoding: 'utf8', windowsHide: true, timeout: 15000 });
     return claudeDesktopFromTasklist(r.stdout);
@@ -60,6 +77,7 @@ function claudeDesktopRunning() {
 }
 
 function claudeDesktopRunningAsync() {
+  if (!WINDOWS) return Promise.resolve(claudeDesktopRunning());
   return new Promise(resolve => {
     execFile('tasklist', TASKLIST_ARGS, { encoding: 'utf8', windowsHide: true, timeout: 15000 },
       (err, stdout) => resolve(err ? null : claudeDesktopFromTasklist(stdout)));
@@ -74,6 +92,18 @@ function startDetached(args) {
 // open, checked afresh. Returns the names of the applications it started.
 function launch(app, log) {
   const started = [];
+  if (!WINDOWS) {
+    for (const name of ['antigravity', 'claude']) {
+      if (app !== name && app !== 'all') continue;
+      const running = name === 'claude' ? claudeDesktopRunning() : antigravityRunning();
+      if (running || !onPath(LINUX_APPS[name])) continue;
+      spawn(LINUX_APPS[name], [], { detached: true, stdio: 'ignore' }).unref();
+      started.push(name);
+    }
+    if (started.length && log) log('started ' + started.join(', '));
+    if (started.length) cached.at = 0;
+    return started;
+  }
   if ((app === 'antigravity' || app === 'all') && !antigravityRunning() && fs.existsSync(ANTIGRAVITY_EXE)) {
     startDetached([ANTIGRAVITY_EXE]);
     started.push('antigravity');

@@ -75,7 +75,13 @@ function configFiles() {
 // fresh one, reads it, and writing a server there harms nobody.
 function desktopConfigFiles() {
   const live = dataRoots().map(r => path.join(r, 'claude_desktop_config.json'));
-  const classic = path.join(APPDATA, 'Claude', 'claude_desktop_config.json');
+  // Where a fresh install reads it from: the roaming profile on Windows, the
+  // user's config folder on Linux (Claude Desktop for Linux, beta) and macOS.
+  const classic = process.platform === 'linux'
+    ? path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'Claude', 'claude_desktop_config.json')
+    : process.platform === 'darwin'
+      ? path.join(HOME, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
+      : path.join(APPDATA, 'Claude', 'claude_desktop_config.json');
   return [...new Set(live.concat(classic).map(p => path.resolve(p)))];
 }
 
