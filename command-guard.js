@@ -178,6 +178,22 @@ function reasonFor(label) {
     'A damaged file is restored on its own: git restore <file>.';
 }
 
+// A heredoc in the Bash tool of Claude Code on Windows does not keep backslashes: a
+// doubled one arrives single, "\n" inside a string becomes a real line break, and a
+// regex or a Windows path in a script written that way comes out broken. It went
+// wrong again and again (the owner asked on 11.11.2026 to ban it),
+// each time costing a failed run and a repair. The Write tool keeps every byte, so a
+// script with a backslash in it is written with Write and only run from Bash. A
+// heredoc without a backslash (a commit message) is let through.
+const HEREDOC_REASON = 'Blocked by the agent-bridge guard: this heredoc has a backslash in it, and a heredoc in ' +
+  'this shell does not keep backslashes (doubled ones arrive single, \\n inside a string becomes a line break). ' +
+  'Write the script or the text with the Write tool, then run the file from Bash.';
+function heredocWithBackslash(line) {
+  const m = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(String(line || ''));
+  if (!m) return false;
+  return String(line).slice(m.index + m[0].length).includes('\\');
+}
+
 function main(input) {
   let p = {};
   try { p = JSON.parse(input || '{}'); } catch (_) { return ''; }
@@ -204,6 +220,9 @@ function main(input) {
     return JSON.stringify({ decision });
   }
   if (p.tool_input) {                                 // Claude Code
+    const mangled = p.tool_name === 'Bash' && heredocWithBackslash(p.tool_input.command || '');
+    if (mangled) return JSON.stringify({ hookSpecificOutput: {
+      hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: HEREDOC_REASON } });
     const hit = judge(p.tool_input.command || '');
     if (!hit) return '';
     return JSON.stringify({ hookSpecificOutput: {
@@ -223,4 +242,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { judge, streaming, main, RULES };
+module.exports = { judge, streaming, main, RULES, heredocWithBackslash };
