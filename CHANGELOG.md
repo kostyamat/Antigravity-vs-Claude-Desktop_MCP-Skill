@@ -8,6 +8,38 @@ never overwritten.
 
 ---
 
+## v2.7.0 — 2026-11-11
+
+**Lead and helper, the way the owner runs them.** A Claude lead with no helper asks the owner, when real work
+starts, whether to start one; on yes it starts an Antigravity conversation itself (`set_helper({start: true,
+brief})`), hands it the context and the first task, and records the pair. A shared room no longer records a pair:
+an Antigravity window that many sessions consult belongs to nobody and is asked freely. The seven pairs the 2.6
+installer recorded from shared rooms are not made any more. A helper answers the owner in the room he wrote in.
+
+**Leave to use another lead's helper.** A neighbouring project may consult a helper, or give it a task, only with
+leave from that helper's lead (`set_helper({helper, allow, hours?})`, `revoke`), or from the owner when that lead is
+away — a button in the room header (*Allow … to ask …* / *take back*), or the id of his message, which the board
+checks is his. Without leave the server refuses the request and the answer. The helper finishes its own lead's
+task first and tells its lead before it takes the request.
+
+**Switching accounts.** A new window, and an old conversation the owner comes back to (often in the other account),
+is shown how the other window of the project ended when it went on after this one knew the state — at session start
+and on the next prompt, once per piece of work done elsewhere. Its helper is asked for a handover in their room.
+
+**One Claude Code plugin; no skill to upload.** Every board hook is part of the plugin `agent-bridge@skills-dir`
+(one switch: `claude plugin disable|enable agent-bridge@skills-dir`); the installer moves them out of
+`settings.json`. The Claude chat app reads the installed skills through the new `read_skill` tool, so the upload
+archives are gone; copies uploaded earlier are named, to be deleted once.
+
+**Antigravity counts as running only when it is.** Its sidecar processes outlive the window and made the board say
+"running", start nothing, and show the supervisor as on. Now only the main process counts, the state is fresh within
+ten seconds, a message to a closed Antigravity starts it and is delivered once it is up, and the supervisor line says
+*waits for Antigravity* or *last round failed*.
+
+**A heredoc with a backslash is refused** in Claude Code's Bash by the command guard: that shell drops backslashes.
+
+---
+
 ## v2.6.0 — 2026-11-10
 
 **`clear_messages` no longer wipes the board — update from 2.5.0 now.** In 2.5.0 and earlier this tool deleted

@@ -53,9 +53,14 @@ line does not come, something is wrong. Ask again in the same room rather than s
 
 ## Helpers and the supervisor
 
-* **A helper per Claude project.** Claude's quota is the scarce one. Pair each working Claude window with an
-  Antigravity window in one room, and the Claude window hands research, ports and routine debugging to it. If a
-  project has no helper yet, tell it "start a helper".
+* **A helper per Claude project, if you want one.** Claude's quota is the scarce one. When real work starts, a
+  Claude lead asks whether to start a helper. Say no and it works alone; say yes and it starts an Antigravity
+  window itself, hands it the context and the first task, and works with it in their room.
+* **Shared windows and other projects' helpers.** A window you invite into several rooms (a debugger) is asked by
+  anyone there. Another project's helper is asked only with leave: its lead gives it, or you press *Allow … to
+  ask …* in the room header (*take back* ends it). The helper finishes its own lead's task first.
+* **Switching accounts.** Open the same project in the other account and carry on: the new window is shown how
+  the last one ended, and the helper is asked for a handover. Coming back to an old conversation works the same way.
 * **The supervisor is yours to switch on** (bottom left). It keeps the database safe, reminds projects of mail they
   left unanswered, and writes a project that was asleep a summary of what it missed. It uses one Antigravity
   conversation on a fast model. Hover over the line to see what its last round found.
