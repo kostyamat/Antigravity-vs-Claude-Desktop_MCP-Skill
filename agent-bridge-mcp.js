@@ -1060,7 +1060,7 @@ function doLinkMachine(id, a) {
 }
 
 function doListCards(id, a) {
-  const hours = typeof a.sinceHours === 'number' ? a.sinceHours : 48;
+  const hours = typeof a.sinceHours === 'number' ? a.sinceHours : (a.machine ? 24 * 30 : 48);
   if (a.machine) {
     return void peerLink.ask(a.machine, '/api/peer/cards?hours=' + hours).then(r => {
       const want = normAgent(a.agent);

@@ -436,7 +436,11 @@ async function handle(req, res, deps) {
     if (!peer) return send(403, { error: 'this machine is not linked to yours — link the two boards first (Machines on the board page)' });
     if (what === 'cards' && req.method === 'GET') {
       const hours = Number(url.searchParams.get('hours')) || 48;
-      const list = deps.cardsLib.allCards({ sinceHours: hours, names: deps.names ? deps.names() : undefined })
+      // An Antigravity conversation is never archived, so a month of them is a heap of
+      // old chats: those go only while they are fresh (two days, as on the page).
+      const geminiCutoff = Date.now() - Math.min(hours, 48) * 3600 * 1000;
+      const list = deps.cardsLib.allCards({ sinceHours: hours, allAccounts: true, names: deps.names ? deps.names() : undefined })
+        .filter(c => c.agent !== 'Gemini' || !c.activeAt || Date.parse(c.activeAt) >= geminiCutoff)
         .map(c => ({ id: c.id, agent: c.agent, name: c.name || '', project: c.project || '', busy: !!c.busy }));
       return send(200, { machine: machineName(), cards: list });
     }
@@ -470,11 +474,15 @@ async function handle(req, res, deps) {
 // another machine, so the neighbours are asked in the background and the page
 // is given what was last heard. A machine that stops answering drops out.
 let heard = [];
+// The neighbour's open windows of every Claude account it holds, not only the
+// last two days: the owner reads that list as "what is open there", and a window
+// left for a week is still open. Archived windows are never sent.
+const NEIGHBOUR_HOURS = 24 * 30;
 async function refreshCards() {
   const out = [];
   for (const p of peers()) {
     try {
-      const r = await request(p, 'GET', '/api/peer/cards?hours=48', undefined, 4000);
+      const r = await request(p, 'GET', '/api/peer/cards?hours=' + NEIGHBOUR_HOURS, undefined, 4000);
       for (const c of (r.status === 200 && r.json.cards) || []) {
         out.push({ agent: c.agent, id: `${c.id}@${p.name}`, name: `${c.name || '(unnamed)'} @ ${p.name}`, project: c.project || '',
                    projectName: String(c.project || '').split(/[\\/]/).filter(Boolean).pop() || '', machine: p.name,
