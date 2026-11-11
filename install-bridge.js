@@ -55,6 +55,26 @@ function fingerprintTree(rel) {
   return hash.digest('hex').slice(0, 16);
 }
 
+// A release unpacked beside the bridge the clients were using, not over it
+// (takeover.js): its board, documents and settings come here before anything
+// below reads them, so this run upgrades that board instead of starting an empty one.
+try {
+  const takeover = require('./takeover');
+  const other = takeover.findOther(SCRIPTS_DIR);
+  const was = other ? `An earlier bridge${other.version ? ' (' + other.version + ')' : ''} is installed in ${other.dir}` : '';
+  if (other && !takeover.hasBoard(SCRIPTS_DIR)) {
+    const t = takeover.take(other.dir, SCRIPTS_DIR);
+    console.log(`  ✅ ${was}.`);
+    console.log(`     Its board came along: ${t.messages} message(s), ${t.files} file(s), and its settings. The bridge now lives here: ${SCRIPTS_DIR}`);
+    console.log('     The old folder was not changed. Delete it once you have looked at the board.');
+  } else if (other) {
+    console.warn(`  ⚠️ ${was}, and this folder already has a board of its own.`);
+    console.warn('     Nothing was merged: the clients will use this folder from now on, and the earlier board stays in its folder.');
+  }
+} catch (e) {
+  console.warn('  ⚠️ An earlier bridge was found, but its board could not be brought here: ' + e.message);
+}
+
 const CONFIG_FILE = path.join(SCRIPTS_DIR, 'bridge_config.json');
 let previousConfig = {};
 try {
