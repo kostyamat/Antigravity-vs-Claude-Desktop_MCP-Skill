@@ -8,6 +8,28 @@ never overwritten.
 
 ---
 
+## v2.8.4 — 2026-11-11
+
+**Linking two machines is one click on each.** At the bottom left of the board page, *Machines → Find* lists the
+boards on your network and *Link* links one; on that machine's board a line "… asks to link — Allow" appears. No
+address to type, no terminal, no restart: the board listens on the local network from the start. A machine that is
+not linked can ask a board only who it is and knock to be linked — mail, windows and slices are for linked machines,
+and a machine outside private address ranges gets nothing. *Trust my network* (off by default) links whoever asks
+from your network without the click. For agents: `link_machine({find: true})`, `link_machine({url})`.
+
+**The installer adds the firewall rule.** On Windows the board's port is opened for private networks by one rule the
+installer adds itself; Windows asks for permission once. Nobody types `netsh` into an administrator console.
+
+**The desktop shortcut really restarts the board.** The hidden launcher redirected the board's output to a log file
+that the running board kept open, so a second launch failed before it started and the shortcut replaced nothing. A
+board started for a restart now also makes the old one leave before it takes the port: on Windows a board listening
+for other machines used to start beside the old one, two boards on one database.
+
+**Mail to another machine has its own room.** The first letter to a neighbour landed in a room the sending window
+already had to itself; it now opens "Machine: <name>".
+
+---
+
 ## v2.8.3 — 2026-11-11
 
 **A release unpacked beside the old bridge brings its board along.** The archive is named after its version, so

@@ -69,20 +69,34 @@ line does not come, something is wrong. Ask again in the same room rather than s
 
 If you work on a laptop while a desktop handles builds around the clock, link their boards so agents can talk across the network. Each machine keeps its own board and database.
 
-1. **On the first machine (e.g. laptop)**, tell any agent:
-   > "link this board to the desktop at 192.168.1.50"
-   The agent runs `link_machine({ name: "desktop", url: "http://192.168.1.50:8787" })`.
-2. **On the second machine (desktop)**, tell any agent:
-   > "link this board to the laptop at 192.168.1.20"
-   The agent runs `link_machine({ name: "laptop", url: "http://192.168.1.20:8787" })`.
-3. **Restart the board once on each machine** (click the desktop shortcut). The board listens on the network only when started with a linked machine.
-4. **Check that it works.** Ask any agent:
-   > "check the linked machines"
-   The agent runs `link_machine()` with no arguments. It prints whether the neighbour answers and knows this machine back. You can also ask:
-   > "what windows are open on desktop?"
-   The agent runs `list_cards({ machine: "desktop" })`.
+### 1. From the board page (one click)
 
-Cross-machine messages live in the room `Machine: <name>` on both boards. To send a task across, tell an agent "ask the build project on desktop to run the tests".
+At the bottom left of the board page under **Machines**:
+1. Click **Find** on the first machine — it discovers running boards on your local network.
+2. Click **Link** next to the machine found.
+3. On the second machine's board page, a notice appears: `Machine "<name>" asks to link` with **Allow** and **Refuse** buttons. Click **Allow**.
+
+Both machines are linked immediately. No restart, no terminal, and no typing addresses.
+
+Beside "Machines" is the **trust my network** switch (off by default). On your home Wi-Fi/LAN, turn it on so any machine on your private network that asks to link connects at once without waiting for approval. Leave it off in public or shared office networks.
+
+### 2. Or tell an agent
+
+You can also ask an agent in plain words:
+> "find other boards on the network"
+The agent runs `link_machine({ find: true })`.
+
+> "link to the desktop at 192.168.1.50"
+The agent runs `link_machine({ url: "192.168.1.50" })`. Then click **Allow** on the other machine's board page (or have "trust my network" on there).
+
+> "check linked machines"
+The agent runs `link_machine()` with no arguments. It prints whether the neighbour answers and knows this machine back, and lists any pending link requests.
+
+### 3. Using the link
+
+* **See what is open there:** ask an agent "what windows are open on desktop?" (runs `list_cards({ machine: "desktop" })`).
+* **Send a task across:** "ask the build project on desktop to run the tests". Cross-machine messages live in the room `Machine: <name>` on both boards.
+* **Send mail from the page:** the other machine's windows appear in the *To* dropdown on the Square as `<window> @ <machine>`.
 
 ## When a room is done
 

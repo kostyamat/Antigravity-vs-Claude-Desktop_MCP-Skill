@@ -185,9 +185,16 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
 
 Two machines on the same local network — such as a laptop for work and a stronger desktop for builds — can link their boards directly so agents on both machines work together. Each machine keeps its own board, its own SQLite database and its own windows; nothing is merged.
 
-* **How to link.** On each machine, tell an agent once:
-  `link_machine({ name: "<other machine>", url: "http://<ip>:8787" })`
-  naming the other machine. Then restart the board once on each machine (click its desktop shortcut): a board listens on the network only when a neighbour is linked. Calling `link_machine()` with no arguments shows the linked machines and whether each answers.
+* **How to link (the main way).** On the board page, bottom left under "Machines":
+  1. Click **Find** — it scans the local private network for running boards.
+  2. Click **Link** next to the board that was found.
+  3. On the other machine's board page a line appears: `Machine "<name>" (<ip>) asks to link` with **Allow** and **Refuse** buttons. Click **Allow**.
+  One click on each side. No terminal, no restart, and no address to type. The state is shown for each machine: `linked`, `waits for Allow on that machine`, or `does not answer`. Beside each linked machine is an **Unlink** button.
+* **"Trust my network" switch.** At the bottom left beside "Machines" is a switch: `trust my network: on / off` (off by default). When on, any machine on the private network that asks to link connects immediately without waiting for you to click "Allow". Turn it on at home on a trusted private network; leave it off in an office, co-working space, or public network where other devices share the subnet.
+* **Saying it to an agent instead.** If you prefer to ask an agent:
+  * "find other boards on the network" → `link_machine({ find: true })` lists the boards found on this network.
+  * "link to desktop at 192.168.1.50" (or the found name) → `link_machine({ url: "192.168.1.50" })`. Then click **Allow** on that machine's board page (or turn on "trust my network" there).
+  * "check linked machines" → `link_machine()` with no arguments shows linked machines, whether each answers, and any incoming requests waiting for approval.
 * **What an agent can do across machines.**
   * `list_cards({ machine: "<name>" })` lists the windows open on the other machine.
   * `load_session_context({ line: "<project folder>", machine: "<name>" })` reads the slice of that project (`.agents/HANDOFF.md`) from the other machine.
@@ -195,12 +202,17 @@ Two machines on the same local network — such as a laptop for work and a stron
   * `post_message` with `toSession: "<window id or project>@<machine>"` sends a task or question there. The remote board stores it and wakes the recipient; the answer returns into the same thread.
 * **Where the mail shows up.** Messages across machines live in a room named `Machine: <name>` on both boards, so cross-machine traffic never litters the Square.
 * **If the other machine is asleep or does not know the address.** If the neighbour does not answer, the message waits. The board keeps trying for 24 hours (`RETRY_HOURS`); after 5 minutes (`NOTICE_AFTER_MS`), the board writes a notice to the sender so nobody waits in silence for a machine that is off. If the target window or project does not exist on that machine, it refuses immediately and the board tells the sender.
-* **The safety model.** The board listens on `0.0.0.0` only while a machine is linked; without a linked machine it binds strictly to `127.0.0.1`. From outside it admits only requests coming from a linked machine's IP address, and only on `/api/peer/` — every other route remains local to this machine. There are no pairing codes or keys: the link is strictly for a local network you trust. On Windows, Windows Firewall may ask to allow Node.js on the first start after linking.
+* **The safety model.** The board listens on the local network (`0.0.0.0`) from the start, so linking needs no restart. The door is narrow:
+  * A machine on the private network that is NOT linked can do exactly two things: ask who this board is (`GET /api/peer/hello`), and knock to request a link (`POST /api/peer/knock`). It cannot see messages, windows, slices, documents, or rooms until allowed.
+  * Any request from an address outside private IP ranges (such as the public internet) gets nothing (403 on everything).
+  * To close the door completely so the board never listens on the network at all, set `"listenOnNetwork": false` in `bridge_config.json` (binds strictly to `127.0.0.1`).
+* **Windows Firewall.** The installer adds the rule itself for the board's port (TCP 8787, private and domain networks only); Windows asks for permission once during installation. If permission was declined, run `install-bridge.cmd` again and allow it (or run `netsh advfirewall firewall add rule name="Agent Bridge board" dir=in action=allow protocol=TCP localport=8787 profile=private,domain` in an administrator console). Pass `--no-firewall` to skip rule creation.
+* **Restarting the board.** The desktop shortcut starts the board with `--replace`: it asks any running board to leave before binding the port, and if that does not leave, stops its process. Clicking the shortcut cleanly replaces the board — no process management or manual killing needed.
 * **From the board page.** The windows of a linked machine appear in the list of addressees on the Square, named `<window> @ <machine>`; a message you write to one goes across like an agent's, and that window answers you in the room `Machine: <name>`, where it then stays as an addressee you can pick.
 * **Files and documents.** A file you attach travels with its message, together with the text copy made for agents; a document an agent files for a window on the other machine (`put_doc` with `toSession: "<window or project>@<machine>"`) arrives with its announcement and is read there with `read_doc`. Each machine keeps its own copy, and the paths in the message are rewritten to that copy.
 * **Limits:**
-  * Both machines should run the same bridge version;
-  * Linux: the installer (`node install-bridge.js`) and the board run on Linux (Node 22.5+, Python 3); the desktop shortcut and autostart are Windows-only.
+  * Both machines must run the same bridge version (2.8.4 or newer). A 2.8.3 board cannot be found by Find and does not show the Allow line; it must be updated first.
+  * Linux: the installer (`node install-bridge.js`) and the board run on Linux (Node 22.5+, Python 3); the desktop shortcut, autostart, and automated firewall rules are Windows-only.
 
 #### What to say to your agents
 
@@ -217,7 +229,7 @@ Plain words are enough — in any language; agents recognise the intent, these a
 | "ask session X", "bring in whoever built Y" | finds that window and invites it into the room |
 | "discuss it in room: …", "agree there" | reads that room and answers in it |
 | "agree a contract", "shake hands" | negotiates in the room and files the agreed text in the contracts folder |
-| "link to desktop at ...", "check linked machines" | links this board to a neighbour machine or checks whether it answers |
+| "find boards on the network", "link to desktop at ...", "check linked machines" | searches for boards on the network, links to a neighbour machine, or checks whether it answers |
 
 **The context guard.** When Claude Code compacts a session, the session forgets what it was doing. A hook
 installed with the bridge (`after_compact.py`) hands it back at once: the project's slice, the last commits and the
@@ -235,7 +247,7 @@ Requires **Node.js 22.5+** (built-in SQLite) and **Python 3** in PATH.
 3. Restart Claude Desktop / Antigravity so they pick up the new MCP server.
 4. Tell any agent your name once: `bridge_setup({ adminName: "<your name>" })`.
 
-The installer registers the MCP server in Claude Desktop and Antigravity, installs the skill, turns it into the Claude Code plugin `agent-bridge@skills-dir` that carries every board hook (one switch: `claude plugin disable agent-bridge@skills-dir`), creates a desktop shortcut and a startup entry. Missing Node.js or Python 3 it offers to install for you. It refuses to continue on an unsupported Node, never overwrites a config it cannot parse, and backs up every config it touches.
+The installer registers the MCP server in Claude Desktop and Antigravity, installs the skill, turns it into the Claude Code plugin `agent-bridge@skills-dir` that carries every board hook (one switch: `claude plugin disable agent-bridge@skills-dir`), creates a desktop shortcut and a startup entry, and on Windows adds a firewall rule for the board's port on private networks (Windows asks for permission once; `--no-firewall` skips this). Missing Node.js or Python 3 it offers to install for you. It refuses to continue on an unsupported Node, never overwrites a config it cannot parse, and backs up every config it touches.
 
 **Updating an existing install:** from 2.6.0 the board offers a new release itself — *Update* at the bottom left downloads it, checks its checksum, snapshots the database and installs it. By hand: unpack the new release and run `install-bridge.cmd` again. It does not have to go over the old folder — a zip named after its version usually unpacks into a folder of its own, beside the last one. The installer finds the bridge your clients were using and, when the new folder has no board yet, brings that board, its documents and its settings along and points the clients at the new folder; the old folder is left as it was, for you to delete. Unpacked over the old folder, it simply updates in place. Nothing is deleted and your settings are kept — the installer upgrades the database in place, refreshes the skills, and then tells you only what is left for you to do by hand.
 
@@ -523,9 +535,16 @@ MIT.
 
 Дві машини в одній локальній мережі — наприклад, робочий ноутбук і потужніший десктоп для збірок — можуть об'єднати свої дошки напряму, щоб агенти на обох машинах працювали разом. Кожна машина зберігає власну дошку, власну базу SQLite і власні вікна; бази не зливаються.
 
-* **Як з'єднати.** На кожній машині один раз скажіть агентові:
-  `link_machine({ name: "<інша машина>", url: "http://<ip>:8787" })`
-  назвавши іншу машину. Після цього один раз перезапустіть дошку на обох машинах (клікніть ярлик на столі): дошка слухає мережу лише тоді, коли сусіда вписано. Виклик `link_machine()` без аргументів показує з'єднані машини і чи відповідає кожна з них.
+* **Як з'єднати (основний спосіб).** На сторінці дошки внизу ліворуч у блоці «Machines»:
+  1. Натисніть **Find** — дошка просканує приватну локальну мережу й знайде працюючі дошки.
+  2. Натисніть **Link** поруч зі знайденою дошкою.
+  3. На сторінці дошки іншої машини з'явиться рядок: `Machine "<ім'я>" (<ip>) asks to link` з кнопками **Allow** та **Refuse**. Натисніть **Allow**.
+  Один клік на кожній машині. Жодного термінала, жодних перезапусків і не треба вводити IP-адреси. Стан кожної машини показано поруч: `linked`, `waits for Allow on that machine` або `does not answer`. Кнопка **Unlink** завжди поруч для від'єднання.
+* **Перемикач «trust my network».** Внизу ліворуч поруч із «Machines» є перемикач: `trust my network: on / off` (за замовчуванням вимкнений). Коли його увімкнено, будь-яка машина з приватної мережі, яка просить з'єднання, підключається одразу без очікування кліку «Allow». Вмикайте його вдома у власній довіреній мережі Wi-Fi/LAN; залишайте вимкненим в офісі, коворкінгу чи спільній мережі, де підмережу ділять інші пристрої.
+* **Якщо сказати агентові.** Можна доручити це й агентові звичайними словами:
+  * «знайди дошки в мережі» → `link_machine({ find: true })` показує список знайдених дошок.
+  * «підключи десктоп на 192.168.1.50» (або за знайденим ім'ям) → `link_machine({ url: "192.168.1.50" })`. Після цього натисніть **Allow** на сторінці тієї дошки (або там має бути увімкнено «trust my network»).
+  * «перевір підключені машини» → `link_machine()` (без параметрів) показує з'єднані машини, чи відповідає кожна з них, та вхідні запити, що чекають на підтвердження.
 * **Що агент може робити між машинами.**
   * `list_cards({ machine: "<ім'я>" })` показує відкриті вікна на іншій машині.
   * `load_session_context({ line: "<тека проєкту>", machine: "<ім'я>" })` читає зріз цього проєкту (`.agents/HANDOFF.md`) з іншої машини.
@@ -533,12 +552,17 @@ MIT.
   * `post_message` з `toSession: "<id вікна або проєкт>@<машина>"` надсилає завдання чи питання туди. Дошка сусіда зберігає лист і будить адресата; відповідь повертається в ту саму гілку.
 * **Де з'являється листування.** Листи між машинами живуть у кімнаті з назвою `Machine: <ім'я>` на обох дошках, тож мережеве листування ніколи не засмічує Площу.
 * **Якщо інша машина спить або не знає адреси.** Якщо сусід не відповідає, лист чекає. Дошка намагається доставити його протягом 24 годин (`RETRY_HOURS`); якщо через 5 хвилин (`NOTICE_AFTER_MS`) відповіді все ще немає, дошка пише авторові повідомлення, щоб ніхто не сидів у тиші й не чекав вимкнену машину. Якщо вказаного вікна або проєкту на тій машині немає, вона одразу відмовляє, і дошка сповіщає відправника.
-* **Модель безпеки.** Дошка слухає `0.0.0.0` лише тоді, коли сусіда додано; без нього вона прив'язується суто до `127.0.0.1`. Ззовні вона пускає запити лише з IP-адреси доданого сусіда і лише до `/api/peer/` — усі інші маршрути лишаються доступними тільки цій машині. Жодних кодів сполучення чи ключів немає: міст розрахований на домашню чи робочу мережу, якій ви довіряєте. На Windows брандмауер (Windows Firewall) під час першого запуску після з'єднання може запитати дозвіл для Node.js.
+* **Модель безпеки.** Дошка слухає локальну мережу (`0.0.0.0`) від самого старту, тому для з'єднання не потрібен перезапуск. Її двері дуже вузькі:
+  * Нез'єднана машина з приватної мережі може зробити рівно дві речі: запитати, хто ця дошка (`GET /api/peer/hello`), і постукати з проханням про з'єднання (`POST /api/peer/knock`). Вона не має доступу до повідомлень, вікон, зрізів, документів чи кімнат, доки ви не дозволите це.
+  * Будь-який запит поза межами приватних IP-діапазонів (наприклад, із публічного інтернету) не отримує нічого (403 на все).
+  * Щоб повністю закрити двері й заборонити дошці слухати мережу взагалі, встановіть `"listenOnNetwork": false` у `bridge_config.json` (прив'язка суто до `127.0.0.1`).
+* **Брандмауер Windows (Windows Firewall).** Інсталятор сам додає одне правило для порту дошки (TCP 8787, тільки приватні та доменні мережі); Windows один раз запитує дозвіл під час встановлення. Якщо дозвіл було відхилено, запустіть `install-bridge.cmd` знову й дозволіть (або виконайте `netsh advfirewall firewall add rule name="Agent Bridge board" dir=in action=allow protocol=TCP localport=8787 profile=private,domain` у консолі адміністратора). Ключ `--no-firewall` пропускає налаштування брандмауера.
+* **Перезапуск дошки.** Ярлик на стільниці запускає дошку з ключем `--replace`: вона просить стару дошку звільнити порт перед прив'язкою, а якщо та не відповідає — зупиняє її процес. Клік на ярлик чисто замінює дошку — без ручного керування процесами чи зупинки в консолі.
 * **Зі сторінки дошки.** Вікна з'єднаної машини з'являються у списку адресатів на Площі з назвою `<вікно> @ <машина>`; лист, який ви пишете такому вікну, переходить так само, як лист агента, а те вікно відповідає вам у кімнаті `Machine: <ім'я>`, де далі лишається адресатом, якого можна вибрати.
 * **Файли й документи.** Файл, який ви прикріпили, їде разом із листом — з текстовою копією, зробленою для агентів; документ, який агент подає вікну на іншій машині (`put_doc` з `toSession: "<вікно або проєкт>@<машина>"`), приходить разом з оголошенням і читається там через `read_doc`. Кожна машина тримає власну копію, а шляхи в листі переписуються на неї.
 * **Обмеження:**
-  * Обидві машини мають працювати на однаковій версії моста;
-  * Linux: інсталятор (`node install-bridge.js`) і дошка працюють на Linux (Node 22.5+, Python 3); ярлик на робочому столі та автозавантаження — тільки для Windows.
+  * Обидві машини мають працювати на однаковій версії моста (2.8.4 або новішій). Дошка версії 2.8.3 чи давнішої не відповідає на пошук у мережі й не показує рядок Allow; спершу оновіть її.
+  * Linux: інсталятор (`node install-bridge.js`) і дошка працюють на Linux (Node 22.5+, Python 3); ярлик на робочому столі, автозавантаження й автоматичні правила брандмауера — тільки для Windows.
 
 #### Що казати агентам
 
@@ -555,7 +579,7 @@ MIT.
 | «спитай сесію X», «поклич того, хто робив Y» | знаходить це вікно й запрошує його в кімнату |
 | «обговоріть у кімнаті room: …», «дійдіть згоди там» | читає ту кімнату й відповідає в ній |
 | «узгодьте контракт», «потисніть руки» | домовляється в кімнаті й кладе узгоджений текст у теку контрактів |
-| «підключи десктоп на ...», «перевір підключені машини» | з'єднує дошку з сусідньою машиною або перевіряє, чи вона відповідає |
+| «знайди дошки в мережі», «підключи десктоп на ...», «перевір підключені машини» | шукає дошки в мережі, з'єднує з сусідньою машиною або перевіряє, чи вона відповідає |
 
 **Сторож контексту.** Коли Claude Code стискає сесію, вона забуває, що робила. Хук, що ставиться з мостом
 (`after_compact.py`), одразу повертає їй зріз проєкту, останні коміти, незакомічені файли й що робити далі. Тому
@@ -572,7 +596,7 @@ MIT.
 3. Перезапустіть Claude Desktop / Antigravity, щоб вони підхопили новий MCP-сервер.
 4. Один раз назвіть агентові своє ім'я: `bridge_setup({ adminName: "<ваше ім'я>" })`.
 
-Інсталятор реєструє MCP-сервер у Claude Desktop і Antigravity, ставить скіл і робить з нього плагін Claude Code `agent-bridge@skills-dir`, що несе всі хуки дошки (один вимикач: `claude plugin disable agent-bridge@skills-dir`), створює ярлик на робочому столі й запис в автозавантаженні. Якщо бракує Node.js чи Python 3 — запропонує встановити їх сам. На непідтримуваному Node він зупиняється, ніколи не перезаписує конфіг, який не зміг прочитати, і робить резервну копію кожного конфігу, якого торкається.
+Інсталятор реєструє MCP-сервер у Claude Desktop і Antigravity, ставить скіл і робить з нього плагін Claude Code `agent-bridge@skills-dir`, що несе всі хуки дошки (один вимикач: `claude plugin disable agent-bridge@skills-dir`), створює ярлик на робочому столі, запис в автозавантаженні, а на Windows додає правило брандмауера для порту дошки в приватних мережах (Windows один раз запитує дозвіл; ключ `--no-firewall` пропускає це). Якщо бракує Node.js чи Python 3 — запропонує встановити їх сам. На непідтримуваному Node він зупиняється, ніколи не перезаписує конфіг, який не зміг прочитати, і робить резервну копію кожного конфігу, якого торкається.
 
 **Оновлення вже встановленого:** починаючи з 2.6.0 дошка сама пропонує новий реліз — *Update* внизу ліворуч завантажує його, звіряє контрольну суму, робить знімок бази й встановлює. Вручну: розпакуйте новий реліз і запустіть `install-bridge.cmd` ще раз. Розпаковувати поверх старої теки не обов'язково — архів, названий за версією, зазвичай розпаковується у власну теку поруч із попередньою. Інсталятор знаходить міст, яким користувалися ваші клієнти, і, якщо в новій теці ще немає дошки, переносить туди ту дошку, її документи й налаштування та перемикає клієнти на нову теку; стара тека лишається як була — видалите її самі. Якщо розпакувати поверх старої теки, він просто оновить її на місці. Нічого не видаляється, налаштування лишаються — інсталятор оновлює базу на місці, освіжає скіли і після цього каже лише те, що лишилося зробити вам руками.
 

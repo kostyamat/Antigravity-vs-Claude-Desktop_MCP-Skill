@@ -196,8 +196,9 @@ machine. Each machine keeps its own board; `link_machine()` shows which are link
 - A document crosses too: `put_doc({ to, toSession: "<project>@<machine>", ... })` — it is read there with `read_doc`.
   A file the owner attached arrives with its message; the paths in the text already point at this machine's copy.
 - Any other path in a message means the sender's machine. Send the content, a commit id or a repository address instead.
-- "Link the desktop at 192.168.…" — `link_machine({ name, url })`; tell the owner it must be done on both machines
-  and that each board is restarted once.
+- "Find my other machine" · "link the desktop" — `link_machine({ find: true })`, then `link_machine({ url })`. The
+  other board then shows "… asks to link — Allow": tell the owner to click it there (or he does all of it himself under
+  "Machines" on the board page). Nothing is restarted. `link_machine()` says who is linked and who asks.
 
 ## When the user says…
 
