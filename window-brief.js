@@ -56,9 +56,12 @@ function createBrief(bridgeDb, cardsLib, router, rules, stands) {
     }
 
     out.push(...rules.describeHelpers(me));
-    if (full && me && !router.leadOf(me) && !rules.describeHelpers(me).length) {
-      out.push('🧑‍🔧 No helper is recorded for this project. If you work with one, record it once — ' +
-        'set_helper({helper: "<its window id>"}) — and the board will keep the pair for you.');
+    // A Claude project with no helper asks the owner for one when real work starts
+    // (agent-workflow, "Working with a helper agent"); the board only reminds it how.
+    if (full && me && router.agentOf(me) === 'Claude' && !router.leadOf(me) && !rules.describeHelpers(me).length) {
+      out.push('🧑‍🔧 This project has no helper. When real work starts, ask the owner whether to start one. ' +
+        'Yes: set_helper({start: true, brief: "<the project, its state, the first task, what not to touch>"}) — ' +
+        'you start it, brief it and pair it yourself. No: work alone. A window he names: set_helper({helper: "<its id>"}).');
     }
     out.push(...stands.describe(me));
     return out;

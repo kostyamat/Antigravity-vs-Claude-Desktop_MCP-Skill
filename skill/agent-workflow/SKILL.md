@@ -206,10 +206,18 @@ like a rewrite.
   review, decisions and the talk with the user. **The lead does no routine**: research in code and
   firmware, ports, translations, tests, device measurements and routine debugging go to the helper.
   A helper's quota is usually far larger than the lead's, so delegate generously.
-- **A lead with no helper gets one itself**, when real work starts — it does not wait to be given
-  one: `set_helper({ start: true, brief: "…" })` opens a helper, hands it the brief, pairs the two
-  and makes their room. The brief says what the project is, where it lives, what the helper will
-  be doing and what it must not touch. Only when that call fails is the user asked for a window.
+- **A lead with no helper asks the user for one** when real work starts — one short question: "Shall
+  I start a helper for this (an Antigravity window for research, ports, tests, routine)?"
+  - **No** — the lead works alone, as usual, and does not ask again unless the work changes in kind.
+  - **Yes** — the lead starts it itself: `set_helper({ start: true, brief: "…" })` opens a new
+    Antigravity conversation, hands it the brief, records the pair and makes their room. The brief is
+    the whole handover, since the helper knows nothing else: what the project is and where it lives,
+    its state (the slice in short), the first task with its base commit and acceptance, and what the
+    helper must not touch. Then the lead works with it through that room.
+  - The user names a window instead — `set_helper({ helper: "<its id>" })`. If starting fails
+    (Antigravity closed, no quota), the lead says so and carries on alone.
+  - **A shared room is not a pair.** An Antigravity window many sessions consult (a debugger, a
+    researcher) helps none of them in particular; only `set_helper` makes a helper.
 - **The user may give the helper a task directly** — on the board or in the helper's own chat,
   past the lead. Such a task comes first. The helper:
   1. **tells the lead at once**, in their room, before starting: "Task from the owner, taken
@@ -227,8 +235,8 @@ like a rewrite.
   project's files, and on the board the project is the participant: its rooms, its helper and its
   mail are the same from any window opened in that folder. Never key anything to a window name.
 - **One room per lead and helper; every message inside it**, answers too. The board records the pair
-  when that room is made (or by `set_helper`) and prints it at every session start, so neither side
-  has to remember it after a compaction. A helper that does not know whose helper it is asks the
+  by `set_helper` and prints it at every session start, so neither side has to remember it after a
+  compaction. A helper that does not know whose helper it is asks the
   user for the lead's id first.
 - A helper takes tasks only from its own lead and the user; the board refuses a task sent to another
   lead's helper and a helper's answer to another lead. Leads of different projects agree with each
