@@ -8,6 +8,11 @@ never overwritten.
 
 ---
 
+## Unreleased
+
+**You pin rooms.** *Pin* in the room header keeps a room at the top of the list, in the order you pinned
+them, under the supervisor's room; *Unpin* lets it follow the conversation again.
+
 ## v2.8.5 — 2026-11-16
 
 **Quotas are watched for you, and the warning cannot be missed.** The supervisor measures the Antigravity quota and
