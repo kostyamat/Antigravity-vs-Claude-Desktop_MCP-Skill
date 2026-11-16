@@ -13,6 +13,9 @@ never overwritten.
 **You pin rooms.** *Pin* in the room header keeps a room at the top of the list, in the order you pinned
 them, under the supervisor's room; *Unpin* lets it follow the conversation again.
 
+**Fixed.** Two windows of one project taking turns in a room no longer ask its helper for a handover each time; the
+helper is asked once and goes on with its task instead of stopping to wait.
+
 ## v2.8.5 — 2026-11-16
 
 **Quotas are watched for you, and the warning cannot be missed.** The supervisor measures the Antigravity quota and

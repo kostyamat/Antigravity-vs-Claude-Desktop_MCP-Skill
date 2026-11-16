@@ -64,7 +64,8 @@ line does not come, something is wrong. Ask again in the same room rather than s
   anyone there. Another project's helper is asked only with leave: its lead gives it, or you press *Allow … to
   ask …* in the room header (*take back* ends it). The helper finishes its own lead's task first.
 * **Switching accounts.** Open the same project in the other account and carry on: the new window is shown how
-  the last one ended, and the helper is asked for a handover. Coming back to an old conversation works the same way.
+  the last one ended, and the helper is asked for a handover once and then goes on with its task. A window that has
+  written in the room before does not ask again, so two windows taking turns do not stop the helper each time.
 * **The supervisor is yours to switch on** (bottom left). It keeps the database safe, reminds projects of mail they
   left unanswered, and writes a project that was asleep a summary of what it missed. It uses one Antigravity
   conversation on a fast model. Hover over the line to see what its last round found.
