@@ -104,11 +104,24 @@ try {
     handover.askHelpers({ bridgeDb, router, win: 'local_new', post });
     assert.strictEqual(posted.length, before);
   });
-  t('the old window coming back asks the helper again', () => {
+  t('the old window coming back asks nothing: it wrote in the room before', () => {
     const before = posted.length;
     handover.askHelpers({ bridgeDb, router, win: 'local_old', post });
-    assert.strictEqual(posted.length, before + 1);
-    assert.strictEqual(posted[posted.length - 1].fromSession, 'local_old');
+    assert.strictEqual(posted.length, before);
+  });
+  t('two windows of the lead taking turns ask once between them', () => {
+    const m = [{ id: 1, room: 'pair', fromSession: 'local_old', ts: new Date().toISOString(), topic: 'helper' }];
+    const db2 = Object.assign({}, bridgeDb, { readAllMessages: () => m });
+    const got = [];
+    const p = x => { got.push(x); m.push(Object.assign({ id: m.length + 1, ts: new Date().toISOString(), status: 'question' }, x)); };
+    handover.askHelpers({ bridgeDb: db2, router, win: 'local_new', post: p });
+    assert.strictEqual(got.length, 1, 'the new window asks');
+    m.push({ id: m.length + 1, room: 'pair', fromSession: 'gem-1', ts: new Date().toISOString(), topic: 'handover', status: 'answer' });
+    m.push({ id: m.length + 1, room: 'pair', fromSession: 'local_old', ts: new Date().toISOString(), topic: 'handover', status: 'info' });
+    handover.askHelpers({ bridgeDb: db2, router, win: 'local_new', post: p });
+    handover.askHelpers({ bridgeDb: db2, router, win: 'local_old', post: p });
+    assert.strictEqual(got.length, 1, 'neither window asks again');
+    assert.match(got[0].message, /go on with that task/);
   });
   t('a window of another project on this line asks nobody', () => {
     const before = posted.length;
@@ -129,4 +142,4 @@ try {
 } finally {
   fs.rmSync(home, { recursive: true, force: true });
 }
-console.log(n + '/9 passed');
+console.log(n + '/10 passed');

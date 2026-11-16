@@ -128,6 +128,11 @@ function briefLines(cwd, currentSession) {
 }
 
 // Ask each helper of this lead for a handover, once per new window of the lead.
+// A window is new to a room only if it has never written there: two windows of one
+// project taking turns in a room (two accounts open, restarts) once asked the same
+// helper three times in twenty minutes, and the helper dropped its task each time
+// (bitperfect2, 16.11.2026, #4887–#4897). And one ask stands for every window of the
+// lead until the lead gives the helper new work after it.
 // Returns the lines for the brief. `post` writes a board message and wakes the helper.
 //
 // Only its own helpers. The pair on record names the lead by its project, and the
@@ -151,12 +156,16 @@ function askHelpers({ bridgeDb, router, win, post, now }) {
     if (!h.room) continue;
     const inRoom = all.filter(m => m.room === h.room);
     const lead = new Set(bridgeDb.cluster(h.lead).concat(bridgeDb.cluster(win)).map(String));
-    const lastLead = [...inRoom].reverse().find(m => lead.has(String(m.fromSession)) || router.same(m.fromSession, h.lead));
+    const byLead = m => lead.has(String(m.fromSession)) || router.same(m.fromSession, h.lead);
+    const isAsk = m => m.topic === 'handover' && m.status === 'question' && byLead(m);
+    const lastLead = [...inRoom].reverse().find(m => byLead(m) && !isAsk(m));
     if (!lastLead || String(lastLead.fromSession) === String(win)) continue;     // same window, nothing changed
     if (router.windowOf(lastLead.fromSession) === win) continue;
+    // This window has written in the room before: it is not new here, the room has what it needs.
+    if (inRoom.some(m => String(m.fromSession) === String(win) || router.windowOf(m.fromSession) === win)) continue;
     if (t - new Date(lastLead.ts).getTime() > 3 * 86400e3) continue;            // old work: the slice is the source
     const label = `"${router.nameOf(h.helper)}" [${h.room}]`;
-    if (inRoom.some(m => m.topic === 'handover' && String(m.fromSession) === String(win) && m.id > lastLead.id)) {
+    if (inRoom.some(m => isAsk(m) && m.id > lastLead.id)) {                     // asked already, by any window of the lead
       waiting.push(label);
       continue;
     }
@@ -165,7 +174,7 @@ function askHelpers({ bridgeDb, router, win, post, now }) {
       message: 'Your lead continues in a new window (an account switch or a restart); the last one may have been cut off ' +
         'mid-task. Post a handover here now, before anything else: the last task your lead gave you, what you did ' +
         '(files, commits, what is on the device), what is still open, and what the lead said it would do next. ' +
-        'Facts only, short. Then wait for the lead.'
+        'Facts only, short. Then go on with that task; the lead will tell you if it changes.'
     });
     asked.push(label);
   }
