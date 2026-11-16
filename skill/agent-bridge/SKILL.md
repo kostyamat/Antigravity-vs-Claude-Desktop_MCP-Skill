@@ -71,6 +71,11 @@ A text you already wrote to a file — long, or with backslashes and quotes a co
 from it: `post_message({ sender, sessionId, messageFile: "<absolute path>", room })`; with `message` as well, that
 is the opening line and the file follows.
 
+When the top of `get_messages` asks for this account's Claude limits (a 📊 line), call your `get_usage` tool once and
+pass its result: `report_usage({ usage })`. That is all: the board supervisor watches the quota for every lead and
+warns you when it runs low — do not set up a watcher of your own. When it tells you to stop heavy work or to stop,
+do so: commit, rewrite the slice, and wait for its word to go on.
+
 The top of `get_messages` lists your rooms and helpers once, and again when they change; in between it carries
 their counts. `get_messages({ roster: true })` lists them again.
 

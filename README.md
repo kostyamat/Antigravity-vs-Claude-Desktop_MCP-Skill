@@ -61,6 +61,18 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
   unanswered, writes a sleeping project the timeline of what it missed into its own room, notices work a closed
   session did not write down, sorts and routes on your order, and has pictures described for agents. The reading
   is done by one Antigravity conversation on a fast model. See `skill/agent-bridge/references/SUPERVISOR.md`.
+* **Quotas, watched for you.** The supervisor measures the Antigravity quota and each Claude account's plan limits
+  every minute, with no model. At 10 % left it warns; at 5 % it tells the helpers (Antigravity) or the lead
+  sessions (Claude) to save and stop, and asks you to switch the account; write *resume* in its room and it sets
+  them going again. Every warning is a window of the bridge's own in the middle of the screen, above everything
+  (`bin/quota-alert.exe`, `bin/quota-alert` for Linux/X11; sources in `tools/quota-alert`) — not a system
+  notification, which is easy to miss. Its text follows the system language: English, Ukrainian, Russian,
+  German, French, Spanish (`alertLanguage` in `bridge_config.json` overrides). Claude's limits cannot be read from
+  outside a session, so a Claude window is asked for them in the header of a read, at most once in twenty minutes
+  per account (`report_usage`).
+* **A session cut off mid-work leaves its context.** When a Claude turn ends on the usage limit or an error, the
+  board lifts what it was doing from the transcript — your last request, the lead's last words, the command that
+  was running, uncommitted files — into a marked block at the top of the project's `.agents/HANDOFF.md`.
 * **Two skills and guards** for every agent: the board, and how to work on a project without losing state or
   wasting tokens; git hooks and a ban on destructive commands. See below.
 * **Lines of work.** One job carried by several windows (a restart, the other account) behaves as one participant.
@@ -543,6 +555,17 @@ MIT.
   2. Натисніть **Link** поруч зі знайденою дошкою.
   3. На сторінці дошки іншої машини з'явиться рядок: `Machine "<ім'я>" (<ip>) asks to link` з кнопками **Allow** та **Refuse**. Натисніть **Allow**.
   Один клік на кожній машині. Жодного термінала, жодних перезапусків і не треба вводити IP-адреси. Стан кожної машини показано поруч: `linked`, `waits for Allow on that machine` або `does not answer`. Кнопка **Unlink** завжди поруч для від'єднання.
+* **Квоти під наглядом.** Наглядач щохвилини, без моделі, міряє квоту Antigravity і ліміти плану кожного акаунта
+  Claude. На 10 % попереджає; на 5 % каже помічникам (Antigravity) або сесіям лідів (Claude) зберегтися й
+  зупинитися і просить вас змінити акаунт; напишіть у його кімнаті *продовжити* — і він запускає їх далі. Кожне
+  попередження — власне вікно мосту посеред екрана поверх усього (`bin/quota-alert.exe`, для Linux/X11
+  `bin/quota-alert`; джерела в `tools/quota-alert`), а не системне сповіщення, яке легко пропустити. Мова тексту —
+  за мовою системи: англійська, українська, російська, німецька, французька, іспанська (перевизначає
+  `alertLanguage` у `bridge_config.json`). Ліміти Claude ззовні сесії прочитати неможливо, тому вікно Claude
+  просять про них у заголовку читання, не частіше ніж раз на двадцять хвилин на акаунт (`report_usage`).
+* **Обірвана сесія лишає свій контекст.** Коли хід Claude закінчується лімітом чи помилкою, дошка дістає з
+  транскрипту, що сесія робила — ваш останній запит, останні слова ліда, команду, що виконувалась, незакомічені
+  файли — і пише позначеним блоком угорі `.agents/HANDOFF.md` проєкту.
 * **Перемикач «trust my network».** Внизу ліворуч поруч із «Machines» є перемикач: `trust my network: on / off` (за замовчуванням вимкнений). Коли його увімкнено, будь-яка машина з приватної мережі, яка просить з'єднання, підключається одразу без очікування кліку «Allow». Вмикайте його вдома у власній довіреній мережі Wi-Fi/LAN; залишайте вимкненим в офісі, коворкінгу чи спільній мережі, де підмережу ділять інші пристрої.
 * **Якщо сказати агентові.** Можна доручити це й агентові звичайними словами:
   * «знайди дошки в мережі» → `link_machine({ find: true })` показує список знайдених дошок.
