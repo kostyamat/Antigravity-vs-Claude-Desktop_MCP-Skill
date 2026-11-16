@@ -218,10 +218,21 @@ function renderHead() {
   $('#roomDocs').textContent = 'Documents (' + docs + ')';
   $('#roomSub').innerHTML = r.members.map(m => {
     const n = windowName(m.card, m.agent);
-    return '<span class="member" title="' + esc(n + ' · ' + clientName(m.agent)) + '"><i class="c-' + kind(m.agent) + '"></i><span>' + esc(n) + '</span></span>';
+    return '<span class="member" title="' + esc(n + ' · ' + clientName(m.agent)) + '"><i class="c-' + kind(m.agent) + '"></i><span>' + esc(n) + '</span>' +
+      '<button type="button" class="member-x" data-card="' + esc(m.card) + '" title="Remove from this room">×</button></span>';
   }).join('') + '<button type="button" class="link-btn" id="addWindow">+ Add a window</button>' +
     '<span id="leaveBtns"></span>';
   $('#addWindow').onclick = () => showPanel('windows');
+  // The owner sends a window out. It is told, and only he can invite it back (+ Add a window).
+  for (const b of $('#roomSub').querySelectorAll('button.member-x')) {
+    b.onclick = async () => {
+      const card = b.dataset.card;
+      if (!confirm('Remove ' + windowName(card) + ' from "' + r.name + '"? It is told, and only you can invite it back.')) return;
+      const j = await post('/api/room/remove', { id: r.id, card, from: ME });
+      if (j && j.error) { alert(j.error); return; }
+      await loadRooms();
+    };
+  }
   loadLeave(r);
 }
 

@@ -198,6 +198,15 @@ function initSchema(db) {
       PRIMARY KEY (room, card)
     );
     CREATE INDEX IF NOT EXISTS idx_room_members_card ON room_members(card);
+    -- A window the owner sent out of a room. Only the owner lets it back in: an agent's
+    -- invite, a post into the room and a neighbour's letter are refused (owner, 16.11).
+    CREATE TABLE IF NOT EXISTS room_removed (
+      room TEXT NOT NULL,
+      card TEXT NOT NULL,
+      by TEXT DEFAULT '',
+      at TEXT,
+      PRIMARY KEY (room, card)
+    );
     CREATE INDEX IF NOT EXISTS idx_rooms_account ON rooms(account);
   `);
   try {
@@ -1370,10 +1379,16 @@ function readRooms() {
 // Bring a window into a conversation that is already running. It may belong to
 // the other Claude account: that window is not open now, but it reads the board
 // when it comes back, and the room is where it will find the thread.
-function addRoomMember(room, card, agent) {
+// opts.owner: the owner's own invitation, the only one that lets back a window he sent out.
+function addRoomMember(room, card, agent, opts) {
   const db = getDb();
   if (!db.prepare('SELECT 1 FROM rooms WHERE id = ?').get(String(room))) {
     throw new Error('no such room: ' + room);
+  }
+  if (opts && opts.owner) {
+    db.prepare('DELETE FROM room_removed WHERE room = ? AND card = ?').run(String(room), String(card).trim());
+  } else if (removedFromRoom(room, card)) {
+    throw new Error(`the owner removed ${String(card).trim()} from room ${room}; only he can invite it back`);
   }
   db.prepare('INSERT OR IGNORE INTO room_members (room, card, agent) VALUES (?, ?, ?)')
     .run(String(room), String(card).trim(), String(agent || ''));
@@ -1383,11 +1398,27 @@ function addRoomMember(room, card, agent) {
 // Taking a window out leaves everything it said in place: the conversation
 // happened, and hiding it would rewrite the history rather than change the
 // membership.
-function removeRoomMember(room, card) {
+// opts.by: who sent it out — given, the removal is remembered (room_removed).
+function removeRoomMember(room, card, opts) {
   const db = getDb();
   db.prepare('DELETE FROM room_members WHERE room = ? AND card = ?')
     .run(String(room), String(card).trim());
+  if (opts && opts.by) {
+    db.prepare('INSERT OR REPLACE INTO room_removed (room, card, by, at) VALUES (?, ?, ?, ?)')
+      .run(String(room), String(card).trim(), String(opts.by), new Date().toISOString());
+  }
   return getRoom(room);
+}
+
+// Was this window (any id of it: cluster) sent out of the room by the owner?
+function removedFromRoom(room, card) {
+  const c = String(card || '').trim();
+  if (!room || !c) return false;
+  let rows = [];
+  try { rows = getDb().prepare('SELECT card FROM room_removed WHERE room = ?').all(String(room)); } catch (_) { return false; }
+  if (!rows.length) return false;
+  const mine = new Set([c, ...cluster(c)].map(x => String(x).toLowerCase()));
+  return rows.some(r => mine.has(String(r.card).toLowerCase()));
 }
 
 function renameRoom(id, name) {
@@ -1589,6 +1620,7 @@ module.exports = {
   getRoom,
   addRoomMember,
   removeRoomMember,
+  removedFromRoom,
   readRooms,
   renameRoom,
   touchRoom,

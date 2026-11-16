@@ -1130,7 +1130,8 @@ function doInviteToRoom(id, a) {
   if (!card) return fail(id, 'invite_to_room: `card` is required — see list_cards.');
   const known = cardsLib.allCards({ names: boardNames() }).find(c => c.id === card);
   const agent = (known && known.agent) || (/^local_/.test(card) ? 'Claude' : 'Gemini');
-  bridgeDb.addRoomMember(room.id, card, agent);
+  try { bridgeDb.addRoomMember(room.id, card, agent); }
+  catch (e) { return fail(id, `invite_to_room: ${e.message}.`); }
   const from = normAgent(a.sender) || 'Claude';
   return doPost(id, {
     sender: from, sessionId: a.sessionId || '', canonicalId: a.canonicalId || '',
@@ -1363,6 +1364,12 @@ function doPost(id, a) {
   if (routed.refuse && isAgent) return fail(id, `post_message: ${routed.refuse} Message NOT recorded.`);
   const room = routed.room;
 
+  // The owner sent this window out of the room: it does not write there again until he
+  // invites it back. Mail addressed to it still reaches it; it answers outside the room.
+  if (isAgent && room && [mineWin, a.canonicalId, a.sessionId].some(w => w && bridgeDb.removedFromRoom(room, w))) {
+    return fail(id, `post_message: the owner removed you from room ${room}. Write without that room ` +
+      '(name another room, or toSession the window you answer); only the owner can invite you back. Message NOT recorded.');
+  }
   if (isAgent && !peerAddr) {
     const no = rules.helperGuard({ mine: mineWin, theirs: toSession && toSession !== 'all' ? toSession : '', room, replyTo });
     if (no) return fail(id, `post_message: ${no} Message NOT recorded.`);

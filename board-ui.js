@@ -607,11 +607,22 @@ const server = http.createServer((req, res) => {
           }
         } else if (what === 'add') {
           const known = new Map(cardsLib.allCards({ allAccounts: true }).map(c => [c.id, c]));
-          out = bridgeDb.addRoomMember(d.id, d.card, (known.get(d.card) || {}).agent || d.agent || '');
+          out = bridgeDb.addRoomMember(d.id, d.card, (known.get(d.card) || {}).agent || d.agent || '', { owner: true });
           const room = bridgeDb.getRoom(String(d.id || ''));
           if (room) inviteFromOwner(d.from, room, d.card, known.get(d.card));
         } else if (what === 'remove') {
-          out = bridgeDb.removeRoomMember(d.id, d.card);
+          // The owner sends a window out: remembered, so neither an agent's invite nor its own
+          // post brings it back, and the window is told in the room, addressed to it.
+          const room = bridgeDb.getRoom(String(d.id || ''));
+          const known = new Map(cardsLib.allCards({ allAccounts: true }).map(c => [c.id, c]));
+          const was = room && (room.members || []).find(m => m.card === d.card);
+          out = bridgeDb.removeRoomMember(d.id, d.card, { by: String(d.from || '').trim() || ownerName() });
+          if (room && was) {
+            const agent = was.agent || ((known.get(d.card) || {}).agent) || (/^local_/.test(d.card) ? 'Claude' : 'Gemini');
+            apiPost({ from: String(d.from || '').trim() || ownerName(), room: room.id, to: agent, toSession: d.card, status: 'info',
+              text: `The owner removed you from room "${room.name}" [${room.id}]. Stop work for this room and do not ` +
+                'write in it; only the owner can invite you back. Your own project and other rooms are unchanged.' });
+          }
         } else if (what === 'rename') {
           out = bridgeDb.renameRoom(d.id, d.name);
         } else if (what === 'describe') {
