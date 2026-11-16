@@ -223,7 +223,3 @@ ways before believing it.
   expressions and Windows paths silently. Write patch files with an editor tool, and check them.
 * **Session forks are a second process, not a second view.** A conversation joined by a second
   client is cloned: new id, new transcript, same working tree under two pairs of hands.
-* **The registry invents sessions.** Peer registration has created rows like `Claude/all` and a
-  Gemini row for a Claude window. They are visible in the dashboard as duplicate cards.
-* **`watch_gemini.py` still filters by agent name**, so one Gemini session cannot wake another —
-  the mirror of a bug already fixed on the Claude side.

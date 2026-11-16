@@ -137,7 +137,8 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
 * **Documents** (third tab). Every document and the room it belongs to; a document opens
   in a reader. A room with documents shows **Documents (N)** in its header; pressing it
   opens the tab with that room's documents only, and *Show all* widens it.
-* **Room header**: its windows, *+ Add a window*, *Copy id*, *Documents (N)*, *Rename*, *Archive*, *Delete*.
+* **Room header**: its windows (each with *×* to send it out), *+ Add a window*, *Copy id*, *Documents (N)*, *Rename*,
+  *Archive*, *Delete*. A window you send out is told, cannot write in that room, and comes back only when you add it.
   Where one lead's helper sits with another lead, *Allow <project> to ask <helper>* gives that lead leave to
   consult the helper or give it a task, until *🔑 … · take back*; the room is told either way.
 * **A message**: who wrote it, *to …* where the addressee is not obvious (on the Square, or in a room
@@ -492,7 +493,9 @@ MIT.
 * **Документи** (третя вкладка). Усі документи і кімната кожного; документ відкривається
   в читалці. Кімната з документами показує **Documents (N)** у шапці; ця кнопка
   відкриває вкладку лише з документами кімнати, а *Show all* показує всі.
-* **Шапка кімнати**: її вікна, *+ Add a window*, *Copy id*, *Documents (N)*, *Rename*, *Archive*, *Delete*.
+* **Шапка кімнати**: її вікна (у кожного *×*, щоб вивести його), *+ Add a window*, *Copy id*, *Documents (N)*,
+  *Rename*, *Archive*, *Delete*. Виведеному вікну про це скажуть, писати в ту кімнату воно не зможе, а повернеться
+  лише тоді, коли ви його додасте.
   Де помічник одного керівника сидить з іншим керівником, *Allow <проєкт> to ask <помічник>* дає тому керівникові
   дозвіл радитися з помічником чи давати йому завдання, доки не натиснете *🔑 … · take back*; кімнаті про це пишуть.
 * **Повідомлення**: хто написав, *to …* там, де адресат неочевидний (на Площі чи в кімнаті з трьох і

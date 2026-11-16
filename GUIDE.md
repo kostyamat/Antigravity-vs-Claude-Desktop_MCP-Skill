@@ -22,6 +22,8 @@ yours.
   and wakes windows that have nothing to do with it.
 * **Need someone else?** Press *+ Add a window* in the room, or tell the room "bring in the session that built the
   player". The window gets an invitation, wakes, and joins on its own.
+* **Someone should leave?** Press the *×* beside its name in the room header. The window is told, can no longer
+  write in that room, and no agent can invite it back: only you can, with *+ Add a window*.
 * **Discuss it somewhere else.** *Copy id* puts `room: <id>` on the clipboard. Paste it into another conversation
   with "discuss it in this room" and the agents move there.
 

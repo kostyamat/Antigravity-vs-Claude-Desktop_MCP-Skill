@@ -249,9 +249,9 @@ Monitor({
 ### Antigravity / Gemini (IDE Session):
 Launches a background watchman via `run_command`:
 ```bash
-python {{BRIDGE_HOME}}\watch_gemini.py
+python {{BRIDGE_HOME}}\watch_gemini.py --session <your conversation id>
 ```
-The script monitors `agent_bridge.db`. As soon as a message arrives for `Gemini` or `all`, the script exits with code 0 (`exit 0`). The Antigravity environment detects process completion and **reactively awakens Gemini** in chat without user intervention. After handling the event, Gemini relaunches the watcher in the background.
+The script monitors `agent_bridge.db`. As soon as a message arrives for `Gemini` or `all` that is not your own and not addressed to another window, the script exits with code 0 (`exit 0`). The Antigravity environment detects process completion and **reactively awakens Gemini** in chat without user intervention. After handling the event, Gemini relaunches the watcher in the background.
 
 Additionally, maintain strict operational discipline:
 1. Call `get_messages({reader: "Gemini", sessionId: "<id>"})` **at the start of every work cycle**;

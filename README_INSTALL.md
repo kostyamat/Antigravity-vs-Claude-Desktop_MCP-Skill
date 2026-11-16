@@ -89,6 +89,9 @@ Because Agent-Bridge operates via the **Model Context Protocol (MCP)**, modern A
 
 ### 🟡 C. Claude Code (CLI Terminal):
 - When Claude Code prompts for tool approvals in terminal mode, select `y` or `a` (allow all for session) so background monitoring and board checks run without interruption.
+- **Two Claude accounts?** Start the CLI as `claude-acct` instead of `claude`: it runs under the account the desktop app
+  is signed in to now. Sign in once per account with `claude-acct --accounts login` (switch the desktop app to that
+  account first). Settings, hooks, skills and transcripts stay one set, linked from `~/.claude`.
 
 ---
 
