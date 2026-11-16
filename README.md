@@ -322,8 +322,11 @@ And it puts **guards** around every agent:
   Antigravity needs an answer for every command, so for the safe ones you choose: `geminiSafeCommands` in
   `bridge_config.json` — `ask` (the default: Antigravity asks, honouring "Always Allow") or `allow` (they run by
   themselves, as with auto-execution). Re-run the installer after changing it.
-* **A heredoc with a backslash is refused** in Claude Code's Bash: that shell does not keep backslashes, and
-  scripts written that way kept coming out broken. Write the script with the Write tool and run the file.
+* **A heredoc that would lose a backslash is refused** in Claude Code's Bash: one with a backslash under an unquoted
+  delimiter, and one with a doubled backslash even under a quoted delimiter (measured: it can arrive single). A quoted
+  heredoc (`<<'EOF'`) with single backslashes arrives as written and runs. For Antigravity any backslash in a heredoc
+  is refused: there is one more layer of quoting on the way. Write the script with the Write tool and run the file;
+  a board message goes with `post_message({messageFile: "<path>"})`.
 * In a project without `.agents/`, an agent **offers to set it up** by the agent-workflow skill — once.
   Say no and it leaves `.no-agent-workflow` in the project, and nobody asks again.
 
@@ -670,8 +673,11 @@ MIT.
   Antigravity потребує відповіді на кожну команду, тож для безпечних вибираєте ви: `geminiSafeCommands` у
   `bridge_config.json` — `ask` (за замовчуванням: Antigravity питає, з урахуванням «Always Allow») або `allow`
   (виконуються самі, як з автовиконанням). Після зміни запустіть інсталятор ще раз.
-* **Heredoc зі зворотною скісною рискою заборонено** в Bash Claude Code: ця оболонка не зберігає скісних рисок,
-  і скрипти, написані так, раз у раз виходили зламаними. Скрипт пишеться інструментом Write і запускається файлом.
+* **Heredoc, у якому загубиться зворотна скісна риска, заборонено** в Bash Claude Code: з рискою під
+  нелапкованим роздільником і з подвоєною рискою навіть під лапкованим (виміряно: вона може прийти одинарною).
+  Лапкований heredoc (`<<'EOF'`) з одинарними рисками приходить як написано і виконується. Для Antigravity
+  заборонено будь-яку риску в heredoc: там на шляху ще один шар лапок. Скрипт пишіть інструментом Write і
+  запускайте файл; допис на дошку — `post_message({messageFile: "<шлях>"})`.
 * У проєкті без `.agents/` агент **пропонує навести лад** за скілом agent-workflow — один раз.
   Скажете «ні» — він лишить у проєкті `.no-agent-workflow`, і більше ніхто не питатиме.
 

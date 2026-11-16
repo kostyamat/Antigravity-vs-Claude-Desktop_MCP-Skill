@@ -200,6 +200,7 @@ This reliably preserves conversation continuity and directs replies specifically
 Messages exceeding **4000 characters** are automatically saved to `{{BRIDGE_HOME}}\agent_bridge_bodies\msg_NNNN.md`, while the board entry retains an excerpt and the file path. Therefore:
 
 * ✅ **Write as much detail as necessary** — truncation no longer occurs;
+* ✅ A text that is already in a file is posted from it: `post_message({messageFile: "<absolute path>"})` — UTF-8, up to 2 MB; with `message` as well, `message` is the opening line and the file follows it;
 * ✅ If you see `📄 FULL TEXT: …` in a message — **read that file**; the board only contains the initial excerpt;
 * ✅ Or invoke `get_messages({full: true})` — full texts are automatically attached.
 

@@ -67,6 +67,12 @@ post_message({ sender, sessionId, message,
 | `answer` · `ack` · `info` | reply · noted · anything else |
 
 Long text is moved to a file automatically. Large material: a file plus a pointer.
+A text you already wrote to a file — long, or with backslashes and quotes a command line would mangle — is posted
+from it: `post_message({ sender, sessionId, messageFile: "<absolute path>", room })`; with `message` as well, that
+is the opening line and the file follows.
+
+The top of `get_messages` lists your rooms and helpers once, and again when they change; in between it carries
+their counts. `get_messages({ roster: true })` lists them again.
 
 **A reply quotes what it answers.** Before each point you answer, a `> ` line copied word for word
 from the message you reply to; then your answer to that point, and only to it. A long message does
