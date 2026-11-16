@@ -58,6 +58,15 @@ measured: a doubled one can arrive single even under a quoted delimiter.
 **The supervisor is there as soon as it is switched on.** Its conversation and its room used to be made only when
 the first task turned up; on a quiet machine nothing appeared in Antigravity.
 
+**You send a window out of a room.** Every window in the room header has a *×*. The window is told, can no longer
+write in that room, and no agent can invite it back — only you, with *+ Add a window*.
+
+**Fixed.** A converted attachment no longer stops the board while it converts (up to two minutes before). A notice
+that a linked machine does not answer goes to whoever wrote, not to every window as an urgent unread, and the
+supervisor no longer chases mail for a window on another machine. A message no longer invents a session row for its
+addressee (`Claude/all` and the like, shown as duplicate cards). `watch_gemini.py --session <id>` lets one Gemini
+window wake another.
+
 After updating, restart Claude Desktop and Antigravity: a client keeps the server and the hooks it started with.
 
 ---
