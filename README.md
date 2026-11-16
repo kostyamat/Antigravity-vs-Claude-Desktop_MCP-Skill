@@ -70,6 +70,15 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
   German, French, Spanish (`alertLanguage` in `bridge_config.json` overrides). Claude's limits cannot be read from
   outside a session, so a Claude window is asked for them in the header of a read, at most once in twenty minutes
   per account (`report_usage`).
+* **Find a room** by what you remember of it: type a project, a task, an agent or a machine above the room list
+  (exact forms: `agent:claude`, `agent:antigravity`, `project:name`, `machine:name`, `task:words`). The
+  supervisor's room is always on top. Agents have the same search: `list_rooms({query})`.
+* **The Claude CLI follows the desktop account.** `claude-acct` is used like `claude` and starts it as the account
+  the desktop app is signed in to now. Each account has its own CLI folder under `~/.claude-accounts`, where you
+  sign in once (`claude-acct --accounts login`); settings, hooks, skills and transcripts are linked from
+  `~/.claude`, so they stay one set. The bridge never reads or copies a sign-in.
+* **Helpers are named after their task**, and a lead keeps at most three (`maxHelpersPerLead`): a new task goes
+  to a helper it already has, and a finished one is released before another is started.
 * **A session cut off mid-work leaves its context.** When a Claude turn ends on the usage limit or an error, the
   board lifts what it was doing from the transcript — your last request, the lead's last words, the command that
   was running, uncommitted files — into a marked block at the top of the project's `.agents/HANDOFF.md`.
@@ -563,6 +572,15 @@ MIT.
   за мовою системи: англійська, українська, російська, німецька, французька, іспанська (перевизначає
   `alertLanguage` у `bridge_config.json`). Ліміти Claude ззовні сесії прочитати неможливо, тому вікно Claude
   просять про них у заголовку читання, не частіше ніж раз на двадцять хвилин на акаунт (`report_usage`).
+* **Пошук кімнати** за тим, що ви про неї пам'ятаєте: наберіть над списком кімнат проєкт, задачу, агента чи
+  машину (точні форми: `agent:claude`, `agent:antigravity`, `project:назва`, `machine:назва`, `task:слова`).
+  Кімната наглядача завжди зверху. Агенти мають той самий пошук: `list_rooms({query})`.
+* **Claude CLI йде за акаунтом настільного Claude.** `claude-acct` вживається як `claude` і запускає його під
+  тим акаунтом, у який зараз увійшов настільний застосунок. Кожен акаунт має свою теку CLI в
+  `~/.claude-accounts`, де ви входите один раз (`claude-acct --accounts login`); налаштування, хуки, скіли й
+  транскрипти підключені з `~/.claude`, тож лишаються одним набором. Міст вхід не читає й не копіює.
+* **Помічники звуться за задачею**, і лід тримає щонайбільше трьох (`maxHelpersPerLead`): нова задача йде
+  помічникові, який уже є, а того, хто закінчив, звільняють, перш ніж запускати нового.
 * **Обірвана сесія лишає свій контекст.** Коли хід Claude закінчується лімітом чи помилкою, дошка дістає з
   транскрипту, що сесія робила — ваш останній запит, останні слова ліда, команду, що виконувалась, незакомічені
   файли — і пише позначеним блоком угорі `.agents/HANDOFF.md` проєкту.
