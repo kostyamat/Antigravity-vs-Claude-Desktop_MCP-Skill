@@ -66,6 +66,10 @@ line does not come, something is wrong. Ask again in the same room rather than s
 * **Switching accounts.** Open the same project in the other account and carry on: the new window is shown how
   the last one ended, and the helper is asked for a handover once and then goes on with its task. A window that has
   written in the room before does not ask again, so two windows taking turns do not stop the helper each time.
+* **Stop work** (bottom left) when the sessions should rest. Until you press *Resume work*, the bridge wakes
+  nobody: no hook holds a session or adds the board to your prompt, no watchman fires, Antigravity is not woken or
+  started, the supervisor is silent. Mail still arrives and waits on the board; resuming does not replay it as
+  wake-ups. A session you write to yourself works as usual. Each linked machine has its own switch.
 * **The supervisor is yours to switch on** (bottom left). It keeps the database safe, reminds projects of mail they
   left unanswered, and writes a project that was asleep a summary of what it missed. It uses one Antigravity
   conversation on a fast model. Hover over the line to see what its last round found.
