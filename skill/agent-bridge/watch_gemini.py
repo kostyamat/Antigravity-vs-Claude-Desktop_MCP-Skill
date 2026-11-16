@@ -37,7 +37,7 @@ def get_messages_since(last_id):
     try:
         cur = con.cursor()
         cur.execute("""
-            SELECT id, from_agent, to_agent, priority, message
+            SELECT id, from_agent, from_session, to_agent, to_session, priority, message
             FROM messages
             WHERE id > ?
             ORDER BY id ASC
@@ -75,7 +75,33 @@ def parent_alive(pid):
         kernel32.CloseHandle(handle)
 
 
+def is_wake(row, me):
+    """Should this message wake the Gemini window `me`?
+
+    Its own posts never do. With the window known, that is decided by the session, so a
+    message from another Gemini window wakes it (DEBT: the name filter meant one Gemini
+    could never wake another). Without it, the old guess by name is all there is.
+    """
+    _i, who, from_session, to_agent, to_session, _pri, _body = row
+    to = (to_agent or "all").lower()
+    if to not in ("gemini", "all"):
+        return False
+    if me:
+        if (from_session or "").strip().lower() == me.lower():
+            return False
+        target = (to_session or "").strip().lower()
+        return target in ("", "all", me.lower())
+    return not (who or "").lower().startswith("gemini")
+
+
 def main():
+    me = ""
+    for k, a in enumerate(sys.argv[1:]):
+        if a == "--session" and k + 2 < len(sys.argv):
+            me = sys.argv[k + 2].strip()
+        elif a.startswith("--session="):
+            me = a.split("=", 1)[1].strip()
+    me = me or os.environ.get("BRIDGE_SESSION", "").strip()
     try:
         last = get_max_id()
     except Exception:
@@ -90,12 +116,9 @@ def main():
             if top > last:
                 rows = get_messages_since(last)
                 for r in rows:
-                    i, who, to_agent, pri, body = r
+                    i, who, _fs, to_agent, _ts, pri, body = r
                     who = who or "?"
-                    if who.lower().startswith("gemini"):
-                        continue
-                    to = (to_agent or "all").lower()
-                    if to in ("gemini", "all"):
+                    if is_wake(r, me):
                         clean_body = (body or "").replace("\n", " ")[:200]
                         print(f"🔔 [BRIDGE_WAKEUP] #{i} vid {who} -> {to_agent}: {clean_body}", flush=True)
                         return 0
