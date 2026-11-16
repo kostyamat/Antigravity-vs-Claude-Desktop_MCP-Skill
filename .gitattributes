@@ -14,6 +14,8 @@
 *.png  binary
 *.jpg  binary
 *.db   binary
+*.exe  binary
+bin/quota-alert binary
 
 # The README screenshot belongs to the GitHub page, not to the package the
 # installer unpacks. git archive builds the release asset, so keep it out.

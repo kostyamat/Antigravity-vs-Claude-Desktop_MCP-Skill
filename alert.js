@@ -58,7 +58,10 @@ function when(iso) {
 function binary() {
   const name = process.platform === 'win32' ? 'quota-alert.exe' : 'quota-alert';
   const file = path.join(HOME, 'bin', name);
-  return fs.existsSync(file) ? file : '';
+  if (!fs.existsSync(file)) return '';
+  // A package unpacked by a tool that drops file modes leaves the Linux program not executable.
+  if (process.platform !== 'win32') { try { fs.chmodSync(file, 0o755); } catch (_) {} }
+  return file;
 }
 
 // Put the window on the screen. `head` is the red line, `lines` the text under it.
