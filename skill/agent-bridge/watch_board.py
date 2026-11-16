@@ -28,7 +28,7 @@ def _bridge_home():
 
 
 DB_PATH = os.path.join(_bridge_home(), "agent_bridge.db")
-POLL_SEC = 10
+POLL_SEC = float(os.environ.get("BRIDGE_WATCH_POLL", 10))
 # While the session is unknown the watchman keeps looking for it. Identity used
 # to be decided once, at startup — the exact moment a new session is least
 # likely to be in the registry, because the registry is filled from board
@@ -177,6 +177,7 @@ def main():
     # this window belongs to resolves from the first poll, before the agent has
     # made a single bridge call to register its label against the window.
     parser.add_argument("--window", default=os.environ.get("BRIDGE_WINDOW", ""), help="Client window id")
+    parser.add_argument("--poll", type=float, default=POLL_SEC, help="Poll interval in seconds")
     args, _ = parser.parse_known_args()
 
     my_session = args.session.strip()
@@ -259,7 +260,7 @@ def main():
             elif misses:
                 print("watchman alive, but the board has been unreadable for %d attempts"
                       % misses, flush=True)
-        time.sleep(POLL_SEC)
+        time.sleep(args.poll)
 
 
 if __name__ == "__main__":
