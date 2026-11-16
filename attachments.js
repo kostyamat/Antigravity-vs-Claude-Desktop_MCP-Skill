@@ -15,7 +15,18 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { execFile } = require('child_process');
+
+// Never spawnSync here: the board is one process, and a conversion that took two minutes
+// left every agent and the owner without a board for those two minutes (DEBT, 16.11).
+function run(cmd, args, opts) {
+  return new Promise(resolve => {
+    try {
+      execFile(cmd, args, Object.assign({ encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, opts),
+        (err, stdout) => resolve({ status: err ? (typeof err.code === 'number' ? err.code : -1) : 0, stdout: String(stdout || '') }));
+    } catch (e) { resolve({ status: -1, stdout: '' }); }
+  });
+}
 
 const IMAGE_EXT = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
 const MAX_BYTES = 40 * 1024 * 1024;
@@ -25,10 +36,10 @@ function slug(s, fallback) {
   return out || fallback;
 }
 
-function python() {
+async function python() {
   for (const cmd of [process.env.AGENT_BRIDGE_PYTHON, 'python', 'python3', 'py'].filter(Boolean)) {
     try {
-      const r = spawnSync(cmd, ['-c', 'import sys; print(sys.version_info[0])'], { encoding: 'utf8', windowsHide: true, timeout: 8000 });
+      const r = await run(cmd, ['-c', 'import sys; print(sys.version_info[0])'], { timeout: 8000 });
       if (r.status === 0 && String(r.stdout).trim() === '3') return cmd;
     } catch (_) {}
   }
@@ -41,7 +52,8 @@ function createAttachments(bridgeDb, home) {
   let py = null;
 
   // → { ok, filename, file, url, image, text, chars, kind, note, needsDescription }
-  function store({ filename, data, room, from }) {
+  // Async: the caller awaits it, the board keeps answering everybody else meanwhile.
+  async function store({ filename, data, room, from }) {
     const buf = Buffer.from(String(data || '').replace(/^data:[^;]*;base64,/, ''), 'base64');
     if (!buf.length) return { error: 'The file is empty.' };
     if (buf.length > MAX_BYTES) return { error: `The file is larger than ${MAX_BYTES / 1048576} MB.` };
@@ -52,19 +64,19 @@ function createAttachments(bridgeDb, home) {
     const base = slug(path.basename(original, path.extname(original)), 'file');
     const safeName = `att_${Date.now()}_${base}${ext}`;
     const saved = path.join(dir, safeName);
-    fs.writeFileSync(saved, buf);
+    await fs.promises.writeFile(saved, buf);
     const out = { ok: true, filename: safeName, file: saved, url: '/api/attachment/' + safeName,
                   image: IMAGE_EXT.includes(ext), name: original };
 
     // The text of it, for agents.
-    if (py === null) py = python();
+    if (py === null) py = await python();
     if (!py) return Object.assign(out, { note: 'Python 3 was not found, so the file is attached as it is, without a text copy.' });
     fs.mkdirSync(textDir, { recursive: true });
     const md = path.join(textDir, safeName.replace(/\.[^.]+$/, '') + '.md');
     let res = {};
     try {
-      const r = spawnSync(py, [path.join(home, 'doc-convert.py'), saved, md, original],
-        { encoding: 'utf8', windowsHide: true, timeout: 120000, env: Object.assign({}, process.env, { PYTHONIOENCODING: 'utf-8' }) });
+      const r = await run(py, [path.join(home, 'doc-convert.py'), saved, md, original],
+        { timeout: 120000, env: Object.assign({}, process.env, { PYTHONIOENCODING: 'utf-8' }) });
       res = JSON.parse(String(r.stdout || '').trim().split('\n').pop() || '{}');
     } catch (e) { res = { ok: false, note: e.message }; }
     if (!res.ok || !fs.existsSync(md)) return Object.assign(out, { note: res.note || 'The file could not be converted to text.' });

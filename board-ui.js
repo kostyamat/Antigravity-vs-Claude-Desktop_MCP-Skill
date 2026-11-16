@@ -741,11 +741,11 @@ const server = http.createServer((req, res) => {
     const parts = [];
     let size = 0;
     req.on('data', c => { parts.push(c); size += c.length; if (size > 60e6) req.destroy(); });
-    req.on('end', () => {
+    req.on('end', async () => {
       let out;
       try {
         const { filename, data, room, from } = JSON.parse(Buffer.concat(parts).toString('utf8') || '{}');
-        out = data ? attachments.store({ filename, data, room, from: from || ownerName() }) : { error: 'Data is required' };
+        out = data ? await attachments.store({ filename, data, room, from: from || ownerName() }) : { error: 'Data is required' };
         if (out.ok) out.line = attachments.line(out);
       } catch (e) { out = { error: e.message }; }
       send(res, out.error ? 400 : 200, 'application/json; charset=utf-8', JSON.stringify(out));
