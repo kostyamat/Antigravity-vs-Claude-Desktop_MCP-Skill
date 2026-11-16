@@ -813,6 +813,25 @@ function createShortcut(specialFolder, linkName, targetVbs, description) {
   }
 }
 
+// The command `claude-acct`: the Claude CLI started as the account the desktop app is
+// signed in to (claude-accounts.js). Put beside `claude` itself, where the PATH already
+// looks; on a machine where the CLI is not installed there, nothing is written.
+try {
+  const bin = path.join(USER_PROFILE, '.local', 'bin');
+  if (fs.existsSync(path.join(bin, process.platform === 'win32' ? 'claude.exe' : 'claude'))) {
+    const js = path.join(SCRIPTS_DIR, 'claude-accounts.js');
+    if (process.platform === 'win32') {
+      fs.writeFileSync(path.join(bin, 'claude-acct.cmd'), `@echo off\r\n"${process.execPath}" "${js}" %*\r\n`);
+    }
+    fs.writeFileSync(path.join(bin, 'claude-acct'), `#!/bin/sh\nexec node "${js.split(path.sep).join('/')}" "$@"\n`, { mode: 0o755 });
+    console.log('  ✅ Command claude-acct installed beside claude: the CLI as the account the desktop app uses now.');
+    console.log('     Once per account: claude-acct --accounts login');
+  }
+} catch (e) {
+  warnCount++;
+  console.warn(`  ⚠️ claude-acct was not installed (${e.message}).`);
+}
+
 // 6. Create Desktop shortcut
 console.log('');
 console.log('[6/8] Creating Desktop shortcut...');

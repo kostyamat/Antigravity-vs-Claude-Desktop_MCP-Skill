@@ -162,6 +162,9 @@ function linesFor(agent, session, window, account) {
       'They are frozen per account and nothing needs them any more: use the plain skill name (the disk copy). ' +
       'Remind the owner to delete them in Settings → Capabilities → Skills.');
   }
+  // The CLI's directory for this account is brought up to date (claude-accounts.js); one
+  // line when the owner still has to sign the CLI in for it.
+  try { const cli = require('./claude-accounts').briefLine(); if (cli) lines.push(cli); } catch (_) {}
   // A lead in a new window asks its helper for a handover (handover.js), once per window.
   try {
     const { wakeAntigravity } = require('./wake-antigravity');
