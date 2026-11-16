@@ -220,7 +220,7 @@ function roomFor(bridgeDb, machine, card, agent) {
     room = bridgeDb.createRoom(name, [{ card, agent: agent || '' }, { card: marker, agent: '' }], '');
     try { bridgeDb.getDb().prepare('DELETE FROM room_members WHERE room = ? AND card = ?').run(room.id, marker); } catch (_) {}
   } else if (card && !(room.members || []).some(m => m.card === card)) {
-    bridgeDb.addRoomMember(room.id, card, agent || '');
+    try { bridgeDb.addRoomMember(room.id, card, agent || ''); } catch (_) { /* sent out by the owner */ }
   }
   return room.id;
 }
@@ -314,7 +314,9 @@ function notice(deps, m, text) {
   const human = /^human/i.test(String(m.fromSession || ''));
   const rec = bridgeDb.addMessage({
     ts: new Date().toISOString(), from: 'Board', fromSession: 'board/peer-link',
-    to: human ? 'all' : m.from, toSession: human ? '' : (m.fromSession || ''), room: m.room || '',
+    // To the sender only. Sent to the owner as 'all' with no window, it landed as an urgent
+    // unread in every window on this machine (16.11, #4602).
+    to: human ? 'all' : m.from, toSession: human ? 'human/web' : (m.fromSession || ''), room: m.room || '',
     replyTo: m.id, topic: m.topic || 'machines', priority: 'normal', status: 'blocked', progress: '',
     message: text, file: null, readBy: []
   });

@@ -33,6 +33,7 @@ const { projectName } = require('./project-line');
 const { STALE_HOURS } = require('./stands');
 const { createGuard } = require('./db-guard');
 const ownerWaiting = require('./owner-waiting');
+const peerLink = require('./peer-link');
 const quota = require('./antigravity-quota');
 const claudeQuota = require('./claude-quota');
 const alert = require('./alert');
@@ -228,6 +229,9 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
     for (const [id, r] of Object.entries(rc)) {
       if (r.first || r.waitingMin < ACK_AFTER_MIN || r.waitingMin > ACK_UNTIL_MIN || handled['ack:' + id]) continue;
       if (!r.asked && !r.toSession) continue;          // said to a room at large: nobody in particular to chase
+      // A window on another machine is chased by that machine's own supervisor once the
+      // message arrives; chased from here, the reminder only waits in the outbox (16.11, #4600).
+      if (peerLink.parseAddress(r.toSession)) { handled['ack:' + id] = 1; continue; }
       say({ to: r.asked || 'all', toSession: r.toSession, room: r.room, replyTo: Number(id), status: 'question',
         text: `Supervisor: the owner has had no reply to #${id} for ${r.waitingMin} min (` +
           (r.read ? 'it was read' : 'it has not been read') + '). ' + ownerWaiting.RULE });
