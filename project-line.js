@@ -40,19 +40,65 @@ function isProjectKey(s) {
   return /^([a-z]:)?\/.+/.test(String(s || '')) || /^[a-z]:\/.+/.test(String(s || ''));
 }
 
-// The line this window answers to: the one it is already on, else the line of
-// its folder, joined now. '' when it has neither.
+// The line this window answers to: the line of its folder, joined now. '' when
+// it has neither a line nor a folder.
+//
+// The folder decides, not whatever line the window was found on. A window opened
+// in one project once sat on the line of another (16.11.2026: the repair project's
+// window on the line of the firmware project): the two leads became one
+// participant, each was shown the other's helpers as its own, and a change of
+// window in one asked the other's eleven helpers for a handover. So a window found
+// on the line of a folder that is not its own is moved to its own. A line somebody
+// named by hand (not a folder) is kept: it joins projects on purpose.
 function ensureLine(bridgeDb, windowId, folder, agent) {
   const w = String(windowId || '').trim();
   if (!w) return '';
   try {
     const have = bridgeDb.lineOf(w);
-    if (have) return have;
     const key = projectKey(folder);
+    if (have && (!key || have === key || !isProjectKey(have))) return have;
     if (!key) return '';
     bridgeDb.linkSessions(key, [w], agent || 'Claude');
     return key;
   } catch (_) { return ''; }
+}
+
+// A helper is not its lead. Put on its lead's line (done by hand on 16.11.2026 to
+// part two mixed projects), a helper answers to the lead's address: it is shown
+// every other helper's task as its own mail, and the board can no longer tell the
+// two apart. Such a member leaves the line; the pair on record is what ties it to
+// its lead. `dry` reports without changing anything.
+function unseatHelpers(bridgeDb, opts) {
+  const done = [];
+  for (const h of bridgeDb.readHelpers()) {
+    const line = bridgeDb.lineOf(h.helper);
+    if (!line || line !== h.lead) continue;
+    if (!(opts && opts.dry)) bridgeDb.unlinkSessions(line, [h.helper]);
+    done.push({ helper: h.helper, line });
+  }
+  return done;
+}
+
+// Why a member may not be put on a line by hand, or ''. Both cases were made by
+// hand once and each cost a night: see ensureLine and unseatHelpers.
+function linkRefusal(bridgeDb, cardsLib, line, member) {
+  const l = String(line || '').trim(), m = String(member || '').trim();
+  try {
+    const pair = bridgeDb.readHelpers().find(h => h.helper === m);
+    if (pair && pair.lead === l) {
+      return `"${m}" is the helper of this line: a helper is tied to its lead by the pair on record (set_helper), ` +
+        'and on the lead\'s line it would read every other helper\'s mail as its own';
+    }
+    if (/^local_/.test(m) && isProjectKey(l)) {
+      const c = cardsLib.claudeWindowOfCli(m);
+      const key = c ? projectKey(c.project) : '';
+      if (key && key !== l) {
+        return `window ${m} is opened in ${key}, and a window belongs to the line of its own folder: on the line of ` +
+          'another project the two would become one participant with one set of helpers';
+      }
+    }
+  } catch (_) {}
+  return '';
 }
 
 // Every Claude window of every account joins the line of its folder. Run by the
@@ -60,9 +106,10 @@ function ensureLine(bridgeDb, windowId, folder, agent) {
 function adoptAll(bridgeDb, cardsLib) {
   const done = [];
   for (const c of cardsLib.claudeCardsEverywhere()) {
-    if (c.archived || bridgeDb.lineOf(c.id)) continue;
+    if (c.archived) continue;
+    const was = bridgeDb.lineOf(c.id);
     const line = ensureLine(bridgeDb, c.id, c.project, 'Claude');
-    if (line) done.push({ window: c.id, name: c.name, line });
+    if (line && line !== was) done.push({ window: c.id, name: c.name, line, from: was });
   }
   return done;
 }
@@ -176,7 +223,8 @@ function adoptRunIds(bridgeDb, cardsLib) {
   return done;
 }
 
-module.exports = { projectKey, projectName, isProjectKey, ensureLine, adoptAll, adoptRunIds, foldNamedLines, leadsToProjects, dropArchived };
+module.exports = { projectKey, projectName, isProjectKey, ensureLine, unseatHelpers, linkRefusal, adoptAll, adoptRunIds,
+                   foldNamedLines, leadsToProjects, dropArchived };
 
 // node project-line.js --adopt  → repair the board once, print what was changed
 if (require.main === module && process.argv.includes('--adopt')) {

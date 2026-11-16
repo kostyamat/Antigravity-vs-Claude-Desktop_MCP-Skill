@@ -21,7 +21,10 @@ const claudeHome = require('./claude-home');
 function createBrief(bridgeDb, cardsLib, router, rules, stands) {
 
   // myWindow: every id this window answers to. win: its window id, when known.
-  function describe({ myWindow, win, board, full }) {
+  // `short` is for a window that has already been shown its rooms and helpers and
+  // for which nothing changed: the lists become counts. What it must act on — an
+  // invitation, whose helper it is, a leave, a taken stand — is never shortened.
+  function describe({ myWindow, win, board, full, short }) {
     const out = [];
     const me = win || [...myWindow].find(x => /^local_/.test(x)) || [...myWindow][0] || '';
 
@@ -40,6 +43,19 @@ function createBrief(bridgeDb, cardsLib, router, rules, stands) {
       out.push('📨 Invited, not joined yet: ' + invited.map(r => `"${r.name}" [${r.id}] (#${r.message})`).join(', ') +
         ' — join now: get_messages({room: "<id>", only: "all"}), list_docs({room: "<id>"}), then answer in the room.');
     }
+    const people = rules.describeHelpers(me);
+    const helpers = people.filter(l => l.startsWith('🧑‍🔧'));
+    if (short && !full && (rooms.length > 1 || helpers.length > 1)) {
+      const counts = [];
+      if (rooms.length > 1) counts.push(`🚪 ${rooms.length} rooms`);
+      if (helpers.length > 1) counts.push(`🧑‍🔧 ${helpers.length} helpers`);
+      out.push(counts.join(' · ') + ' — unchanged since they were listed to you' +
+        (rooms.length > 1 ? '; every post names its room' : '') + '. The lists again: get_messages({roster: true}).');
+      if (rooms.length === 1) out.push(`🚪 Your room: "${rooms[0].name}" [${rooms[0].id}]. Your posts go there.`);
+      out.push(...people.filter(l => helpers.length > 1 ? !l.startsWith('🧑‍🔧') : true));
+      out.push(...stands.describe(me));
+      return out;
+    }
     if (rooms.length) {
       const mine = new Set(bridgeDb.cluster(me));
       const withWhom = r => {
@@ -55,10 +71,10 @@ function createBrief(bridgeDb, cardsLib, router, rules, stands) {
       out.push('🚪 You are in no room. To talk to another window, open one: create_room({name, cards: [you, it]}).');
     }
 
-    out.push(...rules.describeHelpers(me));
+    out.push(...people);
     // A Claude project with no helper asks the owner for one when real work starts
     // (agent-workflow, "Working with a helper agent"); the board only reminds it how.
-    if (full && me && router.agentOf(me) === 'Claude' && !router.leadOf(me) && !rules.describeHelpers(me).length) {
+    if (full && me && router.agentOf(me) === 'Claude' && !router.leadOf(me) && !people.length) {
       out.push('🧑‍🔧 This project has no helper. When real work starts, ask the owner whether to start one. ' +
         'Yes: set_helper({start: true, brief: "<the project, its state, the first task, what not to touch>"}) — ' +
         'you start it, brief it and pair it yourself. No: work alone. A window he names: set_helper({helper: "<its id>"}).');
@@ -67,7 +83,30 @@ function createBrief(bridgeDb, cardsLib, router, rules, stands) {
     return out;
   }
 
-  return { describe };
+  // The top of a read. The rooms and the helpers were repeated in full on every
+  // get_messages: for a lead with seven rooms and thirteen helpers that is twenty
+  // lines of context spent on each read, to say what it was told a minute ago
+  // (16.11.2026, #4549). So the lists are shown when the window is first seen by
+  // this server, whenever they change, when it asks (`roster`), and again after
+  // REFRESH_HOURS for a conversation whose context was compacted in between — an
+  // Antigravity window has no session-start hook to tell it again. In between it
+  // gets the counts.
+  const REFRESH_HOURS = 6;
+  const listed = new Map();                        // window → { print, at }
+  function describeForRead({ myWindow, win, board, roster }) {
+    const lines = describe({ myWindow, win, board, full: false });
+    const key = win || [...myWindow][0] || '';
+    const print = lines.filter(l => /^(🚪|🧑‍🔧)/.test(l)).join('\n');
+    const prev = listed.get(key);
+    const fresh = prev && prev.print === print && Date.now() - prev.at < REFRESH_HOURS * 3600e3;
+    if (roster || !key || !fresh) {
+      if (key) listed.set(key, { print, at: Date.now() });
+      return lines;
+    }
+    return describe({ myWindow, win, board, full: false, short: true });
+  }
+
+  return { describe, describeForRead };
 }
 
 // Skills the owner uploaded to this account that are also installed on disk —

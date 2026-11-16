@@ -436,6 +436,11 @@ try {
   try { ensureFirewallRule(); } catch (_) {}
   // The lead of a pair is its project, never one window of it.
   try { projectLine.leadsToProjects(bridgeDb); } catch (_) {}
+  // A helper is tied to its lead by the pair, not by sitting on the lead's line.
+  try {
+    const off = projectLine.unseatHelpers(bridgeDb);
+    if (off.length) console.log(`  ✅ ${off.length} helper(s) taken off their lead's line: a helper is not its lead.`);
+  } catch (_) {}
   // A window the owner archived is not on the board.
   try { projectLine.dropArchived(bridgeDb, cardsLib); } catch (_) {}
   for (const [line, n] of by) console.log(`  ✅ Project "${projectLine.projectName(line) || line}": ${n} window(s) are now one participant.`);

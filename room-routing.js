@@ -94,10 +94,15 @@ function createRouter(bridgeDb, cardsLib) {
   // The stable address of a participant: the line its window is on (the project),
   // else the window itself. A Claude window joins the line of its folder here,
   // the first time the board hears of it.
+  // Its folder is asked every time, not only for a window with no line: a window
+  // found on another project's line is moved to its own (project-line.js). Once
+  // in a while per window is enough — this is called in every loop over helpers.
+  const lineChecked = new Map();
   const addressOf = label => {
     const w = windowOf(label);
     if (!w || isHuman(w)) return w;
-    if (/^local_/.test(w) && !bridgeDb.lineOf(w)) {
+    if (/^local_/.test(w) && !(Date.now() - (lineChecked.get(w) || 0) < 15000)) {
+      lineChecked.set(w, Date.now());
       const c = cardOf(w);
       if (c && c.project) ensureLine(bridgeDb, w, c.project, 'Claude');
     }

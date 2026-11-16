@@ -112,4 +112,41 @@ assert.strictEqual(b.helpers[2].lead, 'c:/work/other', 'a lead that is already a
   assert.strictEqual(pl.dropArchived(db, cards).length, 0, 'a second run finds nothing');
 }
 
+// A window belongs to the line of its own folder; a helper is not on its lead's line.
+{
+  const lines = new Map([
+    ['c:/work/app', ['local_a1', 'local_guest', 'gem-1']],     // local_guest is opened in c:/work/other
+    ['By Hand', ['local_h1']]                                  // a named line is somebody's decision
+  ]);
+  const helpers = [{ helper: 'gem-1', lead: 'c:/work/app' }, { helper: 'gem-9', lead: 'c:/work/other' }];
+  const db = {
+    lineOf: m => { for (const [l, ms] of lines) if (ms.includes(m)) return l; return ''; },
+    linkSessions: (line, members) => {
+      for (const ms of lines.values()) for (const m of members) { const i = ms.indexOf(m); if (i >= 0) ms.splice(i, 1); }
+      lines.set(line, (lines.get(line) || []).concat(members));
+    },
+    unlinkSessions: (line, members) => { lines.set(line, lines.get(line).filter(m => !members.includes(m))); },
+    readHelpers: () => helpers
+  };
+  const cards = { claudeWindowOfCli: id => ({ local_a1: { project: 'C:\\Work\\App' }, local_guest: { project: 'C:\\Work\\Other' } })[id] || null };
+
+  assert.strictEqual(pl.ensureLine(db, 'local_a1', 'C:\\Work\\App'), 'c:/work/app', 'its own line: stays');
+  assert.strictEqual(pl.ensureLine(db, 'local_guest', 'C:\\Work\\Other'), 'c:/work/other', 'another project\'s line: moved to its own');
+  assert.deepStrictEqual(lines.get('c:/work/other'), ['local_guest']);
+  assert.strictEqual(pl.ensureLine(db, 'local_h1', 'C:\\Work\\App'), 'By Hand', 'a line named by hand is kept');
+  assert.strictEqual(pl.ensureLine(db, 'local_a1', ''), 'c:/work/app', 'no folder known: nothing changes');
+
+  assert.deepStrictEqual(pl.unseatHelpers(db, { dry: true }), [{ helper: 'gem-1', line: 'c:/work/app' }]);
+  assert.ok(lines.get('c:/work/app').includes('gem-1'), 'a dry run moves nothing');
+  pl.unseatHelpers(db);
+  assert.deepStrictEqual(lines.get('c:/work/app'), ['local_a1'], 'the helper left its lead\'s line');
+  assert.strictEqual(pl.unseatHelpers(db).length, 0);
+
+  assert.match(pl.linkRefusal(db, cards, 'c:/work/app', 'gem-1'), /helper of this line/);
+  assert.match(pl.linkRefusal(db, cards, 'c:/work/app', 'local_guest'), /line of its own folder/);
+  assert.strictEqual(pl.linkRefusal(db, cards, 'c:/work/app', 'local_a1'), '');
+  assert.strictEqual(pl.linkRefusal(db, cards, 'By Hand', 'local_guest'), '', 'a named line may join projects');
+  assert.strictEqual(pl.linkRefusal(db, cards, 'c:/work/app', 'gem-9'), '', 'another lead\'s helper is not this rule\'s business');
+}
+
 console.log('project-line: all checks passed');

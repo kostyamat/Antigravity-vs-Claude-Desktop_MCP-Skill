@@ -72,13 +72,18 @@ try {
   // ── the helper's handover ──
   const msgs = [{ id: 1, room: 'pair', fromSession: 'local_old', ts: new Date().toISOString(), topic: '' }];
   const bridgeDb = {
-    readHelpers: () => [{ helper: 'gem-1', lead: 'c:/work/myapp', room: 'pair' }],
+    readHelpers: () => [{ helper: 'gem-1', lead: 'c:/work/myapp', room: 'pair' },
+                        { helper: 'gem-2', lead: 'c:/work/other', room: 'pair2' }],
     readAllMessages: () => msgs,
-    cluster: c => (c === 'c:/work/myapp' ? ['c:/work/myapp', 'local_old', 'local_new'] : [c])
+    cluster: c => (c === 'c:/work/myapp' ? ['c:/work/myapp', 'local_old', 'local_new', 'local_guest'] : [c])
   };
+  // local_guest is opened in another project's folder and sits on this line by mistake.
+  const folders = { local_old: 'C:\\work\\MyApp', local_new: 'C:\\work\\MyApp', local_guest: 'C:\\work\\Other' };
   const router = {
     agentOf: () => 'Claude',
     same: (a, b) => bridgeDb.cluster(a).includes(b) || bridgeDb.cluster(b).includes(a),
+    addressOf: s => (folders[s] ? 'c:/work/myapp' : s),
+    cardOf: s => (folders[s] ? { project: folders[s] } : null),
     windowOf: s => s, nameOf: s => s
   };
   const posted = [];
@@ -105,7 +110,23 @@ try {
     assert.strictEqual(posted.length, before + 1);
     assert.strictEqual(posted[posted.length - 1].fromSession, 'local_old');
   });
+  t('a window of another project on this line asks nobody', () => {
+    const before = posted.length;
+    assert.deepStrictEqual(handover.askHelpers({ bridgeDb, router, win: 'local_guest', post }), []);
+    assert.strictEqual(posted.length, before);
+  });
+  t('another project\'s helper is never asked, and many helpers make one line', () => {
+    assert.ok(!posted.some(m => m.toSession === 'gem-2'));
+    const many = { readHelpers: () => [1, 2, 3, 4, 5, 6].map(i => ({ helper: 'g' + i, lead: 'c:/work/myapp', room: 'r' + i })),
+      readAllMessages: () => [1, 2, 3, 4, 5, 6].map(i => ({ id: i, room: 'r' + i, fromSession: 'local_old', ts: new Date().toISOString() })),
+      cluster: bridgeDb.cluster };
+    const got = [];
+    const l = handover.askHelpers({ bridgeDb: many, router, win: 'local_new', post: m => got.push(m) });
+    assert.strictEqual(got.length, 6);
+    assert.strictEqual(l.length, 1);
+    assert.match(l[0], /6 of your helpers were asked.*and 2 more/);
+  });
 } finally {
   fs.rmSync(home, { recursive: true, force: true });
 }
-console.log(n + '/7 passed');
+console.log(n + '/9 passed');

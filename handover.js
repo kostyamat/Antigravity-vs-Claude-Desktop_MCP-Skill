@@ -16,6 +16,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { projectKey, isProjectKey } = require('./project-line');
 
 const PROJECTS = path.join(process.env.USERPROFILE || os.homedir(), '.claude', 'projects');
 const TAIL_BYTES = 600 * 1024;
@@ -128,22 +129,35 @@ function briefLines(cwd, currentSession) {
 
 // Ask each helper of this lead for a handover, once per new window of the lead.
 // Returns the lines for the brief. `post` writes a board message and wakes the helper.
+//
+// Only its own helpers. The pair on record names the lead by its project, and the
+// window is asked which project it is — the folder it is opened in — instead of
+// being trusted to be whatever line it sits on: two projects mixed on one line
+// once had each lead ask the other's helpers, eleven of them, and those helpers
+// handed over to a lead that was not theirs (16.11.2026, #4494–#4512).
 function askHelpers({ bridgeDb, router, win, post, now }) {
   const out = [];
   if (!win || router.agentOf(win) !== 'Claude') return out;
+  const me = router.addressOf(win);
+  let folder = '';
+  try { const c = router.cardOf(win); folder = c ? projectKey(c.project) : ''; } catch (_) {}
+  if (folder && isProjectKey(me) && me !== folder) return out;      // on a line that is not its project: ask nobody
   let pairs = [];
-  try { pairs = bridgeDb.readHelpers().filter(h => router.same(h.lead, win)); } catch (_) { return out; }
+  try { pairs = bridgeDb.readHelpers().filter(h => h.lead === me || (!isProjectKey(h.lead) && router.same(h.lead, win))); } catch (_) { return out; }
   const t = now || Date.now();
+  const asked = [], waiting = [];
+  const all = pairs.length ? bridgeDb.readAllMessages() : [];
   for (const h of pairs) {
     if (!h.room) continue;
-    const inRoom = bridgeDb.readAllMessages().filter(m => m.room === h.room);
+    const inRoom = all.filter(m => m.room === h.room);
     const lead = new Set(bridgeDb.cluster(h.lead).concat(bridgeDb.cluster(win)).map(String));
     const lastLead = [...inRoom].reverse().find(m => lead.has(String(m.fromSession)) || router.same(m.fromSession, h.lead));
     if (!lastLead || String(lastLead.fromSession) === String(win)) continue;     // same window, nothing changed
     if (router.windowOf(lastLead.fromSession) === win) continue;
     if (t - new Date(lastLead.ts).getTime() > 3 * 86400e3) continue;            // old work: the slice is the source
+    const label = `"${router.nameOf(h.helper)}" [${h.room}]`;
     if (inRoom.some(m => m.topic === 'handover' && String(m.fromSession) === String(win) && m.id > lastLead.id)) {
-      out.push(`🤝 Handover from your helper "${router.nameOf(h.helper)}" was asked in room "${h.room}" — read it there.`);
+      waiting.push(label);
       continue;
     }
     post({
@@ -153,8 +167,16 @@ function askHelpers({ bridgeDb, router, win, post, now }) {
         '(files, commits, what is on the device), what is still open, and what the lead said it would do next. ' +
         'Facts only, short. Then wait for the lead.'
     });
-    out.push(`🤝 Your helper "${router.nameOf(h.helper)}" was asked for a handover in room "${h.room}" — read it before you go on.`);
+    asked.push(label);
   }
+  // One line however many helpers there are: thirteen of these, one per helper,
+  // stood at the top of a lead's brief.
+  const few = list => list.slice(0, 4).join(', ') + (list.length > 4 ? ` and ${list.length - 4} more` : '');
+  if (asked.length) {
+    out.push(`🤝 ${asked.length === 1 ? 'Your helper was' : asked.length + ' of your helpers were'} asked for a handover, ` +
+      `each in its room: ${few(asked)} — read the answers before you go on.`);
+  }
+  if (waiting.length) out.push(`🤝 Handover already asked of ${few(waiting)} — read it in ${waiting.length === 1 ? 'that room' : 'those rooms'}.`);
   return out;
 }
 

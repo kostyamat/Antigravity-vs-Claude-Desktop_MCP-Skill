@@ -185,9 +185,6 @@ function reasonFor(label) {
 // each time costing a failed run and a repair. The Write tool keeps every byte, so a
 // script with a backslash in it is written with Write and only run from Bash. A
 // heredoc without a backslash (a commit message) is let through.
-const HEREDOC_REASON = 'Blocked by the agent-bridge guard: this heredoc has a backslash in it, and a heredoc in ' +
-  'this shell does not keep backslashes (doubled ones arrive single, \\n inside a string becomes a line break). ' +
-  'Write the script or the text with the Write tool, then run the file from Bash.';
 const HEREDOC_REASON_ANTIGRAVITY = 'Blocked by the agent-bridge guard: this heredoc has a backslash in it, and a heredoc ' +
   'passed through the command line does not keep backslashes (doubled ones arrive single, \\n inside a string becomes ' +
   'a line break). Write the script or the text to a file with your file-writing tool, then run that file.';
@@ -196,6 +193,36 @@ function heredocWithBackslash(line) {
   if (!m) return false;
   return String(line).slice(m.index + m[0].length).includes('\\');
 }
+
+// Claude Code's Bash, measured on 16.11.2026 with od on what the shell received.
+// Under a quoted delimiter (<<'EOF') a single backslash arrives as written: \d+, \n,
+// \$, C:\Users, one at the end of a line. A doubled one does not: x\\y arrived as
+// x\y, while "\\" between quotes arrived whole — it depends on what stands next to
+// it, so no doubled backslash can be trusted. Under an unquoted delimiter the shell
+// itself rewrites backslashes on top of that. So the ban is on what is lost: an
+// unquoted heredoc with any backslash, a quoted one with a doubled backslash. A
+// quoted heredoc with single backslashes — a regex, a Windows path — used to be
+// refused too, each time for a round trip and for nothing (#4549).
+// Returns '' when the heredoc is safe, else which of the two it is.
+function heredocTrouble(line) {
+  const s = String(line || '');
+  const re = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/g;
+  let m, first = -1, unquoted = -1;
+  while ((m = re.exec(s))) {
+    if (first < 0) first = m.index + m[0].length;
+    if (!m[1] && unquoted < 0) unquoted = m.index + m[0].length;
+  }
+  if (first < 0) return '';
+  if (unquoted >= 0 && s.slice(unquoted).includes('\\')) return 'unquoted';
+  return s.slice(first).includes('\\\\') ? 'doubled' : '';
+}
+const HEREDOC_REASON_UNQUOTED = 'Blocked by the agent-bridge guard: this heredoc has a backslash under an unquoted ' +
+  'delimiter, where the shell rewrites backslashes. If none of them is doubled, quote the delimiter (<<\'EOF\') and ' +
+  'they arrive as written; otherwise write the text with the Write tool, then run or pass the file.';
+const HEREDOC_REASON_DOUBLED = 'Blocked by the agent-bridge guard: this heredoc has a doubled backslash, and in this ' +
+  'shell a doubled backslash can arrive single even under a quoted delimiter (measured: x\\\\y arrived as x\\y). ' +
+  'Write the script or the text with the Write tool, then run the file from Bash — for a board message, ' +
+  'post_message({messageFile: "<path>"}).';
 
 function main(input) {
   let p = {};
@@ -227,9 +254,10 @@ function main(input) {
     return JSON.stringify({ decision });
   }
   if (p.tool_input) {                                 // Claude Code
-    const mangled = p.tool_name === 'Bash' && heredocWithBackslash(p.tool_input.command || '');
+    const mangled = p.tool_name === 'Bash' ? heredocTrouble(p.tool_input.command || '') : '';
     if (mangled) return JSON.stringify({ hookSpecificOutput: {
-      hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: HEREDOC_REASON } });
+      hookEventName: 'PreToolUse', permissionDecision: 'deny',
+      permissionDecisionReason: mangled === 'doubled' ? HEREDOC_REASON_DOUBLED : HEREDOC_REASON_UNQUOTED } });
     const hit = judge(p.tool_input.command || '');
     if (!hit) return '';
     return JSON.stringify({ hookSpecificOutput: {
@@ -249,4 +277,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { judge, streaming, main, RULES, heredocWithBackslash };
+module.exports = { judge, streaming, main, RULES, heredocWithBackslash, heredocTrouble };

@@ -458,7 +458,12 @@ function pendingP0Banner() {
     const lines = mine.slice(-3).map(m =>
       `   #${m.id} from ${m.from}${m.topic ? ' · ' + m.topic : ''} — ${(m.message || '').replace(/\s+/g, ' ').slice(0, 90)}`);
     const sessionLabel = mySession ? ` (${mySession})` : '';
-    const head = `🚨 UNREAD P0 FOR YOU${sessionLabel}: ${mine.length}. Read: get_messages({reader:"${myAgent}", sessionId:"${mySession || ''}"})`;
+    // Reading is what clears it, and only a read signed with the window's own id
+    // moves that window's cursor: never print a call that cannot clear anything.
+    const head = `🚨 UNREAD P0 FOR YOU${sessionLabel}: ${mine.length}. Read: ` + (mySession
+      ? `get_messages({reader:"${myAgent}", sessionId:"${mySession}"})`
+      : `get_messages({reader:"${myAgent}", sessionId:"<the id of your own window>"}) — this call carried no sessionId, ` +
+        'and a read without one clears nothing');
     return head + '\n' + lines.join('\n')
          + '\n──────────────────────────────────────────────\n';
   } catch (e) { return ''; }
@@ -500,7 +505,8 @@ const TOOLS = [
       type: 'object',
       properties: {
         sender: { type: 'string', description: 'Sender identifier: "Claude", "Gemini", or human name.' },
-        message: { type: 'string', description: 'Message content. Unlimited length.' },
+        message: { type: 'string', description: 'Message content. Unlimited length. Either this or `messageFile`.' },
+        messageFile: { type: 'string', description: 'Absolute path of a UTF-8 text file whose content is the message — for a long text, or one with backslashes and quotes that a command line would mangle: write the file with your file tool, pass its path. With `message` as well, `message` is the opening line and the file follows it.' },
         sessionId: { type: 'string', description: 'Who you are: the id your client issued for this window — Claude: the id the session-start hook printed; Antigravity: the id of your own conversation. Never a name you made up: a signature that cannot be traced to a window is refused.' },
         canonicalId: { type: 'string', description: 'The id your client issued for this window (Claude Code: get_session({session_id:"self"}).sessionId). Send it once and the human can address this window by it from the board.' },
         client: { type: 'string', description: 'Which application this session runs in: claude-code | claude-desktop | antigravity.' },
@@ -516,7 +522,7 @@ const TOOLS = [
         status: { type: 'string', enum: STATUSES, description: 'info | question | answer | working | done | blocked | ack' },
         progress: { type: 'string', description: 'Current progress description, e.g. "step 3 of 5" or "awaiting build".' }
       },
-      required: ['sender', 'message']
+      required: ['sender']
     }
   },
   {
@@ -546,7 +552,8 @@ const TOOLS = [
         since: { type: 'number', description: 'Retrieve messages with ID greater than this value.' },
         limit: { type: 'number', description: 'Maximum number of messages to return (default 20).' },
         full: { type: 'boolean', description: 'Fetch full content for long file-backed messages.' },
-        peek: { type: 'boolean', description: 'Do not advance read cursor.' }
+        peek: { type: 'boolean', description: 'Do not advance read cursor.' },
+        roster: { type: 'boolean', description: 'List your rooms and helpers in full at the top. They are listed once and whenever they change; in between the top carries only their counts.' }
       }
     }
   },
@@ -1186,11 +1193,35 @@ function doSetup(id, a) {
 
 // ── post_message ─────────────────────────────────────────────────────────────────────────
 
+// The text of a message kept in a file. Returns { text } or { error }.
+const MESSAGE_FILE_MAX = 2 * 1024 * 1024;
+function readMessageFile(file) {
+  const p = String(file || '').trim().replace(/^file:\/+(?=[A-Za-z]:)/, '');
+  if (!path.isAbsolute(p)) return { error: `"${p}" is not an absolute path.` };
+  let st;
+  try { st = fs.statSync(p); } catch (_) { return { error: `no file at "${p}".` }; }
+  if (!st.isFile()) return { error: `"${p}" is not a file.` };
+  if (st.size > MESSAGE_FILE_MAX) return { error: `"${p}" is ${st.size} bytes; a message is text of at most ${MESSAGE_FILE_MAX} — attach a large file with put_doc.` };
+  const buf = fs.readFileSync(p);
+  if (buf.includes(0)) return { error: `"${p}" is not a text file (it has NUL bytes) — attach it with put_doc.` };
+  const text = buf.toString('utf8').replace(/^﻿/, '').replace(/\r\n/g, '\n');
+  if (!text.trim()) return { error: `"${p}" is empty.` };
+  return { text };
+}
+
 function doPost(id, a) {
   const from = normAgent(a.sender);
   if (!from) return fail(id, 'post_message: `sender` is required. Message NOT recorded.');
-  const text = typeof a.message === 'string' ? a.message : '';
-  if (!text.trim()) return fail(id, 'post_message: empty `message`. Message NOT recorded.');
+  let text = typeof a.message === 'string' ? a.message : '';
+  // A long text, or one full of backslashes and quotes, does not survive a command
+  // line, so agents write it to a file — and then had to paste it into the call all
+  // the same. One of them posted "see the file below" and nothing below (#4522).
+  if (a.messageFile !== undefined && a.messageFile !== null && String(a.messageFile).trim()) {
+    const got = readMessageFile(a.messageFile);
+    if (got.error) return fail(id, `post_message: messageFile — ${got.error} Message NOT recorded.`);
+    text = text.trim() ? text.replace(/\s+$/, '') + '\n\n' + got.text : got.text;
+  }
+  if (!text.trim()) return fail(id, 'post_message: empty `message` — pass `message`, or `messageFile` with the path of a text file. Message NOT recorded.');
 
   let priority = PRIORITIES.includes(a.priority) ? a.priority : 'normal';
   const status = STATUSES.includes(a.status) ? a.status : 'info';
@@ -1335,7 +1366,10 @@ function doPost(id, a) {
 
   bridgeDb.touchRoom(rec.room);
   noteSession(from, rec.fromSession, rec.topic, rec.to, rec.toSession, sessionIdentity(a));
-  rememberAgent(from);
+  // Who is calling was settled in handleRequest, window included. It used to be set
+  // again here with the agent alone: the banner on this very answer then counted from
+  // the agent-wide cursor, which no window moves, and showed every window a P0 it had
+  // read long ago — with a hint that carried an empty sessionId and cleared nothing.
 
   // Waking costs the recipient a full inference cycle, so only a message that
   // actually asks something does it: a question, a blocker, an answer, or work
@@ -1393,7 +1427,7 @@ function doPost(id, a) {
 // ── get_messages ─────────────────────────────────────────────────────────────────────────
 
 function doGet(id, a) {
-  rememberAgent(normAgent(a.reader), a.sessionId);
+  rememberAgent(normAgent(a.reader), a.sessionId, a.canonicalId);
   // Reading is usually a session's first contact with the bridge, and a session
   // that only reads used to leave no trace at all: it existed for the board
   // only once it wrote something. Everything that has to know where to send a
@@ -1467,8 +1501,8 @@ function doGet(id, a) {
     }
     if (sessionId) {
       try {
-        header.push(...brief.describe({ myWindow: new Set([...myWindow, a.canonicalId].filter(Boolean)),
-          win: router.windowOf(a.canonicalId) || router.windowOf(sessionId), board, full: false }));
+        header.push(...brief.describeForRead({ myWindow: new Set([...myWindow, a.canonicalId].filter(Boolean)),
+          win: router.windowOf(a.canonicalId) || router.windowOf(sessionId), board, roster: a.roster === true }));
       } catch (_) {}
     } else {
       header.push('⚠️ No sessionId: you see the whole agent\'s mail, and your own rooms, helper and stands cannot be shown. ' +
@@ -2000,6 +2034,13 @@ function describeLines(reg, agentFilter) {
 
 function doLinkSessions(id, a) {
   let result;
+  if (!a.remove) {
+    const raw = Array.isArray(a.members) ? a.members : String(a.members || '').split(/[,\n]+/);
+    for (const m of raw) {
+      const no = require('./project-line').linkRefusal(bridgeDb, cardsLib, a.line, m);
+      if (no) return fail(id, `link_sessions: ${no}. Nothing was changed.`);
+    }
+  }
   try {
     result = a.remove
       ? bridgeDb.unlinkSessions(a.line, a.members)
