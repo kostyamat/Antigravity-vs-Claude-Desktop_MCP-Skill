@@ -410,7 +410,9 @@ function apiRooms() {
   // owner is warned and where he gives the board its orders.
   let top = '';
   try { top = supervisor.view().room || ''; } catch (_) {}
-  if (top) rooms = rooms.filter(r => r.id === top).map(r => Object.assign({}, r, { pinned: true })).concat(rooms.filter(r => r.id !== top));
+  // Pinned by the owner: the order readRooms gave, under the supervisor's room.
+  rooms = rooms.map(r => r.pinned_at ? Object.assign({}, r, { pinned: true, ownerPinned: true }) : r);
+  if (top) rooms = rooms.filter(r => r.id === top).map(r => Object.assign({}, r, { pinned: true, fixed: true })).concat(rooms.filter(r => r.id !== top));
   return { account, emails: cardsLib.accountEmails(), rooms };
 }
 
@@ -623,6 +625,8 @@ const server = http.createServer((req, res) => {
               text: `The owner removed you from room "${room.name}" [${room.id}]. Stop work for this room and do not ` +
                 'write in it; only the owner can invite you back. Your own project and other rooms are unchanged.' });
           }
+        } else if (what === 'pin') {
+          out = bridgeDb.pinRoom(d.id, d.pinned !== false);
         } else if (what === 'rename') {
           out = bridgeDb.renameRoom(d.id, d.name);
         } else if (what === 'describe') {

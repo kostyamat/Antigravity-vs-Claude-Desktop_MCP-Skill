@@ -212,6 +212,10 @@ function initSchema(db) {
   try {
     db.exec("ALTER TABLE messages ADD COLUMN room TEXT DEFAULT ''");
   } catch (_) {}
+  // The owner pins a room to the top of the list; the value is when he did it.
+  try {
+    db.exec("ALTER TABLE rooms ADD COLUMN pinned_at TEXT DEFAULT ''");
+  } catch (_) {}
   // The bridge version each window has been told about. A session reads the
   // skill once, at its start, and keeps that copy for its whole life: a new
   // release changes files it will never look at again. See release-notes.js.
@@ -1371,7 +1375,10 @@ function readRooms() {
   // By what was last said in the room, not by when the room was made. A batch
   // of rooms created in one second has nothing to sort by, and the one holding
   // the conversation on screen ends up below rooms that went quiet days ago.
-  rows.sort((a, b) => (b.lastMessage - a.lastMessage) ||
+  // Rooms the owner pinned come first, in the order he pinned them.
+  rows.sort((a, b) => (!!b.pinned_at - !!a.pinned_at) ||
+                      String(a.pinned_at || '').localeCompare(String(b.pinned_at || '')) ||
+                      (b.lastMessage - a.lastMessage) ||
                       String(b.last_activity || '').localeCompare(String(a.last_activity || '')));
   return rows;
 }
@@ -1419,6 +1426,14 @@ function removedFromRoom(room, card) {
   if (!rows.length) return false;
   const mine = new Set([c, ...cluster(c)].map(x => String(x).toLowerCase()));
   return rows.some(r => mine.has(String(r.card).toLowerCase()));
+}
+
+// The owner pins or unpins a room: it stays on top of his list until he unpins it.
+function pinRoom(id, pinned) {
+  const db = getDb();
+  if (!db.prepare('SELECT 1 FROM rooms WHERE id = ?').get(String(id))) throw new Error('no such room: ' + id);
+  db.prepare('UPDATE rooms SET pinned_at = ? WHERE id = ?').run(pinned ? new Date().toISOString() : '', String(id));
+  return getRoom(id);
 }
 
 function renameRoom(id, name) {
@@ -1623,6 +1638,7 @@ module.exports = {
   removedFromRoom,
   readRooms,
   renameRoom,
+  pinRoom,
   touchRoom,
   roomsOfCard,
   cluster,

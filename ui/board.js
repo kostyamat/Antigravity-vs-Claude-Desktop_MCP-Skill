@@ -212,6 +212,10 @@ function renderHead() {
   }
   $('#roomName').textContent = r.name;
   $('#roomName').title = r.name;
+  // The supervisor's room is always on top; it has nothing to pin or unpin.
+  $('#roomPin').hidden = !!r.fixed;
+  $('#roomPin').textContent = r.ownerPinned ? 'Unpin' : 'Pin';
+  $('#roomPin').title = r.ownerPinned ? 'Let the room move with the conversation again' : 'Keep the room at the top of the list';
   const docs = DOCS.filter(d => d.room === r.id).length;
   // A button that leads to an empty list is noise; it appears with the first document.
   $('#roomDocs').hidden = !docs;
@@ -268,6 +272,13 @@ async function loadLeave(r, force) {
   });
 }
 
+$('#roomPin').onclick = async () => {
+  const r = roomById(ROOM); if (!r || r.fixed) return;
+  const j = await post('/api/room/pin', { id: r.id, pinned: !r.ownerPinned });
+  if (j && j.error) { alert(j.error); return; }
+  await loadRooms();
+  renderHead();
+};
 $('#roomRename').onclick = async () => {
   const r = roomById(ROOM); if (!r) return;
   const name = prompt('Room name', r.name);
