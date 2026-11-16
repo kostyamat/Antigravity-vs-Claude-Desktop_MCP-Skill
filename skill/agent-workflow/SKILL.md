@@ -214,11 +214,18 @@ like a rewrite.
 - **A lead with no helper asks the user for one** when real work starts — one short question: "Shall
   I start a helper for this (an Antigravity window for research, ports, tests, routine)?"
   - **No** — the lead works alone, as usual, and does not ask again unless the work changes in kind.
-  - **Yes** — the lead starts it itself: `set_helper({ start: true, brief: "…" })` opens a new
+  - **Yes** — the lead starts it itself: `set_helper({ start: true, task: "…", brief: "…" })` opens a new
     Antigravity conversation, hands it the brief, records the pair and makes their room. The brief is
     the whole handover, since the helper knows nothing else: what the project is and where it lives,
     its state (the slice in short), the first task with its base commit and acceptance, and what the
     helper must not touch. Then the lead works with it through that room.
+  - **A helper is named after its task, and a lead keeps few.** `set_helper({ start: true, task: "boot animation",
+    brief: "…" })`: the conversation and the room carry the task's name, so the user sees which is doing what —
+    never "helper 2". Split the work by task and give a new task to a helper you already have before starting
+    another; the board refuses a fourth. Every open conversation takes memory on the user's machine. When a
+    helper's task is done and merged, **release it** — `set_helper({ helper: "<id>", release: true })` — and tell
+    the user in one line that its conversation can be closed or deleted. Helpers named before this rule keep
+    their names.
   - The user names a window instead — `set_helper({ helper: "<its id>" })`. If starting fails
     (Antigravity closed, no quota), the lead says so and carries on alone.
   - **A shared room is not a pair.** An Antigravity window many sessions consult (a debugger, a

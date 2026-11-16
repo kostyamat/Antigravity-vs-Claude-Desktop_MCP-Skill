@@ -140,7 +140,7 @@ to its helper (an Antigravity window): research, adb, logs, clicking through a U
 
 - **A pair exists only when it is recorded.** A shared room is not a pair: one Antigravity window may
   be consulted by many sessions (the owner's debugger, a researcher) and helps none of them in
-  particular. The lead calls `set_helper({ helper: "<its id>" })`, or `set_helper({ start: true, brief })`
+  particular. The lead calls `set_helper({ helper: "<its id>" })`, or `set_helper({ start: true, task: "<what it is for>", brief })`
   for a new one; the helper, told whose helper it is, calls `set_helper({ lead: "<id or project>" })`. A helper that
   does not know its lead **asks the owner for the lead's id before doing anything** and records it.
 - From then on both are told who they are at every start and every read (🧑‍🔧 your helper, 👤 your lead).
