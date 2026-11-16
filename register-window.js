@@ -18,8 +18,7 @@
 
 const bridgeDb = require('./bridge-db.js');
 
-function main() {
-  const [agent, sessionId, windowId, client, cwd, title] = process.argv.slice(2);
+function register(agent, sessionId, windowId, client, cwd, title) {
   const who = String(agent || '').trim();
   const sid = String(sessionId || '').trim();
   const win = String(windowId || '').trim();
@@ -27,7 +26,7 @@ function main() {
   // Without a window there is nothing here that the agent will not record itself
   // the first time it reads the board. A terminal session has no window record,
   // and rows for those would only fill the list with names nobody can address.
-  if (!who || !sid || !win) return 0;
+  if (!who || !sid || !win) return false;
 
   const reg = bridgeDb.readSessions();
   const key = who + '/' + sid;
@@ -53,11 +52,14 @@ function main() {
     firstSeen: prev.firstSeen || now,
     lastSeen: now
   });
-  return 0;
+  return true;
 }
 
-try {
-  process.exit(main());
+module.exports = { register };
+
+if (require.main === module) try {
+  register(...process.argv.slice(2));
+  process.exit(0);
 } catch (_) {
   // The brief is a convenience and must never break the start of a session;
   // a board that cannot be written to is a reason to stay quiet, not to fail.

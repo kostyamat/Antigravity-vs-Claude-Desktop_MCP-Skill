@@ -140,42 +140,50 @@ function staleAccountSkills(account) {
   return [...out].sort();
 }
 
-module.exports = { createBrief, staleAccountSkills };
+// The lines of the session-start brief for one window: its project, rooms, helper,
+// stands, stale uploaded skills, and — for a lead in a new window — the handover asked
+// of its helpers.
+function linesFor(agent, session, window, account) {
+  const bridgeDb = require('./bridge-db');
+  const cardsLib = require('./cards');
+  const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
+  const rules = require('./board-rules').createRules(bridgeDb, cardsLib, router);
+  const stands = require('./stands').createStands(bridgeDb, router);
+  const win = window || router.windowOf(session);
+  if (/^local_/.test(win)) router.addressOf(win);          // joins the line of its project folder
+  const ids = [session, win].filter(Boolean);
+  const myWindow = new Set(ids);
+  for (const s of ids) for (const a of bridgeDb.resolveSessionAliases(s, { agent, lines: false })) myWindow.add(a);
+  const lines = createBrief(bridgeDb, cardsLib, router, rules, stands)
+    .describe({ myWindow, win, board: bridgeDb.readAllMessages(), full: true });
+  const stale = staleAccountSkills(account || process.env.CLAUDE_CODE_ACCOUNT_UUID || cardsLib.currentAccount() || '');
+  if (stale.length) {
+    lines.push('⚠️ This account holds its own uploaded copies of ' + stale.join(', ') + ' (`anthropic-skills:<name>`). ' +
+      'They are frozen per account and nothing needs them any more: use the plain skill name (the disk copy). ' +
+      'Remind the owner to delete them in Settings → Capabilities → Skills.');
+  }
+  // A lead in a new window asks its helper for a handover (handover.js), once per window.
+  try {
+    const { wakeAntigravity } = require('./wake-antigravity');
+    lines.push(...require('./handover').askHelpers({ bridgeDb, router, win, post: m => {
+      const rec = Object.assign({ ts: new Date().toISOString(), priority: 'normal', status: 'question', progress: '',
+                                  replyTo: null, file: null, readBy: [] }, m);
+      rec.id = bridgeDb.addMessage(rec).id;
+      bridgeDb.touchRoom(rec.room);
+      wakeAntigravity(rec);
+    } }));
+  } catch (_) {}
+  return lines;
+}
 
-// The session-start brief is Python; it asks here rather than repeating the rules.
+module.exports = { createBrief, staleAccountSkills, linesFor };
+
+// The session-start brief is Python; it asks here rather than repeating the rules
+// (session-brief.js asks the same in one process with the brief's other questions).
 // node window-brief.js <agent> <sessionId> [windowId] [account] → the lines, one per row.
 if (require.main === module) {
   try {
     const [agent, session, window, account] = process.argv.slice(2);
-    const bridgeDb = require('./bridge-db');
-    const cardsLib = require('./cards');
-    const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
-    const rules = require('./board-rules').createRules(bridgeDb, cardsLib, router);
-    const stands = require('./stands').createStands(bridgeDb, router);
-    const win = window || router.windowOf(session);
-    if (/^local_/.test(win)) router.addressOf(win);          // joins the line of its project folder
-    const ids = [session, win].filter(Boolean);
-    const myWindow = new Set(ids);
-    for (const s of ids) for (const a of bridgeDb.resolveSessionAliases(s, { agent, lines: false })) myWindow.add(a);
-    const lines = createBrief(bridgeDb, cardsLib, router, rules, stands)
-      .describe({ myWindow, win, board: bridgeDb.readAllMessages(), full: true });
-    const stale = staleAccountSkills(account || process.env.CLAUDE_CODE_ACCOUNT_UUID || cardsLib.currentAccount() || '');
-    if (stale.length) {
-      lines.push('⚠️ This account holds its own uploaded copies of ' + stale.join(', ') + ' (`anthropic-skills:<name>`). ' +
-        'They are frozen per account and nothing needs them any more: use the plain skill name (the disk copy). ' +
-        'Remind the owner to delete them in Settings → Capabilities → Skills.');
-    }
-    // A lead in a new window asks its helper for a handover (handover.js), once per window.
-    try {
-      const { wakeAntigravity } = require('./wake-antigravity');
-      lines.push(...require('./handover').askHelpers({ bridgeDb, router, win, post: m => {
-        const rec = Object.assign({ ts: new Date().toISOString(), priority: 'normal', status: 'question', progress: '',
-                                    replyTo: null, file: null, readBy: [] }, m);
-        rec.id = bridgeDb.addMessage(rec).id;
-        bridgeDb.touchRoom(rec.room);
-        wakeAntigravity(rec);
-      } }));
-    } catch (_) {}
-    process.stdout.write(lines.join('\n'));
+    process.stdout.write(linesFor(agent, session, window, account).join('\n'));
   } catch (_) {}
 }

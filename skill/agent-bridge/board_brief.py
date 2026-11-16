@@ -242,6 +242,47 @@ def no_git_hint(folder):
             "empty .no-agent-workflow file there so the offer is not repeated." % folder)
 
 
+_ONE = None
+
+
+def _one_call():
+    """Everything the brief asks the board's JavaScript, in one process (session-brief.js).
+
+    Five separate starts of node took the brief past three seconds at the start of
+    every session. Asked once, kept here; a part that is missing — an older copy of
+    the bridge, a failure — is asked for alone by the function that needs it."""
+    global _ONE
+    if _ONE is not None:
+        return _ONE
+    _ONE = {}
+    try:
+        sid = _client_session_id() or ""
+        win = _find_window(sid) if sid else None
+        wid = (win or {}).get("window") or ""
+        script = os.path.join(_bridge_home(), "session-brief.js")
+        if not os.path.exists(script):
+            return _ONE
+        out = subprocess.run(["node", script, ME, sid, wid, os.getcwd(), (win or {}).get("title", ""),
+                              os.environ.get("CLAUDE_CODE_ACCOUNT_UUID", "")], capture_output=True, timeout=20)
+        data = json.loads(out.stdout.decode("utf-8", "replace") or "{}")
+        if isinstance(data, dict):
+            _ONE = data
+    except Exception:
+        _ONE = {}
+    return _ONE
+
+
+def _asked(sid, window):
+    """The one call's answer, when it was made for this very window (or, for a
+    session with no window, for this very session)."""
+    one = _one_call()
+    if not one:
+        return {}
+    if window:
+        return one if one.get("win", "") == window else {}
+    return one if not one.get("win") and sid and sid in (one.get("sid", ""), one.get("run", "")) else {}
+
+
 def window_state():
     """(P0 still pending, read cursor) for this window. P0 by the one rule in p0.js:
     addressed to it, admitted by its room, unread, less than a day old. Counting
@@ -250,6 +291,9 @@ def window_state():
     try:
         sid = _client_session_id() or ""
         win = _find_window(sid) if sid else None
+        got = _asked(sid, (win or {}).get("window") or "").get("p0")
+        if isinstance(got, dict) and "count" in got:
+            return int(got.get("count", 0)), got.get("cursor")
         args = ["node", os.path.join(_bridge_home(), "p0.js"), ME, sid]
         if win and win.get("window"):
             args.append(win["window"])
@@ -267,6 +311,9 @@ def window_mail(window):
     had nothing of its own: that cursor stops moving once windows keep theirs, and
     the count took the whole board, other projects' rooms included."""
     try:
+        got = _asked("", window).get("mail")
+        if isinstance(got, dict) and "unread" in got:
+            return got
         out = subprocess.run(["node", os.path.join(_bridge_home(), "mailbox.js"), "brief", ME, window],
                              capture_output=True, timeout=15)
         data = json.loads(out.stdout.decode("utf-8", "replace") or "{}")
@@ -280,6 +327,9 @@ def previous_window(sid):
     was written: an account switch or a cut-off session leaves the slice behind, and the
     transcript in the shared ~/.claude/projects says what happened (handover.js)."""
     try:
+        one = _one_call()
+        if sid and one.get("sid", None) == sid and isinstance(one.get("previous"), list):
+            return [l for l in one["previous"] if str(l).strip()]
         args = ["node", os.path.join(_bridge_home(), "handover.js"), os.getcwd(), sid or ""]
         out = subprocess.run(args, capture_output=True, timeout=15)
         return [l for l in out.stdout.decode("utf-8", "replace").splitlines() if l.strip()]
@@ -292,6 +342,9 @@ def rooms_of_window(sid, win):
     one rule in room-invite.js. A window that was closed when the owner invited it
     finds the invitation here, so "go to the room you were invited to" is enough."""
     try:
+        got = _asked(sid, win).get("rooms")
+        if isinstance(got, list):
+            return [l for l in got if str(l).strip()]
         args = ["node", os.path.join(_bridge_home(), "window-brief.js"), ME, sid or "", win or "",
                 os.environ.get("CLAUDE_CODE_ACCOUNT_UUID", "")]
         out = subprocess.run(args, capture_output=True, timeout=15)
@@ -313,6 +366,8 @@ def register_window(session_id, window):
     own first call updates this row instead of creating a second one.
     """
     if not session_id or not window or not window.get("window"):
+        return
+    if _asked(str(session_id), window["window"]).get("registered"):
         return
     try:
         subprocess.run(

@@ -33,27 +33,31 @@ function pendingP0(opts) {
   });
 }
 
-module.exports = { pendingP0, P0_TTL_HOURS };
+// What the session-start brief needs for one window: how many P0 are pending for it,
+// which, and its read cursor (so the brief counts unread from the same place).
+function stateFor(agent, session, canonical) {
+  const bridgeDb = require('./bridge-db');
+  const router = require('./room-routing').createRouter(bridgeDb, require('./cards'));
+  const ids = [session, canonical].filter(Boolean);
+  const myWindow = new Set(ids), myLine = new Set(ids);
+  for (const s of ids) {
+    for (const a of bridgeDb.resolveSessionAliases(s, { agent, lines: false })) myWindow.add(a);
+    for (const a of bridgeDb.resolveSessionAliases(s, { agent })) myLine.add(a);
+  }
+  const cursor = session ? bridgeDb.getCursor(agent, session) : bridgeDb.getCursor(agent);
+  const board = bridgeDb.readAllMessages().filter(m => m.id > Math.max(0, cursor));
+  const list = pendingP0({ board, agent, myWindow, myLine, cursor, roomAdmits: router.roomAdmits });
+  return { count: list.length, ids: list.map(m => m.id), cursor };
+}
 
-// CLI for the Python session-start brief:
+module.exports = { pendingP0, stateFor, P0_TTL_HOURS };
+
+// CLI for the Python session-start brief (session-brief.js asks the same in one process):
 //   node p0.js <agent> <sessionId> [canonicalId]  ->  {"count":N,"ids":[…],"cursor":N}
-// (the window's read cursor too, so the brief counts unread from the same place)
 if (require.main === module) {
   try {
     const [agent, session, canonical] = process.argv.slice(2);
-    const bridgeDb = require('./bridge-db');
-    const router = require('./room-routing').createRouter(bridgeDb, require('./cards'));
-    const ids = [session, canonical].filter(Boolean);
-    const myWindow = new Set(ids), myLine = new Set(ids);
-    for (const s of ids) {
-      for (const a of bridgeDb.resolveSessionAliases(s, { agent, lines: false })) myWindow.add(a);
-      for (const a of bridgeDb.resolveSessionAliases(s, { agent })) myLine.add(a);
-    }
-    const cursor = session ? bridgeDb.getCursor(agent, session) : bridgeDb.getCursor(agent);
-    const since = Math.max(0, cursor);
-    const board = bridgeDb.readAllMessages().filter(m => m.id > since);
-    const list = pendingP0({ board, agent, myWindow, myLine, cursor, roomAdmits: router.roomAdmits });
-    process.stdout.write(JSON.stringify({ count: list.length, ids: list.map(m => m.id), cursor }));
+    process.stdout.write(JSON.stringify(stateFor(agent, session, canonical)));
   } catch (e) {
     process.stdout.write(JSON.stringify({ count: 0, ids: [], error: e.message }));
   }
