@@ -14,7 +14,8 @@ const hooks = cp.bridgeHooks({ nodeExe: 'C:/node/node.exe', scriptsDir: path.joi
 t('nine hooks, six events', () => {
   assert.strictEqual(hooks.length, 9);
   const j = cp.hooksJson(hooks).hooks;
-  assert.deepStrictEqual(Object.keys(j).sort(), ['PreCompact', 'PreToolUse', 'SessionStart', 'Stop', 'UserPromptSubmit']);
+  assert.deepStrictEqual(Object.keys(j).sort(), ['PreCompact', 'PreToolUse', 'SessionStart', 'Stop', 'StopFailure', 'UserPromptSubmit']);
+  assert.match(j.StopFailure[0].hooks[0].command, /bridge-hook\.js" failed$/);
   assert.strictEqual(j.SessionStart.length, 3);
   assert.strictEqual(j.SessionStart[1].matcher, 'compact');
   assert.strictEqual(j.PreToolUse[0].matcher, 'mcp__agent-bridge__.*');
