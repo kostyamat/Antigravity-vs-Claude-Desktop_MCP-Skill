@@ -34,6 +34,7 @@ const supervisor = require('./supervisor').createSupervisor({
   bridgeDb, cardsLib, router, home: path.resolve(__dirname), wake: m => wakeAntigravity(m), launch: app => launchApp(app)
 });
 const ownerWaiting = require('./owner-waiting');
+const roomSearch = require('./room-search').createRoomSearch({ bridgeDb, router, machineName: () => require('./peer-link').machineName() });
 const argonRoom = require('./argon-room').createArgonRoom({ bridgeDb, home: path.resolve(__dirname), post: d => apiPost(d) });
 const agQuota = require('./antigravity-quota');
 let quotaSeen = { at: 0, value: null };
@@ -401,9 +402,15 @@ function apiCards(hours) {
 
 function apiRooms() {
   const account = cardsLib.currentAccount() || '';
-  const rooms = bridgeDb.readRooms().map(r => (account && r.account && r.account !== account)
+  // Each room carries the line it is found by (room-search.js): the page filters on it.
+  let rooms = roomSearch.withFind(bridgeDb.readRooms()).map(r => (account && r.account && r.account !== account)
     ? Object.assign({}, r, { elsewhere: true })
     : r);
+  // The supervisor's room stays on top whatever was said last elsewhere: it is where the
+  // owner is warned and where he gives the board its orders.
+  let top = '';
+  try { top = supervisor.view().room || ''; } catch (_) {}
+  if (top) rooms = rooms.filter(r => r.id === top).map(r => Object.assign({}, r, { pinned: true })).concat(rooms.filter(r => r.id !== top));
   return { account, emails: cardsLib.accountEmails(), rooms };
 }
 

@@ -869,7 +869,10 @@ const TOOLS = [
       '("in the debug room, ask…"), find it here; every tool that takes `room` accepts its id, its name or a part of it.',
     inputSchema: {
       type: 'object',
-      properties: { account: { type: 'string', description: 'A different account id.' } }
+      properties: {
+        account: { type: 'string', description: 'A different account id.' },
+        query: { type: 'string', description: 'Only rooms that fit every word: a project, a task, a member, an agent, a machine. Exact forms: agent:claude, agent:antigravity, project:<name>, machine:<name>, task:<words>.' }
+      }
     }
   },
   {
@@ -1158,15 +1161,24 @@ function doCreateRoom(id, a) {
 function doListRooms(id, a) {
   const here = a.account || cardsLib.currentAccount() || '';
   const emails = cardsLib.accountEmails();
-  const rooms = bridgeDb.readRooms();
+  let rooms = bridgeDb.readRooms();
   if (!rooms.length) return ok(id, 'No rooms yet. Make one with create_room.');
+  const all = rooms.length;
+  const query = String(a.query || '').trim();
+  if (query) {
+    const search = require('./room-search');
+    const finder = search.createRoomSearch({ bridgeDb, router, machineName: () => require('./peer-link').machineName() });
+    rooms = finder.withFind(rooms).filter(r => search.matches(r.find, query));
+    if (!rooms.length) return ok(id, `No room of ${all} fits "${query}". Every word must fit; try fewer, or the exact forms ` +
+      'agent:claude, agent:antigravity, project:<name>, machine:<name>, task:<words>.');
+  }
   const lines = rooms.map(r => {
     const who = r.members.map(m => router.nameOf(m.card)).join(' + ');
     const whose = (here && r.account && r.account !== here)
       ? ` · ${emails[r.account] || 'other account'}` : '';
     return `${r.name} [${r.id}] · ${r.messages} messages${whose}\n     ${who}`;
   });
-  ok(id, `Rooms of account ${here || '—'}:\n` + lines.join('\n'));
+  ok(id, (query ? `Rooms that fit "${query}" (${rooms.length} of ${all}):\n` : `Rooms of account ${here || '—'}:\n`) + lines.join('\n'));
 }
 
 // ── bridge_setup ─────────────────────────────────────────────────────────────────────────

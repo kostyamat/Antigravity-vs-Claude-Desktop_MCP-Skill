@@ -151,13 +151,20 @@ function renderRooms() {
   // the one being talked in is on top wherever it was made. Whose it is goes in
   // the line under the name rather than into a block of its own.
   const whose = r => r.elsewhere ? ' · ' + (CARD_EMAILS[r.account] || 'other account') : '';
-  html += ROOMS.map(r => row(r.id, r.name,
+  // The filter: every word typed must be in the line the server says the room is found by
+  // (project, task, agent, machine — room-search.js). The supervisor's room and the room
+  // that is open stay in the list whatever is typed.
+  const terms = String(($('#roomFilter') || {}).value || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = ROOMS.filter(r => r.pinned || r.id === ROOM || terms.every(t => String(r.find || r.name).toLowerCase().includes(t)));
+  if (terms.length && shown.length < ROOMS.length) html += '<div class="hint" style="padding:4px 8px">' + shown.length + ' of ' + ROOMS.length + ' rooms</div>';
+  html += shown.map(r => row(r.id, (r.pinned ? '\ud83d\udccc ' : '') + r.name,
     r.messages + (r.messages === 1 ? ' message' : ' messages') + (r.lastTs ? ' · ' + ago(r.lastTs) : '') + whose(r),
     r.name + '\n' + r.members.map(m => windowName(m.card, m.agent)).join('\n'))).join('');
   if (!ROOMS.length) html += '<div class="hint" style="padding:8px">No rooms yet. Tick two windows under Windows to make one.</div>';
   $('#roomList').innerHTML = html;
 }
 
+$('#roomFilter').addEventListener('input', renderRooms);
 $('#roomList').addEventListener('click', e => {
   const r = e.target.closest('[data-room]');
   if (r) enterRoom(r.dataset.room);
