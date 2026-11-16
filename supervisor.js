@@ -331,12 +331,30 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
       next.rescues = d.rescues.map(r => ({ name: r.name, dirty: r.dirty, slice: r.slice, idleMinutes: r.idleMinutes }));
       const tasks = tasksFor(d);
       let cfg = cfg0;
-      if (tasks.length || d.sleepers.length) {
-        try { cfg = await ensureConversation(); }
-        catch (e) {
+      // Switched on means it is there: its conversation and its room exist from the first
+      // round, work or no work. They used to be made only when the first task turned up,
+      // so on a quiet machine the owner switched the supervisor on and found nothing in
+      // Antigravity and no room to write to it in (16.11.2026, the second machine).
+      const first = !cfg0.conversation || !cfg0.room;
+      if (cfg0.enabled || tasks.length || d.sleepers.length) {
+        try {
+          cfg = await ensureConversation();
+          if (first && cfg.conversation && cfg.room) {
+            // It was promised its id and its room "in the next message"; with no task to
+            // carry them it would never learn either, and could not answer the owner.
+            if (!tasks.length) {
+              antigravity.send(cfg.conversation, `Board supervisor: you are set up. Your sessionId: ${cfg.conversation}. ` +
+                `Your room: ${cfg.room}. There is no task yet. The owner writes to you in that room; answer him there, ` +
+                'as SUPERVISOR.md says. Reply with nothing now.');
+            }
+            next.sent = 'the supervisor conversation and its room were created';
+          }
+        } catch (e) {
           next.lastError = 'Antigravity: ' + e.message;
-          // There is work for the model and its application is closed: start it; the next round delivers.
-          try { if (launch && launch('antigravity').length) next.lastError += ' — Antigravity was started, the tasks go out next round'; } catch (_) {}
+          // There is work for the model, or the supervisor has never been started, and its
+          // application is closed: start it; the next round delivers.
+          const need = tasks.length || d.sleepers.length || first;
+          try { if (need && launch && launch('antigravity').length) next.lastError += ' — Antigravity was started, the supervisor follows next round'; } catch (_) {}
         }
       }
       next.nudged = nudge(d.sleepers, cfg.room || '');
@@ -390,8 +408,12 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
     if (Number(patch.nudgeAfterMinutes) >= 1) clean.nudgeAfterMinutes = Math.round(Number(patch.nudgeAfterMinutes));
     if (Number(patch.catchUpAfterMinutes) >= 5) clean.catchUpAfterMinutes = Math.round(Number(patch.catchUpAfterMinutes));
     if (patch.newConversation === true) { clean.conversation = ''; clean.room = ''; }
+    const was = config();
     const cfg = save(clean);
     schedule();
+    // Just switched on, or asked for a new conversation: do the first round now, not in
+    // 45 seconds — the owner is looking at Antigravity, waiting for it to appear.
+    if (cfg.enabled && (!was.enabled || !cfg.conversation)) tick(false).catch(() => {});
     return cfg;
   }
 
