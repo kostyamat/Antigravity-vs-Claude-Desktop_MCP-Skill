@@ -76,7 +76,7 @@ function createBrief(bridgeDb, cardsLib, router, rules, stands) {
     // (agent-workflow, "Working with a helper agent"); the board only reminds it how.
     if (full && me && router.agentOf(me) === 'Claude' && !router.leadOf(me) && !people.length) {
       out.push('🧑‍🔧 This project has no helper. When real work starts, ask the owner whether to start one. ' +
-        'Yes: set_helper({start: true, brief: "<the project, its state, the first task, what not to touch>"}) — ' +
+        'Yes: set_helper({start: true, task: "<two to five words: what it is for>", brief: "<the project, its state, the first task, what not to touch>"}) — ' +
         'you start it, brief it and pair it yourself. No: work alone. A window he names: set_helper({helper: "<its id>"}).');
     }
     out.push(...stands.describe(me));

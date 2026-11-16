@@ -18,6 +18,31 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
     if (has.length && a.another !== true) {
       return fail(id, 'set_helper: you already have a helper — ' + has.join('; ') + '. Pass another: true to start one more.');
     }
+    // A helper is named after its task, and a lead keeps few of them (owner, 16.11.2026).
+    // Thirteen conversations called "Helper: <project>", in rooms "helper-2" … "helper-14",
+    // told nobody which was doing what, and each open conversation costs the owner's
+    // laptop memory it does not have. So: no start without a task name, no second helper
+    // for the same task, and no more than MAX at once — a finished one is released first.
+    const task = String(a.task || '').replace(/\s+/g, ' ').trim();
+    if (task.length < 3 || task.length > 48 || /^(helper|assistant)\s*#?\d*$/i.test(task)) {
+      return fail(id, 'set_helper: pass task — two to five words that say what this helper is for ("boot animation", ' +
+        '"smali port of the dialer"). The helper and its room are named after it; "helper 2" names nothing.');
+    }
+    let mine = [];
+    try { mine = bridgeDb.readHelpers().filter(h => router.same(h.lead, me)); } catch (_) {}
+    const titles = mine.map(h => ({ h, title: String((router.cardOf(h.helper) || {}).name || '') }));
+    const same = titles.find(x => x.title.toLowerCase().endsWith(': ' + task.toLowerCase()));
+    if (same) {
+      return fail(id, `set_helper: you already have a helper for "${task}" — "${same.title}" [${same.h.helper}]. Give it the work, ` +
+        'or name the new task differently.');
+    }
+    const max = Math.max(1, Number(maxHelpers()) || 3);
+    if (mine.length >= max) {
+      return fail(id, `set_helper: you have ${mine.length} helpers, and ${max} is the most a lead keeps at once: ` +
+        titles.map(x => `"${x.title || router.nameOf(x.h.helper)}" [${x.h.helper}]`).join('; ') + '. Give the task to one of them, or ' +
+        'release one whose task is done — set_helper({helper: "<id>", release: true}) — and tell the owner its conversation can be ' +
+        'closed. Every open conversation takes memory on the owner\'s machine. (The limit is maxHelpersPerLead in bridge_config.json.)');
+    }
     const brief = String(a.brief || '').trim();
     if (brief.length < 40) {
       return fail(id, 'set_helper: pass brief — what the project is, where it lives, what the helper will be doing and what it must not touch. ' +
@@ -28,8 +53,8 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
     try {
       helper = await antigravity.create({
         model: /^[A-Za-z0-9_.-]{2,60}$/.test(String(a.model || '')) ? a.model : 'pro',
-        title: 'Helper: ' + name,
-        prompt: `You are the helper of the project "${name}", started through the agent-bridge board by its lead, a Claude session. ` +
+        title: name + ': ' + task,
+        prompt: `You are the helper of the project "${name}" for one task — "${task}" —, started through the agent-bridge board by its lead, a Claude session. ` +
           'Read your skills agent-bridge (PROTOCOL) and agent-workflow (section "Working with a helper agent") now, completely. ' +
           'The board is about to post your own id and your room to you; sign every bridge call with that id. ' +
           'The lead gives you the routine of the project and reviews what you deliver; the owner may give you a task directly at any time. ' +
@@ -40,7 +65,12 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
     }
     // The new conversation appears among the cards a moment after it is made.
     for (let i = 0; i < 20 && !router.windowOf(helper); i++) await new Promise(r => setTimeout(r, 500));
-    return doSetHelper(id, Object.assign({}, a, { start: false, helper, lead: '' }));
+    return doSetHelper(id, Object.assign({}, a, { start: false, helper, lead: '', task }));
+  }
+
+  function maxHelpers() {
+    try { return JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'bridge_config.json'), 'utf8')).maxHelpersPerLead; }
+    catch (_) { return 0; }
   }
 
   // Leave for another lead to consult a helper or give it a task. Given by the helper's
@@ -123,7 +153,7 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
         .sort((x, y) => (x.members.length - y.members.length) ||
                         String(y.last_activity || '').localeCompare(String(x.last_activity || '')));
       room = shared[0] || bridgeDb.createRoom(
-        `${router.nameOf(lead)} + helper`,
+        a.task ? `${router.nameOf(lead)} · ${a.task}` : `${router.nameOf(lead)} + helper`,
         [{ card: lead, agent: router.agentOf(lead) }, { card: helper, agent: router.agentOf(helper) }],
         cardsLib.currentAccount() || '');
     }

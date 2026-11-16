@@ -813,8 +813,9 @@ const TOOLS = [
       'somebody else\'s helper, or a helper\'s answer to somebody who is not its lead, is refused. ' +
       'The pair survives compaction, restarts and account switches — it is printed at every session start and at ' +
       'the top of get_messages. release: true ends it. ' +
-      'A lead with no helper starts one itself: set_helper({start: true, brief: "<the project, where it lives, what the helper will do, ' +
-      'what it must not touch>"}) opens a new Antigravity conversation, gives it that context, pairs it and makes the room. ' +
+      'A lead with no helper starts one itself: set_helper({start: true, task: "<two to five words: what it is for>", brief: "<the project, ' +
+      'where it lives, what the helper will do, what it must not touch>"}) opens a new Antigravity conversation named after the task, gives it ' +
+      'that context, pairs it and makes the room. A lead keeps few helpers (three unless configured): release one whose task is done before starting another. ' +
       'Leave for ANOTHER lead to consult your helper or give it a task: set_helper({helper: "<your helper>", allow: "<that lead or project>", hours?}); ' +
       'take it back with revoke. When the helper\'s lead is away, the owner can give the leave: pass approval: <id of his message saying so>.',
     inputSchema: {
@@ -825,6 +826,7 @@ const TOOLS = [
         helper: { type: 'string', description: 'The helper\'s window id (list_cards). Given by the lead.' },
         start: { type: 'boolean', description: 'Lead only: start a new helper (an Antigravity conversation) instead of naming an existing window.' },
         brief: { type: 'string', description: 'With start: the context the new helper begins with.' },
+        task: { type: 'string', description: 'With start, required: two to five words naming what this helper is for. The conversation and the room are named after it.' },
         model: { type: 'string', description: 'With start: the helper\'s model (default "pro").' },
         another: { type: 'boolean', description: 'With start: start one more helper although one is on record.' },
         lead: { type: 'string', description: 'The lead\'s window id or project name. Given by the helper.' },
