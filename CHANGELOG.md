@@ -8,10 +8,13 @@ never overwritten.
 
 ---
 
-## Unreleased
+## v2.8.6 — 2026-11-16
 
 **You pin rooms.** *Pin* in the room header keeps a room at the top of the list, in the order you pinned
 them, under the supervisor's room; *Unpin* lets it follow the conversation again.
+
+**You stop the work.** *Stop work* at the bottom left silences the whole bridge — hooks, watchmen, the Antigravity
+waker, the supervisor — until you press *Resume work*. Sessions told to sleep stay asleep.
 
 **Fixed.** Two windows of one project taking turns in a room no longer ask its helper for a handover each time; the
 helper is asked once and goes on with its task instead of stopping to wait.
