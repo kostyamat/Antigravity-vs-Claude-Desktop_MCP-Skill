@@ -141,10 +141,18 @@ function claudeRecords(acct) {
 // room was built around a run id: it looked like an unnamed Antigravity window
 // and stopped receiving the day the window restarted.
 let cliCache = { at: 0, map: new Map() };
+const MISS_REREAD_MS = 2000;
 function claudeWindowOfCli(cliId) {
   const id = String(cliId || '').trim();
   if (!id) return null;
-  if (Date.now() - cliCache.at > 20000 || !cliCache.map.has(id)) {
+  // An id the map does not hold may be a run that started a moment ago, so the cards
+  // are read again — but not for every such id. Most ids asked here are no Claude run
+  // at all (an Antigravity conversation, a label, a project line), each of them missed,
+  // and each miss read every card file of every account: forty-six times, 1.3 seconds,
+  // in one session-start brief (measured 16.11.2026). A miss rereads the cards only
+  // when they were last read more than MISS_REREAD_MS ago.
+  const age = Date.now() - cliCache.at;
+  if (age > 20000 || (!cliCache.map.has(id) && age > MISS_REREAD_MS)) {
     const map = new Map();
     for (const acct of claudeAccounts()) {
       for (const { d } of claudeRecords(acct)) {
