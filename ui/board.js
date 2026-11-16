@@ -1007,7 +1007,17 @@ function supervisorLine(s, antigravityUp) {
   const stuck = s.enabled && (!antigravityUp ? 'waits for Antigravity' : st.lastError ? 'last round failed' : '');
   return '<div title="' + esc(tip) + '"' + (stuck ? ' class="receipt late"' : '') + '><i class="' + (s.enabled && !stuck ? 'up' : '') + '"></i>Supervisor is ' +
     (s.enabled ? 'on' + (stuck ? ' — ' + stuck : '') : 'off') +
-    ' <button type="button" class="link-btn" data-sup="' + (s.enabled ? 'off' : 'on') + '">' + (s.enabled ? 'Turn off' : 'Turn on') + '</button></div>';
+    ' <button type="button" class="link-btn" data-sup="' + (s.enabled ? 'off' : 'on') + '">' + (s.enabled ? 'Turn off' : 'Turn on') + '</button></div>' +
+    pausedLine(s);
+}
+// Stopped on a quota: who, and the button that is the owner's word to go on (the same as
+// writing "resume" in the supervisor's room). Shown only while somebody is stopped.
+function pausedLine(s) {
+  const who = (s.paused || []).map(k => k === 'gemini' ? 'helpers (Antigravity)' : k === 'claude' ? 'leads (Claude)' : k);
+  if (!who.length) return '';
+  return '<div class="receipt late" title="Switch the account first, then resume: they are told to go on with the work they stopped at.">' +
+    '<i></i>Stopped on quota: ' + esc(who.join(', ')) +
+    ' <button type="button" class="link-btn" data-resume="1">Resume</button></div>';
 }
 // How much quota the signed-in Antigravity account has left; red when it is time to switch.
 function quotaLine(q) {
@@ -1057,6 +1067,12 @@ $('#apps').addEventListener('click', async e => {
       }
     }
     if (r && r.error) alert(r.error);
+    return checkApps();
+  }
+  const rs = e.target.closest('[data-resume]');
+  if (rs) {
+    rs.disabled = true; rs.textContent = 'Resuming…';
+    await post('/api/supervisor', { resume: true }).catch(() => ({}));
     return checkApps();
   }
   const s = e.target.closest('[data-sup]');
