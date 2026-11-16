@@ -790,6 +790,21 @@ const server = http.createServer((req, res) => {
       return send(res, 500, 'text/plain; charset=utf-8', e.message);
     }
   }
+  // Stop work: one switch that silences every hook, watchman, waker and the supervisor.
+  if (req.url === '/api/pause' && (req.method === 'GET' || req.method === 'POST')) {
+    if (req.method === 'GET') return send(res, 200, 'application/json; charset=utf-8', JSON.stringify({ paused: bridgeDb.boardPaused() }));
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e4) req.destroy(); });
+    req.on('end', () => {
+      let out;
+      try {
+        const d = JSON.parse(body || '{}');
+        out = { paused: bridgeDb.setBoardPaused(!!d.on, String(d.from || '').trim() || ownerName()) };
+      } catch (e) { out = { error: e.message }; }
+      send(res, 200, 'application/json; charset=utf-8', JSON.stringify(out));
+    });
+    return;
+  }
   if (req.url === '/api/supervisor' && (req.method === 'GET' || req.method === 'POST')) {
     if (req.method === 'GET') return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(supervisor.view()));
     let body = '';
@@ -1080,6 +1095,8 @@ setInterval(() => {
     const board = readBoard();
     if (!Array.isArray(board)) return;
     const top = Math.max(0, ...board.map(m => m.id || 0));
+    // Stopped by the owner: mail neither starts an application nor wakes a window, now or after.
+    if (top > lastSeenId && bridgeDb.boardPaused()) { lastSeenId = top; return; }
     if (top > lastSeenId) {
       for (const m of board) {
         if ((m.id || 0) <= lastSeenId) continue;

@@ -111,6 +111,11 @@ function stamp(input) {
 
 // ── prompt / stop ────────────────────────────────────────────────────────────────────────
 
+// The owner pressed Stop work on the board: no hook wakes, holds or feeds a session.
+function paused() {
+  try { return !!require('./bridge-db').boardPaused(); } catch (_) { return false; }
+}
+
 function waiting(win) {
   const { mailbox, oneLine } = board();
   const list = mailbox.urgentFor(AGENT, win, win);
@@ -120,6 +125,7 @@ function waiting(win) {
 }
 
 function prompt(input) {
+  if (paused()) return;
   const win = windowOf(input);
   if (!win) return;
   const parts = [];
@@ -151,6 +157,7 @@ function prompt(input) {
 
 function stop(input) {
   if (input.stop_hook_active) return;   // it was sent back once already; do not hold it
+  if (paused()) return;
   const win = windowOf(input);
   if (!win) return;
   const text = waiting(win);
@@ -260,6 +267,11 @@ function watch(input) {
     if (!mine() || monitored() || Date.now() - started > WATCH_MAX_MS || (session && !alive(session))) {
       if (mine()) { try { fs.unlinkSync(lock); } catch (_) {} }
       process.exit(0);
+    }
+    // Stopped by the owner: what arrives meanwhile does not wake this window, now or after.
+    if (paused()) {
+      try { seen = bridgeDb.getDb().prepare('SELECT COALESCE(MAX(id), 0) n FROM messages').get().n; } catch (_) {}
+      return;
     }
     let list = [];
     try { list = mailbox.urgentFor(AGENT, win, win, seen); } catch (_) {}

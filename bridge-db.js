@@ -198,6 +198,13 @@ function initSchema(db) {
       PRIMARY KEY (room, card)
     );
     CREATE INDEX IF NOT EXISTS idx_room_members_card ON room_members(card);
+    -- The owner stopped the work: while this row exists no hook, watchman, waker or the
+    -- supervisor wakes a session (owner, 16.11: sessions told to sleep were woken all night).
+    CREATE TABLE IF NOT EXISTS board_pause (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      since TEXT,
+      by TEXT DEFAULT ''
+    );
     -- A window the owner sent out of a room. Only the owner lets it back in: an agent's
     -- invite, a post into the room and a neighbour's letter are refused (owner, 16.11).
     CREATE TABLE IF NOT EXISTS room_removed (
@@ -1428,6 +1435,17 @@ function removedFromRoom(room, card) {
   return rows.some(r => mine.has(String(r.card).toLowerCase()));
 }
 
+// The owner's stop: { since, by } while the work is stopped, null otherwise.
+function boardPaused() {
+  try { return getDb().prepare('SELECT since, by FROM board_pause WHERE id = 1').get() || null; } catch (_) { return null; }
+}
+function setBoardPaused(on, by) {
+  const db = getDb();
+  if (on) db.prepare('INSERT OR REPLACE INTO board_pause (id, since, by) VALUES (1, ?, ?)').run(new Date().toISOString(), String(by || ''));
+  else db.prepare('DELETE FROM board_pause WHERE id = 1').run();
+  return boardPaused();
+}
+
 // The owner pins or unpins a room: it stays on top of his list until he unpins it.
 function pinRoom(id, pinned) {
   const db = getDb();
@@ -1639,6 +1657,8 @@ module.exports = {
   readRooms,
   renameRoom,
   pinRoom,
+  boardPaused,
+  setBoardPaused,
   touchRoom,
   roomsOfCard,
   cluster,

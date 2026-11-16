@@ -988,13 +988,14 @@ async function checkApps() {
   }
   const line = (name, up, app) => '<div><i class="' + (up ? 'up' : '') + '"></i>' + name + (up ? ' is running' :
     ' is closed <button type="button" class="link-btn" data-launch="' + app + '">Start</button>') + '</div>';
-  let sup = null, upd = null, quo = null;
+  let sup = null, upd = null, quo = null, pau = null;
+  try { pau = (await (await fetch('/api/pause')).json()).paused; } catch (_) {}
   try { sup = await (await fetch('/api/supervisor')).json(); } catch (_) {}
   try { upd = await (await fetch('/api/update')).json(); } catch (_) {}
   if (j.antigravity) { try { quo = await (await fetch('/api/quota')).json(); } catch (_) {} }
   let mach = null;
   try { mach = await (await fetch('/api/machines')).json(); } catch (_) {}
-  $('#apps').innerHTML = line('Claude Desktop', j.claude, 'claude') + line('Antigravity', j.antigravity, 'antigravity') +
+  $('#apps').innerHTML = pauseLine(pau) + line('Claude Desktop', j.claude, 'claude') + line('Antigravity', j.antigravity, 'antigravity') +
     quotaLine(quo) + supervisorLine(sup, j.antigravity) + machinesLines(mach) + updateLine(upd);
 }
 // Other machines of the owner's network: who is linked, who asks to be, and the search.
@@ -1059,6 +1060,14 @@ function quotaLine(q) {
     q.pools.map(p => (p.stale ? 'old ' : '') + Math.round(p.remaining * 100) + '% ' + esc(short(p.labels[0].replace(/\s*\(.*\)$/, ''), 18))).join(' · ') +
     (low <= 0.05 ? ' — switch account' : '') + '</div>';
 }
+// Stop work: while it is on, the bridge wakes no session — no hook, watchman or supervisor.
+function pauseLine(p) {
+  return p
+    ? '<div class="paused" title="Since ' + esc(p.since || '') + '"><i></i>Work stopped: the bridge wakes nobody ' +
+      '<button type="button" class="link-btn" data-pause="off">Resume work</button></div>'
+    : '<div><i class="up"></i>The bridge wakes sessions <button type="button" class="link-btn" data-pause="on" ' +
+      'title="Silence every hook, watchman and the supervisor until you press it again">Stop work</button></div>';
+}
 // A release newer than this board: the offer, what is new in the tooltip, and the button.
 // A git checkout is somebody's working copy and is never overwritten from here.
 function updateLine(u) {
@@ -1095,6 +1104,13 @@ $('#apps').addEventListener('click', async e => {
         r = await post('/api/machines/trust', { on: d.machTrust === 'on' }).catch(x => ({ error: x.message }));
       }
     }
+    if (r && r.error) alert(r.error);
+    return checkApps();
+  }
+  const pz = e.target.closest('[data-pause]');
+  if (pz) {
+    pz.disabled = true;
+    const r = await post('/api/pause', { on: pz.dataset.pause === 'on' }).catch(x => ({ error: x.message }));
     if (r && r.error) alert(r.error);
     return checkApps();
   }

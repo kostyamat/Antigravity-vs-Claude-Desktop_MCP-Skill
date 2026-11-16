@@ -9,6 +9,7 @@ let lastWokenId = 0;
 function wakeAntigravity(rec) {
   // A test run posts to windows that do not exist; it must not reach into the real client.
   if (process.env.AGENT_BRIDGE_NO_WAKE) return;
+  try { if (require('./bridge-db').boardPaused()) return; } catch (_) {}   // the owner stopped the work
   try {
     const id = Number(rec.id || 0);
     if (id && id <= lastWokenId) return;

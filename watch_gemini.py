@@ -22,6 +22,18 @@ DB_PATH = os.path.join(_bridge_home(), "agent_bridge.db")
 POLL_SEC = 2.0
 
 
+def board_paused(db_path):
+    """True while the owner has pressed Stop work on the board (table board_pause)."""
+    try:
+        con = sqlite3.connect(db_path, timeout=3.0)
+        try:
+            return con.execute("SELECT 1 FROM board_pause WHERE id = 1").fetchone() is not None
+        finally:
+            con.close()
+    except Exception:
+        return False
+
+
 def get_max_id():
     con = sqlite3.connect(DB_PATH, timeout=5.0)
     try:
@@ -113,7 +125,9 @@ def main():
             return 0
         try:
             top = get_max_id()
-            if top > last:
+            if top > last and board_paused(DB_PATH):
+                last = top          # the owner stopped the work: wake nobody, now or after
+            elif top > last:
                 rows = get_messages_since(last)
                 for r in rows:
                     i, who, _fs, to_agent, _ts, pri, body = r

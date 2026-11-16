@@ -378,6 +378,18 @@ def register_window(session_id, window):
         pass                           # the board is a convenience, never a gate
 
 
+def board_paused(db_path):
+    """True while the owner has pressed Stop work on the board (table board_pause)."""
+    try:
+        con = sqlite3.connect(db_path, timeout=3.0)
+        try:
+            return con.execute("SELECT 1 FROM board_pause WHERE id = 1").fetchone() is not None
+        finally:
+            con.close()
+    except Exception:
+        return False
+
+
 def prompt_invites():
     """UserPromptSubmit: an invitation reaches a window that was asleep.
 
@@ -387,7 +399,7 @@ def prompt_invites():
     quick unless an invitation for this session exists: one indexed query first,
     the window lookup and the canonical rule (room-invite.js) only after a hit."""
     sid = _client_session_id()
-    if not sid or not os.path.exists(DB):
+    if not sid or not os.path.exists(DB) or board_paused(DB):
         return 0
     win = _find_window(sid)
     ids = [x for x in (sid, win and win["window"]) if x]
@@ -577,6 +589,11 @@ def main():
         return prompt_invites()
     if not os.path.exists(DB):
         return 0                       # no bridge on this machine — stay silent
+    if board_paused(DB):
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext":
+            "agent-bridge: the owner stopped the work on the board. Do not read or answer the board and start no "
+            "watchman; do only what the owner asks in this conversation."}}, ensure_ascii=False))
+        return 0
 
     try:
         con = sqlite3.connect("file:%s?mode=ro" % DB.replace("\\", "/"), uri=True, timeout=3.0)

@@ -132,6 +132,8 @@ details.machine .group { padding-left: 22px; }
 .apps div { display: flex; align-items: center; gap: 6px; }
 .apps i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
 .apps i.up { background: #3c9a5f; }
+.apps .paused { color: #c0392b; font-weight: 600; }
+.apps .paused i { background: #c0392b; }
 .apps .link-btn { padding: 0 4px; font-size: 12px; color: var(--accent); }
 
 /* ── buttons ─────────────────────────────────────────────────────────────── */

@@ -39,6 +39,18 @@ IDENTITY_RETRY_SEC = 60
 HEARTBEAT_SEC = 900
 
 
+def board_paused(db_path):
+    """True while the owner has pressed Stop work on the board (table board_pause)."""
+    try:
+        con = sqlite3.connect(db_path, timeout=3.0)
+        try:
+            return con.execute("SELECT 1 FROM board_pause WHERE id = 1").fetchone() is not None
+        finally:
+            con.close()
+    except Exception:
+        return False
+
+
 def get_max_id():
     con = sqlite3.connect(DB_PATH, timeout=5.0)
     try:
@@ -218,6 +230,8 @@ def main():
                 # To stderr: every stdout line wakes the session, and "I have started"
                 # is not news — the Monitor call that started this already said so.
                 print("watchman listening at #%d%s" % (top, sess_label), file=sys.stderr, flush=True)
+            elif top > last and board_paused(DB_PATH):
+                last = top          # the owner stopped the work: wake nobody, now or after
             elif top > last:
                 if me:
                     rows = urgent_since(args.agent, me, last, my_session)

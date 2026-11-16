@@ -24,6 +24,8 @@ function gather([agent, run, win, cwd, title, account]) {
   const out = { sid, run: run || '', win: win || '' };
   const part = (name, fn) => { try { out[name] = fn(); } catch (_) {} };
   part('registered', () => require('./register-window').register(agent, sid, win, 'claude-code', cwd, title));
+  part('paused', () => require('./bridge-db').boardPaused());
+  if (out.paused) return out;
   part('p0', () => require('./p0').stateFor(agent, run, win));
   if (win) {
     part('mail', () => {

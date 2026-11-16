@@ -250,6 +250,7 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
   let quotaTimer = null, quotaRound = 0, quotaBusy = false;
   async function quotaTick(force) {
     if (quotaBusy || (!config().enabled && !force)) return status.quota;
+    if (bridgeDb.boardPaused && bridgeDb.boardPaused()) return status.quota;
     quotaBusy = true;
     try {
       const r = await quotaWatch.tick(config().room || '', { wordsOnly: !force && (quotaRound++ % 2 === 1) });
@@ -364,6 +365,7 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
   async function tick(force) {
     const cfg0 = config();
     if (!cfg0.enabled && !force) return status;
+    if (bridgeDb.boardPaused && bridgeDb.boardPaused()) return status;      // the owner stopped the work: nobody is chased or woken
     const next = { lastTick: new Date().toISOString(), sleepers: [], stands: [], describing: 0, rescues: [], catchups: [], lastError: '', sent: '' };
     try {
       next.database = watchDatabase(cfg0.room || '');
