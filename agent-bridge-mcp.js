@@ -2011,15 +2011,20 @@ function noteSession(agent, sessionId, topic, peerAgent, peerSession, identity) 
     if (topic && !c.topics.includes(topic)) c.topics.push(topic);
     rec.contacts[pkey] = c;
 
-    const prec = reg[pkey] || { agent: normAgent(peerAgent), sessionId: peerSid, topics: [], contacts: {}, firstSeen: now };
-    const pc = prec.contacts[key] || { count: 0, topics: [] };
-    pc.count += 1;
-    pc.lastAt = now;
-    if (topic && !pc.topics.includes(topic)) pc.topics.push(topic);
-    prec.contacts[key] = pc;
-    if (topic && !prec.topics.includes(topic)) prec.topics.push(topic);
-    prec.lastSeen = prec.lastSeen || now;
-    reg[pkey] = prec;
+    // The peer's side is updated only when the peer has a row of its own. Created here from
+    // an address, it invented windows: Claude/all, Gemini/all, a Claude id filed under Gemini
+    // — phantom cards on the board (DEBT, removed 16.11). A window gets its row when it speaks.
+    const prec = reg[pkey];
+    if (prec) {
+      const pc = prec.contacts[key] || { count: 0, topics: [] };
+      pc.count += 1;
+      pc.lastAt = now;
+      if (topic && !pc.topics.includes(topic)) pc.topics.push(topic);
+      prec.contacts[key] = pc;
+      if (topic && !prec.topics.includes(topic)) prec.topics.push(topic);
+      prec.lastSeen = prec.lastSeen || now;
+      reg[pkey] = prec;
+    }
   }
 
   reg[key] = rec;
