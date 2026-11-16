@@ -1,0 +1,117 @@
+{
+  "en": {
+    "head": "Quota is running out",
+    "headOut": "Quota is used up",
+    "headCut": "A session was cut off",
+    "left": "{who}, account {account}: {left} % left — {what}.",
+    "resets": "Resets {when}.",
+    "next": "At {stop} % the supervisor stops the work and asks you to switch the account.",
+    "helpers": "Helpers stopped: {n} — {names}.",
+    "leads": "Lead sessions told to save and stop: {n} — {names}.",
+    "leadsWarned": "Lead sessions told to stop heavy work and save their context: {n} — {names}.",
+    "switch": "Switch the {who} account, then write to the supervisor on the board: resume.",
+    "out": "{who}, account {account}: the limit is reached — {what}.",
+    "cut": "Project {project}: the session stopped in the middle of its work ({why}). What it was doing is saved in the project's slice, .agents/HANDOFF.md."
+  },
+  "uk": {
+    "head": "Квота добігає кінця",
+    "headOut": "Квоту вичерпано",
+    "headCut": "Сесія обірвалася",
+    "left": "{who}, акаунт {account}: лишилось {left} % — {what}.",
+    "resets": "Оновиться {when}.",
+    "next": "На {stop} % наглядач зупинить роботу і попросить змінити акаунт.",
+    "helpers": "Помічників зупинено: {n} — {names}.",
+    "leads": "Лідам сказано зберегтися й зупинитися: {n} — {names}.",
+    "leadsWarned": "Лідам сказано припинити важкі операції й зберегти контекст: {n} — {names}.",
+    "switch": "Змініть акаунт {who} і напишіть наглядачеві на дошці: продовжити.",
+    "out": "{who}, акаунт {account}: ліміт вичерпано — {what}.",
+    "cut": "Проєкт {project}: сесія зупинилась посеред роботи ({why}). Що вона робила, збережено у зрізі проєкту, .agents/HANDOFF.md."
+  },
+  "ru": {
+    "head": "Квота на исходе",
+    "headOut": "Квота исчерпана",
+    "headCut": "Сессия оборвалась",
+    "left": "{who}, аккаунт {account}: осталось {left} % — {what}.",
+    "resets": "Обновится {when}.",
+    "next": "На {stop} % наблюдатель остановит работу и попросит сменить аккаунт.",
+    "helpers": "Помощников остановлено: {n} — {names}.",
+    "leads": "Лидам сказано сохраниться и остановиться: {n} — {names}.",
+    "leadsWarned": "Лидам сказано прекратить тяжёлые операции и сохранить контекст: {n} — {names}.",
+    "switch": "Смените аккаунт {who} и напишите наблюдателю на доске: продолжить.",
+    "out": "{who}, аккаунт {account}: лимит исчерпан — {what}.",
+    "cut": "Проект {project}: сессия остановилась посреди работы ({why}). Что она делала, сохранено в срезе проекта, .agents/HANDOFF.md."
+  },
+  "de": {
+    "head": "Das Kontingent geht zu Ende",
+    "headOut": "Das Kontingent ist aufgebraucht",
+    "headCut": "Eine Sitzung wurde abgebrochen",
+    "left": "{who}, Konto {account}: noch {left} % — {what}.",
+    "resets": "Wird zurückgesetzt: {when}.",
+    "next": "Bei {stop} % hält der Supervisor die Arbeit an und bittet um einen Kontowechsel.",
+    "helpers": "Helfer angehalten: {n} — {names}.",
+    "leads": "Leitsitzungen angewiesen, zu sichern und anzuhalten: {n} — {names}.",
+    "leadsWarned": "Leitsitzungen angewiesen, schwere Arbeiten zu beenden und den Kontext zu sichern: {n} — {names}.",
+    "switch": "Wechseln Sie das {who}-Konto und schreiben Sie dem Supervisor auf dem Board: weiter.",
+    "out": "{who}, Konto {account}: das Limit ist erreicht — {what}.",
+    "cut": "Projekt {project}: die Sitzung wurde mitten in der Arbeit beendet ({why}). Ihr Stand ist im Slice des Projekts gesichert, .agents/HANDOFF.md."
+  },
+  "fr": {
+    "head": "Le quota touche à sa fin",
+    "headOut": "Le quota est épuisé",
+    "headCut": "Une session a été interrompue",
+    "left": "{who}, compte {account} : il reste {left} % — {what}.",
+    "resets": "Réinitialisation : {when}.",
+    "next": "À {stop} %, le superviseur arrête le travail et vous demande de changer de compte.",
+    "helpers": "Assistants arrêtés : {n} — {names}.",
+    "leads": "Sessions principales priées de sauvegarder et de s'arrêter : {n} — {names}.",
+    "leadsWarned": "Sessions principales priées d'arrêter les opérations lourdes et de sauvegarder leur contexte : {n} — {names}.",
+    "switch": "Changez de compte {who}, puis écrivez au superviseur sur le tableau : continuer.",
+    "out": "{who}, compte {account} : la limite est atteinte — {what}.",
+    "cut": "Projet {project} : la session s'est arrêtée en plein travail ({why}). Son état est enregistré dans le slice du projet, .agents/HANDOFF.md."
+  },
+  "es": {
+    "head": "La cuota se está agotando",
+    "headOut": "La cuota se ha agotado",
+    "headCut": "Una sesión se ha interrumpido",
+    "left": "{who}, cuenta {account}: queda un {left} % — {what}.",
+    "resets": "Se restablece: {when}.",
+    "next": "Al {stop} % el supervisor detiene el trabajo y le pide cambiar de cuenta.",
+    "helpers": "Ayudantes detenidos: {n} — {names}.",
+    "leads": "Sesiones principales avisadas para guardar y detenerse: {n} — {names}.",
+    "leadsWarned": "Sesiones principales avisadas para dejar las operaciones pesadas y guardar su contexto: {n} — {names}.",
+    "switch": "Cambie la cuenta de {who} y escriba al supervisor en el tablero: continuar.",
+    "out": "{who}, cuenta {account}: se ha alcanzado el límite — {what}.",
+    "cut": "Proyecto {project}: la sesión se detuvo en mitad del trabajo ({why}). Lo que hacía está guardado en el slice del proyecto, .agents/HANDOFF.md."
+  },
+  "_words": {
+    "resume": [
+      "resume",
+      "continue",
+      "go on",
+      "продовж",
+      "продолж",
+      "weiter",
+      "continuer",
+      "reprendre",
+      "continuar",
+      "reanudar"
+    ],
+    "gemini": [
+      "gemini",
+      "antigravity",
+      "джем",
+      "гемін",
+      "помічник",
+      "помощник",
+      "helper"
+    ],
+    "claude": [
+      "claude",
+      "клод",
+      "клауд",
+      "лід",
+      "лидер",
+      "lead"
+    ]
+  }
+}

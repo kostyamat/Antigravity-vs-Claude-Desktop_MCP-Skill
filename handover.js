@@ -180,7 +180,7 @@ function askHelpers({ bridgeDb, router, win, post, now }) {
   return out;
 }
 
-module.exports = { transcriptDir, textOf, lastAnswer, previousWindow, briefLines, askHelpers };
+module.exports = { transcriptDir, textOf, readTail, lastAnswer, previousWindow, briefLines, askHelpers };
 
 // node handover.js <cwd> <sessionId> → the transcript lines for the session-start brief.
 if (require.main === module) {

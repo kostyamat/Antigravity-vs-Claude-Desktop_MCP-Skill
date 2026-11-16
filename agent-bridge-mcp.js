@@ -32,6 +32,7 @@ const { inviteText } = require('./room-invite');
 const { isHuman } = require('./room-routing');
 const rules = require('./board-rules').createRules(bridgeDb, cardsLib, router);
 const stands = require('./stands').createStands(bridgeDb, router);
+const claudeQuota = require('./claude-quota');
 const brief = require('./window-brief').createBrief(bridgeDb, cardsLib, router, rules, stands);
 const claudeHome = require('./claude-home');
 const mailbox = require('./mailbox').createMailbox(bridgeDb, router);
@@ -479,7 +480,7 @@ function fail(id, message) {
   sendResponse({ jsonrpc: '2.0', id, error: { code: -32000, message } });
 }
 
-const IDENTITY_TOOLS = new Set(['post_message', 'get_messages', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand',
+const IDENTITY_TOOLS = new Set(['post_message', 'get_messages', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand', 'report_usage',
   'mark_read', 'list_docs', 'read_doc', 'ack_doc']);
 const WRITING_TOOLS = new Set(['post_message', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand']);
 
@@ -555,6 +556,22 @@ const TOOLS = [
         peek: { type: 'boolean', description: 'Do not advance read cursor.' },
         roster: { type: 'boolean', description: 'List your rooms and helpers in full at the top. They are listed once and whenever they change; in between the top carries only their counts.' }
       }
+    }
+  },
+  {
+    name: 'report_usage',
+    description:
+      'Claude windows only, and only when the top of get_messages asks for it: hand the board the result of your own ' +
+      '`get_usage` tool, so the board supervisor knows how much of this account\'s plan limits is left and can warn every ' +
+      'lead in time. One call, no reply expected; you are not asked to watch the quota yourself.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sender: { type: 'string', description: '"Claude".' },
+        sessionId: { type: 'string', description: 'The id of your own window.' },
+        usage: { description: 'What get_usage returned, as it is: the object, or its JSON as text.' }
+      },
+      required: ['usage']
     }
   },
   {
@@ -977,6 +994,7 @@ function handleRequest(req) {
     if (toolName === 'set_helper') return pairTools.doSetHelper(id, args);
     if (toolName === 'book_stand') return pairTools.doBookStand(id, args);
     if (toolName === 'bridge_setup') return doSetup(id, args);
+    if (toolName === 'report_usage') return doReportUsage(id, args);
     if (toolName === 'post_message') return doPost(id, args);
     if (toolName === 'get_messages') return doGet(id, args);
     if (toolName === 'board_status') return doStatus(id, args);
@@ -1189,6 +1207,23 @@ function doSetup(id, a) {
     `   get_messages({reader:"<you>"}) — read new messages (CONTENT, not counters)\n` +
     `   find_session({query:"…"})     — check if topic was already researched\n` +
     `Full protocol: ${PROTOCOL_DOC}`);
+}
+
+// ── report_usage ─────────────────────────────────────────────────────────────────────────
+
+// A Claude window hands over what its own get_usage returned (claude-quota.js): the
+// board cannot read an account's limits itself, and the supervisor needs them.
+function doReportUsage(id, a) {
+  const usage = claudeQuota.parseUsage(a.usage);
+  if (!usage) return fail(id, 'report_usage: `usage` is not what get_usage returns — pass its result as it is (the object with `plan.windows`).');
+  const win = router.windowOf(a.canonicalId) || router.windowOf(a.sessionId) || '';
+  const card = win ? router.cardOf(win) : null;
+  const account = (card && card.account) || '';
+  if (!account && usage.windows.length) return fail(id, 'report_usage: the board cannot tell which account this window runs under (no sessionId, or a window it has no card for). Nothing recorded.');
+  claudeQuota.report({ account, win, usage, by: 'report' });
+  const worst = usage.windows.slice().sort((x, y) => y.used - x.used)[0];
+  ok(id, '📊 Noted' + (worst ? `: ${Math.round(100 - worst.used)} % left of "${worst.label}"` : '') +
+    '. Nothing more is asked of you; the supervisor warns this project if the quota runs low.');
 }
 
 // ── post_message ─────────────────────────────────────────────────────────────────────────
@@ -1509,6 +1544,15 @@ function doGet(id, a) {
         'Pass the id of your own window.');
     }
     if (a._identityNote) header.push('ℹ️ ' + a._identityNote);
+    // The supervisor's measurement of this account's Claude limits has grown old: this
+    // window is asked for a new one. Only while the supervisor is on, never on a peek.
+    if (reader === 'Claude' && sessionId && !a.peek) {
+      try {
+        const sv = (readConfig().supervisor || {});
+        const card = router.cardOf(router.windowOf(a.canonicalId) || router.windowOf(sessionId));
+        if (sv.enabled && card && card.account && claudeQuota.shouldAsk(card.account)) header.push(claudeQuota.ASK_LINE);
+      } catch (_) {}
+    }
     // The owner works through the board: a task given there is answered there.
     // Silence from every window, while they talk among themselves, is what he
     // reads as being ignored.

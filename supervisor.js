@@ -34,6 +34,11 @@ const { STALE_HOURS } = require('./stands');
 const { createGuard } = require('./db-guard');
 const ownerWaiting = require('./owner-waiting');
 const quota = require('./antigravity-quota');
+const claudeQuota = require('./claude-quota');
+const alert = require('./alert');
+const { createQuotaWatch } = require('./quota-watch');
+const rescue = require('./rescue');
+const { isHuman } = require('./room-routing');
 
 const ME = 'supervisor/board';
 const DEFAULTS = { enabled: false, model: 'flash', everyMinutes: 10, nudgeAfterMinutes: 10, catchUpAfterMinutes: 30,
@@ -233,20 +238,54 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
     return chased;
   }
 
-  // The helper's fuel. The signed-in Antigravity account is asked how much quota is left;
-  // at a fifth the owner is told to plan the switch, at a twentieth to switch now — urgent,
-  // so the board rings — with what the board remembers of his other accounts.
-  async function watchQuota(room) {
+  // Quotas have a ticker of their own (quota-watch.js): Antigravity's and Claude's, the
+  // warning window, stopping the helpers and the leads, and starting them again on the
+  // owner's word. Every minute it listens for that word; every second minute it measures.
+  const quotaWatch = createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini: quota, claude: claudeQuota,
+                                        config, save, isHuman });
+  let quotaTimer = null, quotaRound = 0, quotaBusy = false;
+  async function quotaTick(force) {
+    if (quotaBusy || (!config().enabled && !force)) return status.quota;
+    quotaBusy = true;
     try {
-      const q = await quota.read();
-      const cfg = config();
-      const known = quota.remember(cfg.quotaKnown, q);
-      const w = quota.warning(q, known, cfg.quotaTold);
-      save(w ? { quotaKnown: known, quotaTold: w.told } : { quotaKnown: known });
-      if (w) say({ to: 'all', toSession: 'human/web', room, status: w.level === 2 ? 'blocked' : 'question',
-                   priority: w.level === 2 ? 'P0' : 'normal', text: 'Supervisor: ' + w.text });
-      return { account: q.account, pools: q.pools, unmetered: q.unmetered, warned: w ? w.level : 0 };
-    } catch (e) { return { error: e.message }; }
+      const r = await quotaWatch.tick(config().room || '', { wordsOnly: !force && (quotaRound++ % 2 === 1) });
+      if (r.gemini || r.claude) status.quota = r;
+      else if (r.resumed) status.quota = Object.assign({}, status.quota || {}, { resumed: r.resumed, paused: [] });
+    } catch (e) { status.quota = { error: e.message }; }
+    quotaBusy = false;
+    return status.quota;
+  }
+
+  // A session cut off in the middle of its work — the usage limit, a crash, a closed
+  // window — left nothing but its transcript. What it was doing is read from there and
+  // written into the project's slice, so the next window starts from it (rescue.js).
+  // The StopFailure hook does the same the moment a turn fails; this round catches the
+  // sessions that died without a word. Once per ending of a transcript.
+  function rescueCutOff(room) {
+    const out = [];
+    const handled = Object.assign({}, config().handled || {});
+    let cards = [];
+    try { cards = cardsLib.claudeCardsEverywhere(); } catch (_) {}
+    const folders = new Map();
+    for (const c of cards) {
+      if (c.archived || !c.project) continue;
+      const idle = Date.now() - (Date.parse(c.activeAt || 0) || 0);
+      if (idle < rescue.QUIET_MIN * 60000 || idle > DAY) continue;
+      folders.set(String(c.project).toLowerCase(), c.project);
+    }
+    for (const folder of folders.values()) {
+      let r = null;
+      try { r = rescue.rescueProject(folder, { seen: handled['cut:' + folder.toLowerCase()] }); } catch (_) {}
+      if (!r || !r.written) continue;
+      handled['cut:' + folder.toLowerCase()] = r.key;
+      const name = projectName(folder.split(String.fromCharCode(92)).join('/')) || folder;
+      say({ to: 'all', toSession: 'human/web', room, status: 'info',
+        text: `Supervisor: the session of project "${name}" was cut off (${r.why}). What it was doing is saved in its slice: ${r.file}.` });
+      const no = alert.show(alert.t('headCut'), [alert.t('cut', { project: name, why: r.why })]);
+      out.push({ project: name, why: r.why, alertError: no || undefined });
+    }
+    if (out.length) save({ handled });
+    return out;
   }
 
   function repairDatabase() {
@@ -325,7 +364,8 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
     try {
       next.database = watchDatabase(cfg0.room || '');
       next.chased = chaseOwnersMail();
-      next.quota = await watchQuota(cfg0.room || '');
+      next.quota = status.quota || null;
+      next.cut = rescueCutOff(cfg0.room || '');
       const d = digest();
       next.sleepers = d.sleepers; next.stands = d.stands; next.describing = d.describing.length;
       next.rescues = d.rescues.map(r => ({ name: r.name, dirty: r.dirty, slice: r.slice, idleMinutes: r.idleMinutes }));
@@ -391,12 +431,16 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
   function schedule() {
     if (!nudged.size) loadNudges();
     if (timer) { clearInterval(timer); timer = null; }
+    if (quotaTimer) { clearInterval(quotaTimer); quotaTimer = null; }
     const cfg = config();
     if (!cfg.enabled) return;
     const every = Math.max(2, Number(cfg.everyMinutes) || 10) * 60000;
     timer = setInterval(() => { tick(false).catch(() => {}); }, every);
     if (timer.unref) timer.unref();
     setTimeout(() => { tick(false).catch(() => {}); }, 45000).unref();
+    quotaTimer = setInterval(() => { quotaTick(false).catch(() => {}); }, 60000);
+    if (quotaTimer.unref) quotaTimer.unref();
+    setTimeout(() => { quotaTick(false).catch(() => {}); }, 20000).unref();
   }
 
   // The owner's switch. Only these keys are his to set from the board.
@@ -420,12 +464,14 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
   function view() {
     const cfg = config();
     return { enabled: cfg.enabled, model: cfg.model, everyMinutes: cfg.everyMinutes, nudgeAfterMinutes: cfg.nudgeAfterMinutes,
-             conversation: cfg.conversation, room: cfg.room, status };
+             conversation: cfg.conversation, room: cfg.room, paused: Object.keys(cfg.paused || {}), status };
   }
 
   const checkDatabase = () => Object.assign({ sound: guard.sound() || 'ok' }, guard.live());
 
-  return { start: schedule, tick, digest, configure, view, repairDatabase, checkDatabase, ME };
+  const resume = only => quotaWatch.resume(only === 'gemini' || only === 'claude' ? only : '', config().room || '');
+
+  return { start: schedule, tick, quotaTick, resume, digest, configure, view, repairDatabase, checkDatabase, ME };
 }
 
 module.exports = { createSupervisor, ME };

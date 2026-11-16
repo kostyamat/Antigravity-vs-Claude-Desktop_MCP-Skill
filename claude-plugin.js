@@ -28,6 +28,8 @@ const PLUGIN_NAME = 'agent-bridge';
 //   stamp         — signs every bridge call with this window's id.
 //   prompt        — every prompt: one line when unread mail waits.
 //   stop          — a session about to go idle over unread mail reads it first.
+//   failed        — a turn that ended on an error: its context goes into the slice,
+//                   and a turn that ended on the usage limit tells the supervisor.
 //   watch         — in the background from session start and every stop:
 //                   wakes the idle session when something arrives for it.
 function bridgeHooks({ nodeExe, scriptsDir, pyCmd }) {
@@ -48,6 +50,7 @@ function bridgeHooks({ nodeExe, scriptsDir, pyCmd }) {
     { event: 'UserPromptSubmit', needle: 'bridge-hook.js" prompt', also: ['board_brief'],
       hook: { type: 'command', command: node('prompt'), timeout: 10 } },
     { event: 'Stop', needle: 'bridge-hook.js" stop', hook: { type: 'command', command: node('stop'), timeout: 15 } },
+    { event: 'StopFailure', needle: 'bridge-hook.js" failed', hook: { type: 'command', command: node('failed'), timeout: 30 } },
     { event: 'Stop', needle: 'bridge-hook.js" watch', hook: watch },
     { event: 'SessionStart', needle: 'bridge-hook.js" watch', hook: Object.assign({}, watch) }
   ];

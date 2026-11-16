@@ -11,8 +11,8 @@ const t = (name, fn) => { fn(); n++; console.log('ok ' + name); };
 
 const hooks = cp.bridgeHooks({ nodeExe: 'C:/node/node.exe', scriptsDir: path.join('X:', 'bridge'), pyCmd: 'python' });
 
-t('eight hooks, five events', () => {
-  assert.strictEqual(hooks.length, 8);
+t('nine hooks, six events', () => {
+  assert.strictEqual(hooks.length, 9);
   const j = cp.hooksJson(hooks).hooks;
   assert.deepStrictEqual(Object.keys(j).sort(), ['PreCompact', 'PreToolUse', 'SessionStart', 'Stop', 'UserPromptSubmit']);
   assert.strictEqual(j.SessionStart.length, 3);

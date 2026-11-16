@@ -22,6 +22,9 @@ files=$(git diff --cached --name-only --diff-filter=ACM)
 for f in $files; do
     case "$f" in
         .githooks/*) continue ;;
+        # The alert programs are built binaries; the alert texts are the owner-facing
+        # words in several languages, the same deliberate exception as the README.
+        bin/quota-alert|bin/quota-alert.exe|locales/*.json) continue ;;
         *.zip|*.png|*.jpg|*.ico|LICENSE) continue ;;
     esac
 

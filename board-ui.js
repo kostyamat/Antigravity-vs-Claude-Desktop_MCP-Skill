@@ -779,6 +779,8 @@ const server = http.createServer((req, res) => {
         if (data.dryRun) out = { digest: supervisor.digest() };
         else if (data.repair) out = { repair: supervisor.repairDatabase(), database: supervisor.checkDatabase() };
         else if (data.check) out = { database: supervisor.checkDatabase() };
+        else if (data.resume) out = { resumed: supervisor.resume(data.resume), view: supervisor.view() };
+        else if (data.quotaNow) out = { quota: await supervisor.quotaTick(true) };
         else {
           supervisor.configure(data);
           if (data.tickNow) await supervisor.tick(true);

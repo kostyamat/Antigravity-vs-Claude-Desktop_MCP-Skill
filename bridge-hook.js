@@ -16,6 +16,12 @@
 //   prompt   UserPromptSubmit. One line when unread mail or an invitation waits.
 //   stop     Stop. A session about to go idle over unread mail addressed to it is
 //            sent back to read it — once; it is not held if it stops again.
+//   failed   StopFailure. A turn that ended on an error — the usage limit first of all —
+//            left no slice: what it was doing is lifted from its transcript into the
+//            project's slice (rescue.js), and a turn that ended on the limit tells the
+//            supervisor that this account has run out (claude-quota.js).
+//   statusline  For a terminal session only (the desktop app runs no status line): hands
+//            the account's limits to the supervisor and prints them in one short line.
 //   watch    Started in the background at session start and at every stop. Sits
 //            on the board and, when something arrives for this window, exits with
 //            code 2: the client wakes the idle session with the text.
@@ -82,7 +88,7 @@ function alive(pid) {
 
 // ── stamp ────────────────────────────────────────────────────────────────────────────────
 
-const AS_SENDER = ['post_message', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand', 'create_room'];
+const AS_SENDER = ['post_message', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand', 'create_room', 'report_usage'];
 const AS_READER = ['get_messages', 'mark_read', 'list_docs', 'read_doc', 'ack_doc', 'board_status'];
 
 function stamp(input) {
@@ -152,6 +158,74 @@ function stop(input) {
   process.stdout.write(JSON.stringify({ decision: 'block', reason: 'agent-bridge: do not go idle yet. ' + text }));
 }
 
+// ── failed ───────────────────────────────────────────────────────────────────────────────
+
+// Errors that pass by themselves: the owner presses retry and the turn goes on.
+const PASSING = /^(overloaded|server_error|max_output_tokens)$/;
+const OUT_OF_QUOTA = /rate_limit|billing|account_on_hold|credit/i;
+
+function failed(input) {
+  const win = windowOf(input);
+  // The name of the field that carries the kind of error is not relied on: every
+  // likely one is read, and what the client really sent is kept for a look.
+  const raw = input.error_type || input.error || input.failure || input.reason || input.stop_reason || '';
+  const kind = String(typeof raw === 'object' ? (raw.type || raw.code || JSON.stringify(raw)) : raw).slice(0, 80);
+  try {
+    fs.mkdirSync(RUN_DIR, { recursive: true });
+    const seen = {};
+    for (const k of Object.keys(input)) seen[k] = typeof input[k] === 'string' ? input[k].slice(0, 160) : typeof input[k];
+    fs.writeFileSync(path.join(RUN_DIR, 'stopfailure_last.json'), JSON.stringify({ at: new Date().toISOString(), seen }, null, 1));
+  } catch (_) {}
+  if (PASSING.test(kind)) return;
+
+  const cardsLib = require('./cards');
+  const card = win ? cardsLib.claudeWindowOfCli(win) : null;
+  const folder = (card && card.project) || input.cwd || process.cwd();
+  const rescue = require('./rescue');
+  const info = input.transcript_path ? rescue.ending(input.transcript_path) : { why: '' };
+  const limit = OUT_OF_QUOTA.test(kind) || /limit/i.test(info.certain ? info.why : '');
+  const why = (limit ? 'the usage limit was reached' : 'the turn ended on an error') + (kind ? ` (${kind})` : '') +
+    (info.certain && info.why ? ': ' + info.why : '');
+  const r = rescue.rescueProject(folder, { transcript: input.transcript_path || '', why, force: true });
+  if (limit && card && card.account) require('./claude-quota').exhausted({ account: card.account, win, why: info.certain ? info.why : kind });
+
+  // Told on the board and on the screen. A turn that ran out of quota is announced by
+  // the supervisor's quota ticker within a minute; here only when that is switched off.
+  let sv = {};
+  try { sv = JSON.parse(fs.readFileSync(path.join(HOME, 'bridge_config.json'), 'utf8')).supervisor || {}; } catch (_) {}
+  const name = path.basename(String(folder).split(String.fromCharCode(92)).join('/'));
+  if (r && r.written) {
+    try {
+      const bridgeDb = require('./bridge-db');
+      const rec = { ts: new Date().toISOString(), from: 'Supervisor', fromSession: 'supervisor/board', room: sv.room || '', to: 'all',
+        toSession: 'human/web', replyTo: null, topic: 'supervisor', priority: 'normal', status: 'info', progress: '', file: null, readBy: [],
+        message: `Supervisor: the session of project "${name}" was cut off — ${why}. What it was doing is saved in its slice: ${r.file}.` };
+      bridgeDb.addMessage(rec);
+      if (rec.room) bridgeDb.touchRoom(rec.room);
+    } catch (_) {}
+  }
+  if (!(limit && sv.enabled)) {
+    const alert = require('./alert');
+    alert.show(alert.t('headCut'), [alert.t('cut', { project: name, why })]);
+  }
+}
+
+// ── statusline ───────────────────────────────────────────────────────────────────────────
+
+function statusline(input) {
+  const claudeQuota = require('./claude-quota');
+  const usage = claudeQuota.fromStatusline(input);
+  if (!usage) return;
+  const win = windowOf(input);
+  let account = '';
+  try { const c = win && require('./cards').claudeWindowOfCli(win); account = (c && c.account) || ''; } catch (_) {}
+  claudeQuota.report({ account: account || 'cli', win: win || String(input.session_id || ''), usage, by: 'statusline' });
+  const bits = [];
+  if (usage.context && usage.context.size) bits.push('ctx ' + Math.round(100 * usage.context.tokens / usage.context.size) + '%');
+  for (const w of usage.windows) bits.push((/5/.test(w.label) ? '5h ' : '7d ') + Math.round(w.used) + '%');
+  process.stdout.write(bits.join(' · '));
+}
+
 // ── watch ────────────────────────────────────────────────────────────────────────────────
 
 function watch(input) {
@@ -206,6 +280,8 @@ readStdin().then(input => {
     if (mode === 'stamp') stamp(input);
     else if (mode === 'prompt') prompt(input);
     else if (mode === 'stop') stop(input);
+    else if (mode === 'failed') failed(input);
+    else if (mode === 'statusline') statusline(input);
     else if (mode === 'watch') watch(input);
   } catch (_) { /* never the session's problem */ }
 });
