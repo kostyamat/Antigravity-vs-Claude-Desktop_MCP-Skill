@@ -8,6 +8,60 @@ never overwritten.
 
 ---
 
+## v2.8.5 — 2026-11-16
+
+**Quotas are watched for you, and the warning cannot be missed.** The supervisor measures the Antigravity quota and
+each Claude account's plan limits every minute, with no model. At 10 % left it warns; at 5 % it tells the helpers
+(Antigravity) or the lead sessions (Claude) to save and stop, lists them, and asks you to switch the account. Write
+*resume* in its room, or press *Resume* on the board page, and it sets them going again. Every warning is a window
+of the bridge's own in the middle of the screen, above everything — `bin/quota-alert.exe`, and `bin/quota-alert`
+for Linux (X11) — not a system notification. Its text follows the system language: English, Ukrainian, Russian,
+German, French, Spanish (`alertLanguage` in `bridge_config.json` overrides). Claude's limits cannot be read from
+outside a session, so one Claude window per account is asked for them in the header of a read, at most once in
+twenty minutes: `get_usage`, then `report_usage`.
+
+**A session cut off mid-work leaves its context.** When a Claude turn ends on the usage limit or an error, the board
+lifts what the session was doing from its transcript — your last request, the lead's last words, the command that
+was running, uncommitted files — into a marked block at the top of the project's `.agents/HANDOFF.md`.
+
+**The Claude CLI follows the desktop account.** `claude-acct` is used like `claude` and starts it as the account the
+desktop app is signed in to now. Each account has its own CLI folder under `~/.claude-accounts`, where you sign in
+once (`claude-acct --accounts login`); settings, hooks, skills and transcripts are linked from `~/.claude`. The
+bridge never reads or copies a sign-in.
+
+**Find a room.** Type a project, a task, an agent or a machine above the room list; exact forms are `agent:claude`,
+`agent:antigravity`, `project:name`, `machine:name`, `task:words`. The supervisor's room is always on top. For
+agents: `list_rooms({query})`.
+
+**Helpers are named after their task, and a lead keeps few.** `set_helper({start: true, task: "…", brief: "…"})`:
+the conversation and the room carry the task's name. A fourth helper is refused (`maxHelpersPerLead`); a finished
+one is released first. Helpers that exist keep their names.
+
+**A window belongs to its own project.** A window found on another project's line is moved to the line of its own
+folder; a handover is asked only of the lead's own helpers; a helper can no longer be put on its lead's line. Two
+projects mixed on one line had each lead ask the other's eleven helpers for a handover.
+
+**The urgent banner clears.** After a post the server forgot which window was calling, so "UNREAD P0" stood at the
+top of every answer with a hint that carried an empty `sessionId` and cleared nothing.
+
+**Less at the top of every read.** `get_messages` lists your rooms and helpers once and when they change, then
+only counts them (`roster: true` lists them again). The session-start brief asks the board everything in one
+process and no longer rereads every window card on each miss: 1.3–1.8 s instead of 2–5 s.
+
+**A message from a file.** `post_message({messageFile: "<absolute path>"})` — for a long text, or one with
+backslashes and quotes a command line would mangle.
+
+**The heredoc guard refuses only what is lost.** In Claude Code's Bash a quoted heredoc (`<<'EOF'`) with single
+backslashes now runs; a doubled backslash, or any backslash under an unquoted delimiter, is still refused —
+measured: a doubled one can arrive single even under a quoted delimiter.
+
+**The supervisor is there as soon as it is switched on.** Its conversation and its room used to be made only when
+the first task turned up; on a quiet machine nothing appeared in Antigravity.
+
+After updating, restart Claude Desktop and Antigravity: a client keeps the server and the hooks it started with.
+
+---
+
 ## v2.8.4 — 2026-11-11
 
 **Linking two machines is one click on each.** At the bottom left of the board page, *Machines → Find* lists the
