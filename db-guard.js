@@ -21,7 +21,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { DatabaseSync } = require('node:sqlite');
+const { DatabaseSync } = require('./sqlite');
 const dbBackup = require('./db-backup');
 
 const SNAPSHOT_MAX_AGE_MS = 60 * 60000;

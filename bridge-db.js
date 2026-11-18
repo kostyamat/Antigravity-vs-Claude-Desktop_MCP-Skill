@@ -6,7 +6,7 @@
 // WAL mode (Write-Ahead Logging) for non-blocking concurrent multi-process reads.
 // ─────────────────────────────────────────────────────────────────────────────────────────
 
-const { DatabaseSync } = require('node:sqlite');
+const { DatabaseSync } = require('./sqlite');
 const fs = require('fs');
 const path = require('path');
 

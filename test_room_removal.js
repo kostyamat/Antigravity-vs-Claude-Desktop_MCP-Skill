@@ -8,6 +8,7 @@ const path = require('path');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-removal-'));
 fs.copyFileSync(path.join(__dirname, 'bridge-db.js'), path.join(dir, 'bridge-db.js'));
+fs.copyFileSync(path.join(__dirname, 'sqlite.js'), path.join(dir, 'sqlite.js'));
 const db = require(path.join(dir, 'bridge-db.js'));
 
 let n = 0;

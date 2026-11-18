@@ -49,7 +49,7 @@ function hasBoard(dir) {
   const db = path.join(dir, DB);
   if (!exists(db)) return false;
   try {
-    const { DatabaseSync } = require('node:sqlite');
+    const { DatabaseSync } = require('./sqlite');
     const d = new DatabaseSync(db, { readOnly: true });
     try { return d.prepare('SELECT COUNT(*) n FROM messages').get().n > 0; } finally { d.close(); }
   } catch (_) { return true; }          // a database that cannot be read is still somebody's board
@@ -85,7 +85,7 @@ function copyTree(from, to) {
 // Moves the board of `from` into `to`. Nothing in `from` is changed.
 // → { files, messages, repointed } ; throws when the database cannot be copied.
 function take(from, to) {
-  const { DatabaseSync } = require('node:sqlite');
+  const { DatabaseSync } = require('./sqlite');
   const out = { files: 0, messages: 0, repointed: 0 };
 
   // The database first, as one consistent copy even if the old board is running.

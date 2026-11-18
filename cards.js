@@ -248,7 +248,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // dropped. Asked only for files without a summary, so the big ones are rarely opened.
 function conversationKind(id, known) {
   try {
-    const { DatabaseSync } = require('node:sqlite');
+    const { DatabaseSync } = require('./sqlite');
     const db = new DatabaseSync(path.join(GEMINI_CONVERSATIONS, id + '.db'), { readOnly: true });
     try {
       const steps = Number(db.prepare('SELECT COUNT(*) AS n FROM steps').get().n);
@@ -291,7 +291,7 @@ function geminiCards() {
 
   const meta = new Map();
   try {
-    const { DatabaseSync } = require('node:sqlite');
+    const { DatabaseSync } = require('./sqlite');
     const db = new DatabaseSync(GEMINI_SUMMARIES, { readOnly: true });
     try {
       const rows = db.prepare(

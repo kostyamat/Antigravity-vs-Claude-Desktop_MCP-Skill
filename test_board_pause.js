@@ -10,6 +10,7 @@ const { execFileSync } = require('child_process');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-pause-'));
 fs.copyFileSync(path.join(__dirname, 'bridge-db.js'), path.join(dir, 'bridge-db.js'));
+fs.copyFileSync(path.join(__dirname, 'sqlite.js'), path.join(dir, 'sqlite.js'));
 const db = require(path.join(dir, 'bridge-db.js'));
 const py = name => execFileSync('python', ['-c',
   'import sys; sys.path.insert(0, sys.argv[1]); import ' + name + ' as m; print(m.board_paused(sys.argv[2]))',
