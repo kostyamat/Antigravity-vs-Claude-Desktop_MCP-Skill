@@ -132,6 +132,23 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
       if (!router.same(current.lead, lead) && !router.same(helper, me)) {
         return fail(id, `set_helper: "${router.nameOf(helper)}" is the helper of "${router.nameOf(current.lead)}", not yours to release.`);
       }
+      // Done for good: the Antigravity conversation is deleted, and the board takes it off at once —
+      // pair, rooms, its pair room archived (antigravity-gone.js). Only the lead deletes its own helper.
+      if (a.delete === true) {
+        if (asHelper || router.agentOf(helper) !== 'Gemini') {
+          return fail(id, 'set_helper: delete is for a lead ending its own Antigravity helper (helper + release + delete).');
+        }
+        const name = router.nameOf(helper);
+        return antigravity.remove(current.helper).then(() => {
+          const gone = require('./antigravity-gone');
+          const archiver = require('./room-archive').createArchiver(bridgeDb, __dirname);
+          let swept = { gone: [], archived: [] };
+          try { swept = gone.sweep({ bridgeDb, archiveRoom: r => archiver.archiveRoom(r) }, { only: [current.helper] }); } catch (_) {}
+          bridgeDb.dropHelper(current.helper);
+          return ok(id, `✅ "${name}" is deleted from Antigravity and is no longer your helper.` +
+            (swept.archived.length ? ' Archived: ' + swept.archived.map(x => `"${x.name}" → ${x.file}`).join('; ') + '.' : ''));
+        }).catch(e => fail(id, `set_helper: the Antigravity conversation was not deleted (${e.message}); the pair stays. Is Antigravity running?`));
+      }
       bridgeDb.dropHelper(current.helper);
       return ok(id, `✅ "${router.nameOf(helper)}" is no longer the helper of "${router.nameOf(current.lead)}".`);
     }

@@ -81,4 +81,31 @@ function create({ model, title, prompt }) {
   });
 }
 
-module.exports = { locate, send, create };
+// Delete a conversation for good, with the call the application's own UI makes
+// (LanguageServerService/DeleteCascadeTrajectory; agentapi has no delete). Only an id shaped like
+// an Antigravity conversation is ever sent: an empty or odd one is refused here, never passed on.
+function remove(conversationId) {
+  return new Promise((resolve, reject) => {
+    const id = String(conversationId || '').trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      return reject(new Error('not an Antigravity conversation id: "' + id + '"'));
+    }
+    let at;
+    try { at = locate(); } catch (e) { return reject(e); }
+    const [host, port] = at.env.ANTIGRAVITY_LS_ADDRESS.split(':');
+    const data = Buffer.from(JSON.stringify({ cascadeId: id }));
+    const req = require('http').request({ host, port, method: 'POST', timeout: 15000,
+      path: '/exa.language_server_pb.LanguageServerService/DeleteCascadeTrajectory',
+      headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1',
+                 'x-codeium-csrf-token': at.env.ANTIGRAVITY_CSRF_TOKEN, 'Content-Length': data.length } }, res => {
+      let body = '';
+      res.on('data', c => { body += c; });
+      res.on('end', () => res.statusCode === 200 ? resolve(true) : reject(new Error('Antigravity answered ' + res.statusCode + ': ' + body.slice(0, 200))));
+    });
+    req.on('timeout', () => req.destroy(new Error('Antigravity did not answer in time')));
+    req.on('error', reject);
+    req.end(data);
+  });
+}
+
+module.exports = { locate, send, create, remove };

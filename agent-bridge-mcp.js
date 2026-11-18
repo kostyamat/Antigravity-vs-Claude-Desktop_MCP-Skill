@@ -812,7 +812,9 @@ const TOOLS = [
       'the helper is told in it, and from then on: a helper\'s post that names nobody goes to its lead; a task to ' +
       'somebody else\'s helper, or a helper\'s answer to somebody who is not its lead, is refused. ' +
       'The pair survives compaction, restarts and account switches — it is printed at every session start and at ' +
-      'the top of get_messages. release: true ends it. ' +
+      'the top of get_messages. release: true ends it; release: true with delete: true also deletes a finished helper\'s ' +
+      'Antigravity conversation for good and archives its room — do it when its work is done, so idle conversations do not ' +
+      'pile up, grow Antigravity\'s context and answer the board for nothing. ' +
       'A lead with no helper starts one itself: set_helper({start: true, task: "<two to five words: what it is for>", brief: "<the project, ' +
       'where it lives, what the helper will do, what it must not touch>"}) opens a new Antigravity conversation named after the task, gives it ' +
       'that context, pairs it and makes the room. A lead keeps few helpers (three unless configured): release one whose task is done before starting another. ' +
@@ -832,6 +834,7 @@ const TOOLS = [
         lead: { type: 'string', description: 'The lead\'s window id or project name. Given by the helper.' },
         room: { type: 'string', description: 'The room the two talk in, if it is not the one they already share.' },
         release: { type: 'boolean', description: 'true = the pair is over.' },
+        delete: { type: 'boolean', description: 'With helper and release, lead only: the helper\'s work is done — delete its Antigravity conversation for good. Its pair room is archived (zip).' },
         allow: { type: 'string', description: 'With helper: give this other lead (window id or project) leave to consult the helper or give it a task.' },
         revoke: { type: 'string', description: 'With helper: take that leave back from this lead.' },
         hours: { type: 'number', description: 'With allow: the leave ends after this many hours (default: until revoked).' },

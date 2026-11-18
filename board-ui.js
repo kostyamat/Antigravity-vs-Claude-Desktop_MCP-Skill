@@ -1157,6 +1157,21 @@ setInterval(() => { try { require('./project-line').dropArchived(bridgeDb, cards
 const peerDeps = { bridgeDb, cardsLib, router, projectSlice: require('./project-slice'), skillReader: require('./skill-reader'),
                    roomMember: (action, id, card, agent, by) => ownerRoomMember(action, id, card, agent, by) };
 setInterval(() => { peerLink.pump(peerDeps); }, 5000).unref();
+// Antigravity conversations deleted (by a lead, or by the owner in the application): off the board
+// within a minute — pair ended, rooms left, a room left to one participant archived (antigravity-gone.js).
+let goneTold = '';
+setInterval(() => {
+  try {
+    const out = require('./antigravity-gone').sweep({ bridgeDb, archiveRoom: id => archiver.archiveRoom(id),
+      say: m => apiPost({ from: 'Board', fromSession: 'board/antigravity', to: m.to, toSession: m.toSession, status: m.status,
+        priority: m.priority, text: m.text }) });
+    if (out.refused && out.refused !== goneTold) {
+      goneTold = out.refused;
+      apiPost({ from: 'Board', fromSession: 'board/antigravity', to: 'all', toSession: 'human/web', status: 'blocked', text: 'Board: ' + out.refused +
+        '. Is ~/.gemini/antigravity/brain where it was? Nothing is taken off the board until that is clear.' });
+    }
+  } catch (_) {}
+}, 60000).unref();
 peerLink.refreshCards();
 setInterval(() => { peerLink.refreshCards(); }, 30000).unref();
 
