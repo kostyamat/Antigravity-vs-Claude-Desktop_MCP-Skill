@@ -29,6 +29,9 @@ re-armed on the failed turn too).
 **No more false "hook error".** When the board stopped a window for new mail, the window first saw Node's
 "SQLite is an experimental feature" warning, labelled as a hook error. The bridge now loads SQLite through one
 module that drops that single warning; every other warning still shows.
+**Fixed.** A helper's answer that names nobody — written to "all" in its room with its lead, without replyTo —
+goes to the lead, as the reply to the lead's open question. Before, the lead's watchman never woke for it, and the
+lead waited for an answer it already had.
 
 ## v2.8.6 — 2026-11-16
 
