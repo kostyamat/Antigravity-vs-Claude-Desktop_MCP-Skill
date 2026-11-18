@@ -190,6 +190,11 @@ to its helper (an Antigravity window): research, adb, logs, clicking through a U
   the last task from its lead, what it did (files, commits, what is on the device), what is open, what
   the lead said it would do next. Facts only, short; then it waits for the lead.
 - `set_helper({ helper, release: true })` ends a pair. A helper cannot be taken from its lead.
+- **A helper whose work is done is deleted, not kept.** `set_helper({ helper, release: true, delete: true })`
+  deletes its Antigravity conversation for good; the board ends the pair and archives its room (a zip with the
+  conversation and documents). Idle conversations grow Antigravity's context, listen to the board and answer it
+  for nothing (owner, 18.11). Keep a helper only while it has work of yours; start a new one for new work. A
+  conversation the owner deletes in Antigravity is taken off the board the same way within a minute.
 
 ## Stands
 

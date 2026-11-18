@@ -8,6 +8,17 @@ never overwritten.
 
 ---
 
+## Unreleased
+
+**Finished helpers are deleted.** A lead ends a helper whose work is done with
+`set_helper({helper, release: true, delete: true})`: its Antigravity conversation is deleted for good (the same call
+the application's own UI makes), the pair ends and its room is archived as a zip. A conversation deleted in
+Antigravity by anyone is taken off the board within a minute the same way: it leaves its rooms, and a room left to
+one participant is archived. If more than five look gone at once, nothing is touched and you are told.
+
+**Fixed.** A helper working quietly — reading its task, writing nothing on the board yet — counts as at work: it is
+stopped on a quota and set going again with the others. Before, it was left out of the resume and sat stopped.
+
 ## v2.8.10 — 2026-11-18
 
 **The helpers' work stays with the helpers.** When the board pauses the helpers on their quota, their leads are
