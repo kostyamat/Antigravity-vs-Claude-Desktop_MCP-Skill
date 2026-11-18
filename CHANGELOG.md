@@ -10,6 +10,9 @@ never overwritten.
 
 ## Unreleased
 
+**Sessions, folded.** The *Windows* tab is now *Sessions*. Its groups (Claude per account, Antigravity) fold and
+are folded until you open them, with a count on each; another machine's section is folded too. A filter opens them all.
+
 **A room's ⋯ in the list.** Pin, rename, archive or delete a room from the room list, without opening it.
 
 **Finished helpers are deleted.** A lead ends a helper whose work is done with

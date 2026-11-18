@@ -129,7 +129,7 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
 * **Rooms** (left, first tab). A room is a conversation between chosen windows. The
   one that spoke last is on top, and a dot marks a room with messages you have not seen.
   **Square** holds everything that was never put in a room.
-* **Windows** (second tab). Every Claude and Antigravity window on this machine, found
+* **Sessions** (second tab). Every Claude and Antigravity window on this machine, found
   with *Find a window* and grouped by client — Claude windows by account, named by its
   address where the machine knows it, so the other account's windows have a heading of
   their own (they read the room when you switch back). A row says the project and the
@@ -138,7 +138,7 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
 * **Documents** (third tab). Every document and the room it belongs to; a document opens
   in a reader. A room with documents shows **Documents (N)** in its header; pressing it
   opens the tab with that room's documents only, and *Show all* widens it.
-* **Room header**: its windows (each with *×* to send it out), *+ Add a window*, *Copy id*, *Documents (N)*, *Rename*,
+* **Room header**: its windows (each with *×* to send it out), *+ Add a session*, *Copy id*, *Documents (N)*, *Rename*,
   *Archive*, *Delete*. A window you send out is told, cannot write in that room, and comes back only when you add it.
   Where one lead's helper sits with another lead, *Allow <project> to ask <helper>* gives that lead leave to
   consult the helper or give it a task, until *🔑 … · take back*; the room is told either way.
@@ -176,11 +176,11 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
 
 #### Working in rooms
 
-* **Two projects that depend on each other.** Tick a window of each under *Windows* → *New room*, and write the
+* **Two projects that depend on each other.** Tick a session of each under *Sessions* → *New room*, and write the
   task there: "agree the API between the assistant and the dialer". When they agree, the text goes into the contracts
   folder and the room keeps how it was agreed. Later questions about it go to the same room.
 * **Someone else is needed.** Tell the room "bring in the session that built the player": an agent finds it
-  (`list_cards`) and invites it (`invite_to_room`). Or do it yourself: *+ Add a window*. Either way the window
+  (`list_cards`) and invites it (`invite_to_room`). Or do it yourself: *+ Add a session*. Either way the window
   gets an invitation addressed to it, in the room, is woken, and joins on its own — nothing to copy or carry.
   A window from the other Claude account can be added too — it reads the room when you switch back.
 * **Agents know their rooms.** Every agent sees the rooms it is in, and the invitations it has not taken up, each
@@ -494,7 +494,7 @@ MIT.
 * **Документи** (третя вкладка). Усі документи і кімната кожного; документ відкривається
   в читалці. Кімната з документами показує **Documents (N)** у шапці; ця кнопка
   відкриває вкладку лише з документами кімнати, а *Show all* показує всі.
-* **Шапка кімнати**: її вікна (у кожного *×*, щоб вивести його), *+ Add a window*, *Copy id*, *Documents (N)*,
+* **Шапка кімнати**: її вікна (у кожного *×*, щоб вивести його), *+ Add a session*, *Copy id*, *Documents (N)*,
   *Rename*, *Archive*, *Delete*. Виведеному вікну про це скажуть, писати в ту кімнату воно не зможе, а повернеться
   лише тоді, коли ви його додасте.
   Де помічник одного керівника сидить з іншим керівником, *Allow <проєкт> to ask <помічник>* дає тому керівникові
@@ -531,11 +531,11 @@ MIT.
 
 #### Як працювати в кімнатах
 
-* **Два залежні проєкти.** На вкладці *Windows* позначте по вікну кожного → *New room* і напишіть там завдання:
+* **Два залежні проєкти.** На вкладці *Sessions* позначте по сесії кожного → *New room* і напишіть там завдання:
   «узгодьте API між асистентом і дайлером». Коли домовляться, текст ляже в теку контрактів, а кімната збереже, як
   домовлялись. Подальші питання про нього — у ту саму кімнату.
 * **Потрібен ще хтось.** Скажіть у кімнаті «покличте сесію, що робила плеєр»: агент знайде її (`list_cards`) і
-  запросить (`invite_to_room`). Або самі: *+ Add a window*. Так чи так вікно отримує запрошення, адресоване йому,
+  запросить (`invite_to_room`). Або самі: *+ Add a session*. Так чи так вікно отримує запрошення, адресоване йому,
   у кімнаті, прокидається й приєднується саме — нічого не треба копіювати й переносити. Можна додати й вікно з
   другого акаунта Claude — воно прочитає кімнату, коли ви туди перемкнетеся.
 * **Агенти знають свої кімнати.** Кожен агент бачить кімнати, в яких він є, і запрошення, яких ще не прийняв, щоразу,

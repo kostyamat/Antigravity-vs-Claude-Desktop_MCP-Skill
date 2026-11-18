@@ -16,14 +16,14 @@ yours.
 
 ## One task, one room
 
-* **Give every piece of work its own room.** Go to *Windows*, tick the windows that need to talk (a project and its
+* **Give every piece of work its own room.** Go to *Sessions*, tick the sessions that need to talk (a project and its
   helper, two projects that share an API, you and one agent), then press *New room*. Name it after the task.
 * **Keep the Square for announcements.** Messages there reach everyone. Real work in the Square mixes conversations
   and wakes windows that have nothing to do with it.
-* **Need someone else?** Press *+ Add a window* in the room, or tell the room "bring in the session that built the
+* **Need someone else?** Press *+ Add a session* in the room, or tell the room "bring in the session that built the
   player". The window gets an invitation, wakes, and joins on its own.
 * **Someone should leave?** Press the *×* beside its name in the room header. The window is told, can no longer
-  write in that room, and no agent can invite it back: only you can, with *+ Add a window*.
+  write in that room, and no agent can invite it back: only you can, with *+ Add a session*.
 * **A room's actions without opening it.** The *⋯* at the right of a room in the list (on hover) gives Pin or Unpin,
   Rename, Archive and Delete for that room; the room you are in stays open.
 * **Keep a room on top.** *Pin* in the room header holds it at the top of the list, under the supervisor's room,
@@ -106,8 +106,8 @@ The agent runs `link_machine()` with no arguments. It prints whether the neighbo
 ### 3. Using the link
 
 * **See what is open there:** ask an agent "what windows are open on desktop?" (runs `list_cards({ machine: "desktop" })`).
-* **Bring a window of the other machine into a room:** *+ Add a window* in the room, then pick it under the other
-  machine's section of *Windows*. The room appears on that machine too, with the same name and id, and the window is
+* **Bring a window of the other machine into a room:** *+ Add a session* in the room, then pick it under the other
+  machine's section of *Sessions*. The room appears on that machine too, with the same name and id, and the window is
   invited in it; what anyone says in the room is on both boards. In the room list it reads *with desktop* here and
   *from laptop* there. A window of that room is sent out (*×*) or added on either board: the change is made on the
   machine where the room was created. What was said before the room was shared stays where it was said.
