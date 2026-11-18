@@ -119,9 +119,17 @@ function peerAt(addr, cfg) {
 }
 
 // An address of a private network: the only kind a stranger may knock from.
+// A Tailscale address: 100.64.0.0/10 (the owner's own tailnet — machines anywhere in the world, reachable
+// only by his devices). Owner, 18.11: link two machines in different corners of the planet.
+function isTailnet(addr) {
+  const m = /^100\.(\d+)\./.exec(plain(addr));
+  return !!m && Number(m[1]) >= 64 && Number(m[1]) <= 127;
+}
+
 function isPrivate(addr) {
   const a = plain(addr);
   if (/^10\./.test(a) || /^192\.168\./.test(a) || /^169\.254\./.test(a)) return true;
+  if (isTailnet(a)) return true;
   const m = /^172\.(\d+)\./.exec(a);
   if (m && Number(m[1]) >= 16 && Number(m[1]) <= 31) return true;
   return /^(fe80|fc|fd)/.test(a);
@@ -768,7 +776,29 @@ function myAddresses() {
   return out;
 }
 
-// Boards on this machine's private networks: every address of each /24 this
+// The machines of the owner's tailnet that are online, from `tailscale status --json` (IPv4 only).
+// No Tailscale on this machine: none. parse is separate so that it can be checked without it.
+function parseTailnet(json) {
+  const out = [];
+  try {
+    const s = typeof json === 'string' ? JSON.parse(json) : json;
+    for (const p of Object.values((s && s.Peer) || {})) {
+      if (p && p.Online === false) continue;
+      for (const ip of p.TailscaleIPs || []) if (isTailnet(ip)) out.push(ip);
+    }
+  } catch (_) {}
+  return out;
+}
+function tailnetPeers() {
+  const exe = process.platform === 'win32' && process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'Tailscale', 'tailscale.exe') : 'tailscale';
+  try {
+    if (process.platform === 'win32' && !fs.existsSync(exe)) return [];
+    const out = require('child_process').execFileSync(exe, ['status', '--json'], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+    return parseTailnet(out);
+  } catch (_) { return []; }
+}
+
+// Boards on this machine's private networks (and its tailnet): every address of each /24 this
 // machine is in is asked who it is. → [{ address, url, machine, version, linked }]
 async function find(opts) {
   const o = opts || {};
@@ -776,12 +806,14 @@ async function find(opts) {
   const mine = new Set(myAddresses());
   const targets = [];
   for (const a of mine) {
+    if (isTailnet(a)) continue;                     // a tailnet is not a /24 to sweep: tailscale lists its machines
     const base = a.split('.').slice(0, 3).join('.');
     for (let n = 1; n < 255; n++) {
       const ip = `${base}.${n}`;
       if (!mine.has(ip) || o.includeSelf) targets.push(ip);
     }
   }
+  for (const ip of tailnetPeers()) if (!targets.includes(ip)) targets.push(ip);
   const found = [];
   const linked = new Set(peers().map(p => p.url));
   let next = 0;
@@ -834,7 +866,7 @@ async function localApi(req, res) {
 }
 
 module.exports = {
-  isPrivate, listenHost, myPort, knocked, linkTo, allow, refuse, setTrust, find, overview, localApi, myAddresses,
+  isPrivate, isTailnet, parseTailnet, tailnetPeers, listenHost, myPort, knocked, linkTo, allow, refuse, setTrust, find, overview, localApi, myAddresses,
   machineName, peers, enabled, peerByName, parseAddress, isLoopback, admits, peerAt,
   request, ask, pump, handle, deliver, roomFor, ensureTable, ref, link, unlink, knownProject,
   refreshCards, neighbourCards, syncRooms, changeMember, machinesOf, membersFor, sharedRoom

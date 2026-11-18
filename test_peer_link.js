@@ -28,6 +28,15 @@ assert.strictEqual(peerLink.parseAddress('local_1234-abcd', cfg), null);
 assert.strictEqual(peerLink.parseAddress('@desktop', cfg), null);
 assert.strictEqual(peerLink.parseAddress('', cfg), null);
 
+// A tailnet address is the owner's own network, wherever the machine stands.
+assert.ok(peerLink.isTailnet('100.101.102.103') && peerLink.isPrivate('100.64.0.1'), 'tailnet');
+assert.ok(!peerLink.isTailnet('100.128.0.1') && !peerLink.isPrivate('100.200.1.1'), 'not every 100.x');
+assert.ok(!peerLink.isPrivate('8.8.8.8'), 'the internet is not');
+assert.deepStrictEqual(peerLink.parseTailnet({ Peer: {
+  a: { HostName: 'far', TailscaleIPs: ['100.90.1.2', 'fd7a:115c:a1e0::1'], Online: true },
+  b: { HostName: 'off', TailscaleIPs: ['100.90.1.3'], Online: false } } }), ['100.90.1.2'], 'online tailnet machines, IPv4');
+assert.deepStrictEqual(peerLink.parseTailnet('not json'), []);
+
 // Who is let in. The board's own machine: everything. A neighbour: its door only.
 // Anybody else on the network: nothing, the door included.
 const req = (addr, url) => ({ socket: { remoteAddress: addr }, url });

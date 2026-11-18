@@ -59,6 +59,30 @@ function fingerprintTree(rel) {
 // and link (peer-link.js). Windows lets nothing in without a rule, and the owner used to
 // be told to type one into an administrator console. The installer adds it: one rule,
 // this port, private and domain networks only — Windows asks for permission once.
+// A machine linked over Tailscale (another corner of the planet, owner 18.11) reaches the board through
+// the Tailscale adapter, which Windows may file under any network profile. A second rule opens the port
+// to the tailnet's addresses only (100.64.0.0/10), on every profile — and only where Tailscale is installed.
+function ensureTailnetRule() {
+  if (process.platform !== 'win32' || process.argv.includes('--no-firewall')) return;
+  const ts = path.join(process.env.ProgramFiles || '', 'Tailscale', 'tailscale.exe');
+  if (!process.env.ProgramFiles || !fs.existsSync(ts)) return;
+  const port = Number(process.env.AGENT_BRIDGE_PORT) || 8787;
+  const name = 'Agent Bridge board (tailnet)';
+  const has = () => spawnSync('netsh', ['advfirewall', 'firewall', 'show', 'rule', 'name=' + name],
+    { encoding: 'utf8', windowsHide: true, timeout: 20000 }).status === 0;
+  try {
+    if (has()) return void console.log('  ✅ Windows Firewall: the tailnet rule is in place (port ' + port + ', 100.64.0.0/10).');
+    console.log('  … Windows Firewall: Tailscale is installed — adding a rule for your tailnet only (port ' + port +
+      ', addresses 100.64.0.0/10). Windows will ask for permission.');
+    const args = `advfirewall firewall add rule name="${name}" dir=in action=allow protocol=TCP localport=${port} remoteip=100.64.0.0/10 profile=any`;
+    spawnSync('powershell', ['-NoProfile', '-Command',
+      `Start-Process netsh -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '${args}'`],
+      { encoding: 'utf8', windowsHide: true, timeout: 120000 });
+    if (has()) console.log('  ✅ Windows Firewall: tailnet rule added.');
+    else { warnCount++; console.warn('  ⚠️ Windows Firewall: the tailnet rule was not added. In an administrator console: netsh ' + args); }
+  } catch (_) {}
+}
+
 function ensureFirewallRule() {
   if (process.platform !== 'win32' || process.argv.includes('--no-firewall')) return;
   const port = Number(process.env.AGENT_BRIDGE_PORT) || 8787;
@@ -434,6 +458,7 @@ try {
   const by = new Map();
   for (const l of projectLine.adoptAll(bridgeDb, cardsLib)) by.set(l.line, (by.get(l.line) || 0) + 1);
   try { ensureFirewallRule(); } catch (_) {}
+  try { ensureTailnetRule(); } catch (_) {}
   // The lead of a pair is its project, never one window of it.
   try { projectLine.leadsToProjects(bridgeDb); } catch (_) {}
   // A helper is tied to its lead by the pair, not by sitting on the lead's line.
