@@ -10,6 +10,15 @@ never overwritten.
 
 ## Unreleased
 
+**Stops in time, for Antigravity too.** The helpers are warned at 30 % and stopped at 15 %, sooner when the pace
+measured minute by minute would empty the quota within eight minutes. At 10 % and 5 % the quota was gone before the
+stop arrived, the supervisor's own conversation included. When the helpers go on again, their leads are told and
+asked to give the next task; the notice that the helpers paused no longer wakes the leads (`fyi` never wakes).
+
+**A session saves before it is compacted.** After every turn the Stop hook reads from the session's own transcript
+how full its context is; at 80, 88 and 94 % it holds the session once per step until it rewrites its slice and
+commits. Before, the board knew the fill only when a session reported it, often too late.
+
 **A Claude window that sleeps is rung.** The skill now tells a Claude agent that writes to another Claude
 window to ring it with Claude Code's own cross-session message (`ListAgents`, `SendMessage`) — a one-line
 doorbell pointing at the board message. It reaches idle Claude Desktop windows here and Remote Control
