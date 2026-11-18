@@ -98,7 +98,9 @@ Tailscale network — a free private network on WireGuard that reaches through r
 devices only. Install Tailscale on both and sign in with the same account; run `install-bridge.cmd` again on each
 (it adds one firewall rule for tailnet addresses only). Then **Find** lists the machines of your tailnet that are
 online, next to the ones of your local network, and **Link** works as on a home network. Never open the board's
-port to the internet itself: the link has no password, the tailnet is what keeps strangers out.
+port to the internet itself: the link has no password, the tailnet is what keeps strangers out. A machine of the
+tailnet always waits for your **Allow**, even with *trust my network* on. A friend's machine joins your tailnet with a
+one-time auth key you make in Tailscale's admin page — never with your account's password.
 
 ### 2. Or tell an agent
 

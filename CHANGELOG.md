@@ -12,7 +12,8 @@ never overwritten.
 
 **Machines in different corners of the planet.** With Tailscale on both, the bridge treats tailnet addresses
 (100.64.0.0/10) as your own network: **Find** lists the tailnet's online machines, **Link** works as at home, and the
-installer adds a firewall rule for tailnet addresses only, where Tailscale is installed.
+installer adds a firewall rule for tailnet addresses only, where Tailscale is installed. A tailnet machine always
+waits for your Allow: *trust my network* covers the home network only.
 
 **A window that does not hear the board is named.** A Claude window with no watchman (no turn since its client
 restarted) is marked 💤 *not listening* on the Sessions tab, and a Claude agent that writes to one is told by
