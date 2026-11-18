@@ -36,6 +36,18 @@ assert.deepStrictEqual(peerLink.parseTailnet({ Peer: {
   a: { HostName: 'far', TailscaleIPs: ['100.90.1.2', 'fd7a:115c:a1e0::1'], Online: true },
   b: { HostName: 'off', TailscaleIPs: ['100.90.1.3'], Online: false } } }), ['100.90.1.2'], 'online tailnet machines, IPv4');
 assert.deepStrictEqual(peerLink.parseTailnet('not json'), []);
+// A knock from the tailnet is never linked by "trust my network": it waits for the owner's Allow.
+{
+  // On a copy of peer-link.js in a temporary folder: its bridge_config.json is the copy's, never the live one.
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-trust-'));
+  fs.copyFileSync(path.join(__dirname, 'peer-link.js'), path.join(dir, 'peer-link.js'));
+  fs.writeFileSync(path.join(dir, 'bridge_config.json'), JSON.stringify({ machineName: 'laptop', trustNetwork: true, peers: [] }));
+  const copy = require(path.join(dir, 'peer-link.js'));
+  assert.strictEqual(copy.knocked('100.90.1.2', { machine: 'far', port: 8787 }).state, 'pending', 'tailnet: waits for Allow');
+  assert.strictEqual(copy.knocked('192.168.1.77', { machine: 'home', port: 8787 }).state, 'linked', 'home network: trusted');
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+}
 
 // Who is let in. The board's own machine: everything. A neighbour: its door only.
 // Anybody else on the network: nothing, the door included.

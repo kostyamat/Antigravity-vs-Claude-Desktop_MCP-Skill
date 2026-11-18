@@ -702,7 +702,9 @@ function knocked(from, body, header) {
   const url = `http://${addr.includes(':') ? '[' + addr + ']' : addr}:${port}`;
   const name = freeName(slug((body && body.machine) || header) || 'machine', url, cfg);
   if (peers(cfg).some(p => p.url === url)) return { state: 'linked', machine: machineName(cfg) };
-  if (cfg.trustNetwork === true && (isPrivate(addr) || isLoopback(addr))) {
+  // "Trust my network" is for the home network. A tailnet may hold devices that are not the owner's (a
+  // friend given a way in): a machine knocking from it always waits for his Allow.
+  if (cfg.trustNetwork === true && !isTailnet(addr) && (isPrivate(addr) || isLoopback(addr))) {
     cfg.peers = (cfg.peers || []).concat([{ name, url }]);
     cfg.peerRequests = (cfg.peerRequests || []).filter(r => r.url !== url);
     writeConfig(cfg);
