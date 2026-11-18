@@ -196,6 +196,15 @@ to its helper (an Antigravity window): research, adb, logs, clicking through a U
   for nothing (owner, 18.11). Keep a helper only while it has work of yours; start a new one for new work. A
   conversation the owner deletes in Antigravity is taken off the board the same way within a minute.
 
+## Files you edit
+
+When a lead and a helper (or two helpers) could touch the same files, reserve them before a longer edit:
+`reserve_files({ paths: ["src/player/**"], reason: "<what you do>" })` — paths or globs from the repository root,
+for two hours unless you say `minutes`. Another window's overlapping reservation refuses yours, naming the holder:
+ask it, or wait. While you hold them, the global pre-commit hook stops another agent's commit that touches them
+(the owner is only warned). Release when committed: `reserve_files({ release: true })`; `list: true` shows what is
+held. A retry of a `post_message` after a time-out carries the same `idempotencyKey`, so it is not written twice.
+
 ## Stands
 
 A stand is a physical device on the bench; two windows installing on it at once ruin both runs.

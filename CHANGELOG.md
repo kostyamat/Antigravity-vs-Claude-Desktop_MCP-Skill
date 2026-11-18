@@ -18,6 +18,14 @@ one participant is archived. If more than five look gone at once, nothing is tou
 
 **Fixed.** A helper working quietly — reading its task, writing nothing on the board yet — counts as at work: it is
 stopped on a quota and set going again with the others. Before, it was left out of the resume and sat stopped.
+**Files reserved for an edit.** `reserve_files` lets a window hold files or folders it is editing (paths or globs,
+two hours by default); another window's overlapping reservation is refused with the holder's name, and the global
+pre-commit hook stops another agent's commit over a held file — you are only warned. Released with
+`reserve_files({release: true})`.
+
+**No double posts on a retry, and a busy database tried again.** `post_message` takes an `idempotencyKey`: the same
+key from the same window within a day returns the message already written. Writing a message that meets a busy
+database is tried again three times with a short random pause.
 
 ## v2.8.10 — 2026-11-18
 
