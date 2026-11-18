@@ -43,6 +43,7 @@ assert.ok(urgent(msg({ to: 'Claude', toSession: WIN, status: 'working', from: 'K
 assert.ok(urgent(msg({ to: 'Claude', toSession: LINE })), 'sent to the project');
 assert.ok(!urgent(msg({ to: 'Claude', toSession: 'local_somebody-else' })), 'sent to a window of another project');
 assert.ok(!urgent(msg({ to: 'Claude', toSession: WIN, status: 'ack' })), 'a receipt never wakes');
+assert.ok(!urgent(msg({ to: 'Claude', toSession: WIN, priority: 'fyi' })), 'fyi is read whenever, it never wakes');
 
 // Mail for the other agent is not ours, whoever wrote it and however urgent.
 assert.ok(!urgent(msg({ from: 'Kostiantyn', fromSession: 'human/web', to: 'Gemini' })), 'the owner writing to Gemini');

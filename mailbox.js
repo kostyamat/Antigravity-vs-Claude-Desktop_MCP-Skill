@@ -84,6 +84,7 @@ function createMailbox(bridgeDb, router) {
       if (!isForMe(m) || isMyOwn(m) || m.status === 'ack') return false;
       if (Date.now() - new Date(m.ts).getTime() > URGENT_HOURS * 3600e3) return false;
       if (m.priority === 'P0') return true;
+      if (m.priority === 'fyi') return false;             // "for information": read whenever, never a wake-up
       // Only in the room's conversation, not addressed to it: the answers wake it, the rest waits.
       if (!addressed(m)) return URGENT_STATUSES.includes(m.status);
       // The owner is heard wherever he speaks. On the Square he asks "whoever

@@ -160,9 +160,17 @@ function stop(input) {
   if (paused()) return;
   const win = windowOf(input);
   if (!win) return;
+  // The session's own context, from its transcript: at 80, 88 and 94 % it saves first (context-guard.js).
+  let ctx = '';
+  try {
+    const guard = require('./context-guard');
+    const f = guard.fill(input.transcript_path);
+    if (guard.due(RUN_DIR, win, f)) ctx = guard.text(f);
+  } catch (_) {}
   const text = waiting(win);
-  if (!text) return;
-  process.stdout.write(JSON.stringify({ decision: 'block', reason: 'agent-bridge: do not go idle yet. ' + text }));
+  if (!text && !ctx) return;
+  process.stdout.write(JSON.stringify({ decision: 'block',
+    reason: 'agent-bridge: do not go idle yet. ' + [ctx && ctx.charAt(0).toUpperCase() + ctx.slice(1), text].filter(Boolean).join('\n\n') }));
 }
 
 // ── failed ───────────────────────────────────────────────────────────────────────────────

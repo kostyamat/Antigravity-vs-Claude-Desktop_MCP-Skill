@@ -12,8 +12,14 @@
 // No model is asked anything here. It could not be: the conversation that would do
 // the reading runs on the very quota that is running out.
 
-const WARN_LEFT = 10;          // per cent left: warn
-const STOP_LEFT = 5;           // per cent left: stop the work, ask for another account
+// Antigravity: warned and stopped early, and sooner at the pace it is being spent. At 10 % and 5 %
+// the stop came after the quota was gone — nine helpers spend 5 % in a minute, and the supervisor's
+// own conversation runs on the same quota (owner, 18.11: by the time the supervisor stopped the
+// helpers the quota was gone, even for the supervisor itself).
+const WARN_LEFT = 30;          // per cent left: warn
+const STOP_LEFT = 15;          // per cent left: stop the helpers, ask for another account
+const GEMINI_AHEAD_WARN_MIN = 20;   // at the measured pace, the stop line within this: warn now
+const GEMINI_AHEAD_STOP_MIN = 8;    // …the quota itself (5 %) within this: stop now
 // Claude is warned and stopped earlier: its figure is a report, minutes old, and saving a
 // lead's context costs a few per cent of its own — at 5 % there was no room left to save.
 const CLAUDE_WARN_LEFT = 25;
@@ -35,7 +41,27 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
   const mask = acc => String(acc || '').replace(/^(.{2})[^@]*(@.*)$/, '$1…$2');
   const short = id => String(id || '').slice(0, 8);
 
-  function level(left) { return left <= STOP_LEFT ? 2 : left <= WARN_LEFT ? 1 : 0; }
+  function level(left, rate) {
+    const r = rate || 0;
+    if (left <= STOP_LEFT || left - r * GEMINI_AHEAD_STOP_MIN <= 5) return 2;
+    return left <= WARN_LEFT || left - r * GEMINI_AHEAD_WARN_MIN <= STOP_LEFT ? 1 : 0;
+  }
+  // Per cent a minute the Antigravity quota went down since the last reading of the same account
+  // and reset; the reading is kept for the next one.
+  function geminiPace(account, reset, left) {
+    const now = Date.now();
+    const was = config().geminiPace || null;
+    let rate = 0;
+    if (was && was.account === account && was.reset === (reset || '') && left < was.left) {
+      const min = (now - Date.parse(was.at)) / 60000;
+      if (min >= 0.5) rate = (was.left - left) / min;
+      else rate = was.rate || 0;
+    }
+    if (!was || was.account !== account || was.reset !== (reset || '') || left !== was.left || (now - Date.parse(was.at)) > 15 * 60000) {
+      save({ geminiPace: { account, reset: reset || '', left, at: new Date(now).toISOString(), rate: Math.round(rate * 100) / 100 } });
+    }
+    return rate;
+  }
   function claudeLevel(w) {
     if (w.left <= CLAUDE_STOP_LEFT) return 2;
     return w.left <= CLAUDE_WARN_LEFT || w.left - (w.rate || 0) * CLAUDE_AHEAD_MIN <= CLAUDE_STOP_LEFT ? 1 : 0;
@@ -96,8 +122,10 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
     save({ quotaKnown: gemini.remember(config().quotaKnown, q) });
     const pool = q.pools.find(p => !p.stale);
     if (!pool) return { account: q.account, left: null };
-    const left = pctLeft(pool.remaining), lvl = level(left);
-    const res = { account: q.account, left, level: lvl, pools: q.pools };
+    const left = pctLeft(pool.remaining);
+    const rate = geminiPace(q.account, pool.reset, left);
+    const lvl = level(left, rate);
+    const res = { account: q.account, left, level: lvl, pools: q.pools, rate: Math.round(rate * 100) / 100 };
     // Back: the quota refilled or another account is in — the helpers go on by themselves.
     const pg = (config().paused || {}).gemini;
     if (pg && !lvl && Date.parse(pg.at) < Date.now() - 60000) {
@@ -113,7 +141,8 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
       lines.push(alert.t('next', { stop: STOP_LEFT }));
       say({ to: 'all', toSession: 'human/web', room, status: 'question',
         text: `Supervisor: Antigravity quota is at ${left} % for account ${acc} (${what}; resets ${pool.reset || 'time unknown'}). ` +
-          `At ${STOP_LEFT} % I stop the helpers and ask you to switch the account.` + (others ? ` Other accounts: ${others}.` : '') });
+          `At ${STOP_LEFT} % (sooner at this pace${rate ? ', ' + (Math.round(rate * 10) / 10) + ' % a minute' : ''}) I stop the helpers ` +
+          'and ask you to switch the account.' + (others ? ` Other accounts: ${others}.` : '') });
     } else {
       const helpers = workingHelpers();
       for (const h of helpers) {
@@ -125,7 +154,8 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
       const byLead = new Map();
       for (const h of helpers) byLead.set(h.lead, (byLead.get(h.lead) || []).concat(h.name));
       for (const [lead, names] of byLead) {
-        say({ to: 'Claude', toSession: lead, room, status: 'info',
+        // fyi: read with the lead's next look at the board, not a wake-up — the lead does not stop.
+        say({ to: 'Claude', toSession: lead, room, status: 'info', priority: 'fyi',
           text: `Supervisor: Antigravity quota is at ${left} %. Your helper${names.length > 1 ? 's' : ''} ${names.map(n => '"' + n + '"').join(', ')} ` +
             'stop after the step in hand. You do NOT stop: carry on with your own work, and do yourself what cannot wait for them. ' +
             'They are set going again when the quota is back or the account is switched. Do not answer this.' });
@@ -234,6 +264,17 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
         say({ to: 'Gemini', toSession: h.helper, room: h.room, status: 'question',
           text: `Supervisor, for the owner: ${because || 'the Antigravity account was switched'} — go on. Take up the task you stopped at, from the three ` +
             `lines you posted here (or from your lead's last task in this room if you posted none). You report to your lead, "${h.leadName}", as before.` });
+      }
+      // Their leads are told too: a lead that was not told never gave a helper its next task
+      // after a quota stop, and the helper sat idle (owner, 18.11: the leads forget to ask again
+      // and to set their helpers going).
+      const byLead = new Map();
+      for (const h of paused.gemini.helpers || []) byLead.set(h.lead, (byLead.get(h.lead) || []).concat(h));
+      for (const [lead, hs] of byLead) {
+        say({ to: 'Claude', toSession: lead, room, status: 'info',
+          text: `Supervisor: ${because || 'the Antigravity account was switched'} — your helper${hs.length > 1 ? 's are' : ' is'} back: ` +
+            hs.map(h => `"${h.name}" (room ${h.room})`).join(', ') + '. Each goes on with the task it stopped at. Read its last report in its ' +
+            'room now, and give the next task to any that has finished or is waiting on you. Do not answer this message.' });
       }
       done.push(`${(paused.gemini.helpers || []).length} helper(s)`);
       delete paused.gemini;

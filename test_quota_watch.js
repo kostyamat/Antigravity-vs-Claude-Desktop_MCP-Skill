@@ -1,6 +1,6 @@
 'use strict';
 // node test_quota_watch.js — what the board knows of Claude's limits, the supervisor's quota
-// ticker (Gemini: warn at 10 %, stop at 5 %; Claude: 25 % and 12 %, or sooner at the pace it is spent;
+// ticker (Gemini: warn at 30 %, stop at 15 %, sooner at the pace; Claude: 25 % and 12 %, or sooner at the pace it is spent;
 // go on when the limit is back or at the owner's word), and the rescue of a session
 // that was cut off into its project's slice.
 const assert = require('assert');
@@ -114,8 +114,9 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       await watch.tick('supervisor');
       assert.strictEqual(said.length + shown.length, 0);
     });
-    await t('10 % of Gemini: the owner is warned once, nobody is stopped', async () => {
-      pool = Object.assign({}, pool, { remaining: 0.08 });
+    await t('25 % of Gemini: the owner is warned once, nobody is stopped', async () => {
+      pool = Object.assign({}, pool, { remaining: 0.25 });
+      cfg.geminiPace = null;
       await watch.tick('supervisor');
       assert.strictEqual(shown.length, 1);
       assert.strictEqual(to('human/web').length, 1);
@@ -123,8 +124,8 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       await watch.tick('supervisor');
       assert.strictEqual(shown.length, 1, 'not warned twice for the same level');
     });
-    await t('5 % of Gemini: working helpers are stopped, their lead is told, the owner is asked to switch', async () => {
-      pool = Object.assign({}, pool, { remaining: 0.04 });
+    await t('12 % of Gemini: working helpers are stopped, their lead is told, the owner is asked to switch', async () => {
+      pool = Object.assign({}, pool, { remaining: 0.12 });
       const r = await watch.tick('supervisor');
       assert.strictEqual(r.gemini.stopped, 1);
       assert.match(to('gem-1')[0].text, /STOP/);
@@ -135,6 +136,7 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       assert.strictEqual(shown.length, 2);
       assert.match(to('human/web').pop().text, /The leads go on working/);
       assert.match(to('c:/work/app')[0].text, /You do NOT stop/, 'the lead is not stopped with its helper');
+      assert.strictEqual(to('c:/work/app')[0].priority, 'fyi', 'and is not woken for it');
     });
     await t('the owner\'s word in the supervisor room sets them going again', async () => {
       rows.push({ id: 7, message: 'thanks', from_session: 'human/web', room: 'supervisor' });
@@ -143,6 +145,7 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       const r = await watch.tick('supervisor', { wordsOnly: true });
       assert.strictEqual(r.resumed.by, 8);
       assert.match(to('gem-1').pop().text, /go on/);
+      assert.match(to('c:/work/app').pop().text, /your helper is back: "N:gem-1"/, 'the lead is told its helper is back');
       assert.strictEqual(cfg.paused.gemini, undefined);
       assert.ok(RESUME_WORD.test('Resume') && !RESUME_WORD.test('do not resume yet'));
     });
@@ -158,6 +161,12 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       assert.ok(r.gemini.recovered && r.gemini.recovered.length);
       assert.match(to('gem-1').pop().text, /quota is back — go on/);
       assert.strictEqual(cfg.paused.gemini, undefined);
+    });
+    await t('Gemini at its pace: 40 % falling 2 % a minute is a warning, 20 % falling 3 % a minute a stop', () => {
+      assert.strictEqual(watch.level(40, 0), 0);
+      assert.strictEqual(watch.level(40, 2), 1, '40 - 2*20 = 0: the stop line within 20 minutes');
+      assert.strictEqual(watch.level(20, 3), 2, '20 - 3*8 = -4: gone within 8 minutes');
+      assert.strictEqual(watch.level(14, 0), 2);
     });
     await t('Claude is warned at 25 %, or sooner when the pace would reach the stop within 20 minutes', () => {
       assert.strictEqual(watch.claudeLevel({ left: 40, rate: 0 }), 0);
@@ -270,7 +279,7 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       fs.utimesSync(slice, old - 600, old - 600);
       assert.ok(rescue.rescueProject(proj, { transcript: tr }).written);
     });
-    console.log(n + '/23 passed');
+    console.log(n + '/24 passed');
   } catch (e) {
     console.error(e);
     process.exitCode = 1;
