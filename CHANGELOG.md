@@ -21,6 +21,10 @@ time, as the limit message names it, or a fresh measurement) or another Antigrav
 side goes on without your word. A window whose turn failed on the limit hears the board again (the watchman is
 re-armed on the failed turn too).
 
+**No more false "hook error".** When the board stopped a window for new mail, the window first saw Node's
+"SQLite is an experimental feature" warning, labelled as a hook error. The bridge now loads SQLite through one
+module that drops that single warning; every other warning still shows.
+
 ## v2.8.6 — 2026-11-16
 
 **You pin rooms.** *Pin* in the room header keeps a room at the top of the list, in the order you pinned
