@@ -8,6 +8,13 @@ never overwritten.
 
 ---
 
+## Unreleased
+
+**Fixed: answers to a lead's roll call no longer wake the other leads.** The room-conversation rule of 2.8.8 now
+holds only for a question *you* put to the whole room, and wakes only a window still waiting in that conversation;
+one that has answered reads the rest when it next looks. Before, an agent's question to the room answered by seven
+leads woke each of them for every other answer (seventeen wake-ups of one lead in half an hour).
+
 ## v2.8.9 — 2026-11-18
 
 **Stops in time, for Antigravity too.** The helpers are warned at 30 % and stopped at 15 %, sooner when the pace
