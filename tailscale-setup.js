@@ -25,22 +25,37 @@ const exe = () => {
 };
 const run = (cmd, args, inherit) => spawnSync(cmd, args, { encoding: 'utf8', windowsHide: !inherit, stdio: inherit ? 'inherit' : 'pipe', timeout: 15 * 60000 });
 
-// The board's port, to tailnet addresses only, on every network profile (Windows may file the Tailscale
-// adapter under any). Shared with install-bridge.js, which calls it where Tailscale is installed.
+// The tailnet reaches this machine's board and nothing else (owner, 18.11: set the tailnet up so that it gives
+// access to the bridge only). From 100.64.0.0/10, on every network profile (Windows may file the Tailscale adapter under
+// any): the board's port is allowed, and every other TCP port, all UDP and ping are blocked — a block rule wins
+// over any other program's allow rule, so file sharing, remote desktop and the rest stay closed to the tailnet.
+// Shared with install-bridge.js, which calls it where Tailscale is installed. One permission prompt for all.
+const TAILNET = '100.64.0.0/10';
+function tailnetRules(port) {
+  const base = `dir=in remoteip=${TAILNET} profile=any`;
+  return [
+    { name: 'Agent Bridge board (tailnet)', args: `action=allow protocol=TCP localport=${port} ${base}` },
+    { name: 'Agent Bridge (tailnet: no other TCP)', args: `action=block protocol=TCP localport=1-${port - 1},${port + 1}-65535 ${base}` },
+    { name: 'Agent Bridge (tailnet: no UDP)', args: `action=block protocol=UDP localport=any ${base}` },
+    { name: 'Agent Bridge (tailnet: no ping)', args: `action=block protocol=icmpv4:any,any ${base}` }
+  ];
+}
 function ensureTailnetRule(opts) {
   const o = opts || {};
   if (process.platform !== 'win32') return 'not windows';
   if (!exe()) return 'no tailscale';
   const port = Number(process.env.AGENT_BRIDGE_PORT) || 8787;
-  const name = 'Agent Bridge board (tailnet)';
-  const has = () => run('netsh', ['advfirewall', 'firewall', 'show', 'rule', 'name=' + name]).status === 0;
-  if (has()) { say('✅ Windows Firewall: the tailnet rule is in place (port ' + port + ', 100.64.0.0/10).'); return 'present'; }
-  const args = `advfirewall firewall add rule name="${name}" dir=in action=allow protocol=TCP localport=${port} remoteip=100.64.0.0/10 profile=any`;
-  if (o.dry) { say('would add the firewall rule: netsh ' + args); return 'dry'; }
-  say('… Windows Firewall: a rule for your tailnet only (port ' + port + ', 100.64.0.0/10). Windows will ask for permission.');
-  run('powershell', ['-NoProfile', '-Command', `Start-Process netsh -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '${args}'`]);
-  if (has()) { say('✅ Windows Firewall: tailnet rule added.'); return 'added'; }
-  say('⚠️ Windows Firewall: the tailnet rule was not added. In an administrator console: netsh ' + args);
+  const has = name => run('netsh', ['advfirewall', 'firewall', 'show', 'rule', 'name=' + name]).status === 0;
+  const missing = tailnetRules(port).filter(r => !has(r.name));
+  if (!missing.length) { say('✅ Windows Firewall: the tailnet reaches the board (port ' + port + ') and nothing else.'); return 'present'; }
+  const cmds = missing.map(r => `netsh advfirewall firewall add rule name="${r.name}" ${r.args}`);
+  if (o.dry) { say('would add, as administrator:\n    ' + cmds.join('\n    ')); return 'dry'; }
+  say('… Windows Firewall: the tailnet gets the board (port ' + port + ') and nothing else. Windows will ask for permission once.');
+  run('powershell', ['-NoProfile', '-Command', `Start-Process cmd -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '/c ${cmds.join(' & ').replace(/'/g, "''")}'`]);
+  const still = tailnetRules(port).filter(r => !has(r.name));
+  if (!still.length) { say('✅ Windows Firewall: from the tailnet only the board is reachable.'); return 'added'; }
+  say('⚠️ Windows Firewall: not added: ' + still.map(r => r.name).join(', ') + '. In an administrator console:\n    ' +
+    still.map(r => `netsh advfirewall firewall add rule name="${r.name}" ${r.args}`).join('\n    '));
   return 'failed';
 }
 
@@ -149,5 +164,5 @@ function signIn() {
   });
 }
 
-module.exports = { ensureTailnetRule, status, install, join, signIn };
+module.exports = { ensureTailnetRule, tailnetRules, status, install, join, signIn };
 if (require.main === module) process.exitCode = main();

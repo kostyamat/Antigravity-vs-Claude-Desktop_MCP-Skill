@@ -49,6 +49,15 @@ assert.deepStrictEqual(peerLink.parseTailnet('not json'), []);
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
 }
 
+// The tailnet reaches the board's port and nothing else.
+{
+  const rules = require('./tailscale-setup').tailnetRules(8787);
+  assert.match(rules[0].args, /action=allow protocol=TCP localport=8787 .*remoteip=100\.64\.0\.0\/10/);
+  assert.match(rules[1].args, /action=block protocol=TCP localport=1-8786,8788-65535 /, 'every other TCP port blocked');
+  assert.ok(rules.some(r => /action=block protocol=UDP/.test(r.args)) && rules.some(r => /icmpv4/.test(r.args)), 'UDP and ping blocked');
+  assert.ok(rules.every(r => /remoteip=100\.64\.0\.0\/10 profile=any/.test(r.args)), 'only tailnet addresses, any profile');
+}
+
 // Who is let in. The board's own machine: everything. A neighbour: its door only.
 // Anybody else on the network: nothing, the door included.
 const req = (addr, url) => ({ socket: { remoteAddress: addr }, url });
