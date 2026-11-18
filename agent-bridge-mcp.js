@@ -1370,7 +1370,8 @@ function doPost(id, a) {
     // Mail across machines lives in one room per machine, on both boards.
     const parentRoom = replyTo ? ((bridgeDb.getMessageById(replyTo) || {}).room || '') : '';
     const me = mineWin || String(a.sessionId || '').trim();
-    routed = { room: parentRoom || (me ? peerLink.roomFor(bridgeDb, peerAddr.machine, me, from) : '') };
+    routed = { room: parentRoom || peerLink.sharedRoom(bridgeDb, a.room, peerAddr.machine) ||
+      (me ? peerLink.roomFor(bridgeDb, peerAddr.machine, me, from) : '') };
   } else {
     routed = resolveRoom(a, toSession, toAgent, replyTo);
   }
@@ -1819,7 +1820,8 @@ ${a.context && String(a.context).trim() ? a.context : '⚠️ AUTHOR DID NOT PRO
     // A document for a window on a linked machine lives in that machine's room;
     // its announcement carries the text across (peer-link.js documentOf).
     room: peerLink.parseAddress(toSession)
-      ? peerLink.roomFor(bridgeDb, peerLink.parseAddress(toSession).machine, String(a.canonicalId || fromSession || toSession), from)
+      ? (peerLink.sharedRoom(bridgeDb, a.room, peerLink.parseAddress(toSession).machine) ||
+         peerLink.roomFor(bridgeDb, peerLink.parseAddress(toSession).machine, String(a.canonicalId || fromSession || toSession), from))
       : resolveRoom(a, toSession, to).room,
     title: a.title || topic,
     created: now,

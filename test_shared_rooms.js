@@ -90,6 +90,17 @@ const cardsOf = (s, room) => (s.db.getRoom(room).members || []).map(m => m.card)
       await A.peer.pump(A.deps);
       assert.deepStrictEqual(cardsOf(B, room.id), ['local_a1@alpha', 'local_b1']);
     });
+    await t('mail to a window there, said in the shared room, is delivered into that room', async () => {
+      assert.strictEqual(A.peer.sharedRoom(A.db, room.id, 'beta'), room.id);
+      assert.strictEqual(A.peer.sharedRoom(A.db, 'Shared work', 'beta'), room.id, 'by its name too');
+      assert.strictEqual(A.peer.sharedRoom(A.db, letterbox.id, 'beta'), '', 'the letterbox room is not a shared room');
+      A.db.addMessage({ from: 'Owner', fromSession: 'human/web', to: 'Claude', toSession: 'local_b1@beta', room: room.id,
+        status: 'question', message: 'Room invitation for local_b1' });
+      await A.peer.pump(A.deps);
+      const got = msgs(B, room.id).filter(m => m.message === 'Room invitation for local_b1');
+      assert.strictEqual(got.length, 1, 'in the room on beta');
+      assert.strictEqual(got[0].to_session, 'local_b1');
+    });
     await t('a copy is never written over a room of the machine itself', async () => {
       B.db.createRoom('Mine', [{ card: 'local_b5', agent: 'Claude' }], '');
       assert.throws(() => B.db.mirrorRoom('mine', 'Mine', [], 'alpha'), /already exists/);
@@ -99,5 +110,5 @@ const cardsOf = (s, room) => (s.db.getRoom(room).members || []).map(m => m.card)
     for (const s of [A, B]) { try { s.db.getDb().close(); } catch (_) {} }
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) {}
   }
-  console.log(n + '/7 passed');
+  console.log(n + '/8 passed');
 })().catch(e => { console.error(e); process.exit(1); });

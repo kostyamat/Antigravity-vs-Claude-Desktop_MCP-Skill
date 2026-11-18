@@ -277,6 +277,18 @@ async function syncRooms(deps) {
   }
 }
 
+// The room the sender named, when it is shared with `machine`: mail to a window there that is
+// said in a shared room stays in that room. Only mail that names no shared room goes to the
+// machine's letterbox room (18.11: an invitation into a shared room landed in "Machine: artempc").
+function sharedRoom(bridgeDb, named, machine) {
+  const n = String(named || '').trim();
+  if (!n) return '';
+  let r = null;
+  try { r = bridgeDb.getRoom(n) || (bridgeDb.readRooms() || []).find(x => x.name === n) || null; } catch (_) { return ''; }
+  if (!r || /^Machine: /.test(r.name)) return '';
+  return machinesOf(r).has(machine) || bridgeDb.roomOrigin(r.id) === machine ? r.id : '';
+}
+
 // When the room was first shared with `machine`: what was said before stays where it was said.
 function sharedSince(bridgeDb, room, machine) {
   if (bridgeDb.roomOrigin(room) === machine) return '';            // a copy: everything said here goes home
@@ -825,5 +837,5 @@ module.exports = {
   isPrivate, listenHost, myPort, knocked, linkTo, allow, refuse, setTrust, find, overview, localApi, myAddresses,
   machineName, peers, enabled, peerByName, parseAddress, isLoopback, admits, peerAt,
   request, ask, pump, handle, deliver, roomFor, ensureTable, ref, link, unlink, knownProject,
-  refreshCards, neighbourCards, syncRooms, changeMember, machinesOf, membersFor
+  refreshCards, neighbourCards, syncRooms, changeMember, machinesOf, membersFor, sharedRoom
 };

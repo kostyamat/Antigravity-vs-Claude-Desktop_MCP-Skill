@@ -252,7 +252,8 @@ function apiPost(data) {
   let postRoom = room;
   if (peerAddr) {
     const parentRoom = replyTo ? ((bridgeDb.getMessageById(replyTo) || {}).room || '') : '';
-    postRoom = parentRoom || peerLink.roomFor(bridgeDb, peerAddr.machine, toSession, to === 'all' ? '' : to);
+    postRoom = parentRoom || peerLink.sharedRoom(bridgeDb, room, peerAddr.machine) ||
+      peerLink.roomFor(bridgeDb, peerAddr.machine, toSession, to === 'all' ? '' : to);
   }
 
   const rec = {
