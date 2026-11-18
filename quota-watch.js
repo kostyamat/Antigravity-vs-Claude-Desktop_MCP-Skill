@@ -89,9 +89,14 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
     const db = bridgeDb.getDb();
     for (const h of pairs) {
       if (!h.room || router.agentOf(h.helper) !== 'Gemini') continue;
-      let last = null;
-      try { last = db.prepare('SELECT MAX(ts) t FROM messages WHERE from_session = ? AND ts > ?').get(h.helper, since); } catch (_) {}
-      if (!last || !last.t) continue;
+      // At work: it wrote on the board, read it, or was given a task lately. Writing alone missed a
+      // helper researching quietly: it read its task at 03:23, ran out of quota at 03:27 without a
+      // word on the board, and was neither stopped nor set going again after the switch (18.11, #6520).
+      const seen = sql => { try { const r = db.prepare(sql).get(h.helper, since); return !!(r && r.t); } catch (_) { return false; } };
+      const atWork = seen('SELECT MAX(ts) t FROM messages WHERE from_session = ? AND ts > ?') ||
+        seen('SELECT MAX(ts) t FROM messages WHERE to_session = ? AND ts > ? AND from_session NOT LIKE \'supervisor/%\'') ||
+        seen('SELECT MAX(last_seen) t FROM sessions WHERE (session_id = ?1 OR canonical_id = ?1) AND last_seen > ?2');
+      if (!atWork) continue;
       out.push({ helper: h.helper, room: h.room, lead: h.lead, name: router.nameOf(h.helper), leadName: router.nameOf(h.lead) });
     }
     return out;

@@ -131,6 +131,7 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       assert.match(to('gem-1')[0].text, /STOP/);
       assert.strictEqual(to('gem-1')[0].room, 'r1');
       assert.strictEqual(to('gem-2').length, 0, 'a helper silent for hours is not woken to be stopped');
+      assert.ok(watch.workingHelpers().some(h => h.helper === 'gem-1'));
       assert.strictEqual(to('c:/work/app').length, 1);
       assert.strictEqual(cfg.paused.gemini.helpers.length, 1);
       assert.strictEqual(shown.length, 2);
