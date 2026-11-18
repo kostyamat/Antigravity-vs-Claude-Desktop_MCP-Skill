@@ -258,6 +258,11 @@ function createRouter(bridgeDb, cardsLib) {
       const toMe = m.toSession && mineSet.has(String(m.toSession));
       const inMyRoom = m.room && rooms.has(m.room);
       if (!toMe && !inMyRoom) continue;
+      // Said in my room but addressed to another window (an invitation of it, a notice to it): his
+      // question to that window, not to me (18.11: a removal notice and an invitation for the bridge window on
+      // artempc stood in this window's "the owner is waiting" for days).
+      const named = String(m.toSession || '').trim();
+      if (!toMe && named && named !== 'all' && ![...mineSet].some(w => same(w, named))) continue;
       const later = board.slice(i + 1);
       const answered = toMe
         ? later.some(n => isMyOwn(n) && (n.replyTo === m.id || !m.room || n.room === m.room))

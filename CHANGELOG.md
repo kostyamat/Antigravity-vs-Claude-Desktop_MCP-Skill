@@ -8,6 +8,12 @@ never overwritten.
 
 ---
 
+## Unreleased
+
+**Fixed.** A window is no longer told that you wait on its answer to your message to another window in the same room
+(an invitation of that window, a notice to it). The notice that a window was sent out of a room now comes from the board,
+not in your name.
+
 ## v2.8.11 — 2026-11-18
 
 **A cut-off session says so in its slice.** The block the supervisor writes at the top of a project's slice when its

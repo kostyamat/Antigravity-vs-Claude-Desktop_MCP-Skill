@@ -330,7 +330,8 @@ async function ownerRoomMember(action, id, card, agentHint, from) {
   const out = bridgeDb.removeRoomMember(id, card, { by });
   if (room && was) {
     const agent = was.agent || ((known.get(card) || {}).agent) || (/^local_/.test(card) ? 'Claude' : 'Gemini');
-    apiPost({ from: by, room: room.id, to: agent, toSession: card, status: 'info',
+    // Told by the board, not in the owner's name: a notice, not a question he waits on.
+    apiPost({ from: 'Board', fromSession: 'board/rooms', room: room.id, to: agent, toSession: card, status: 'info',
       text: `The owner removed you from room "${room.name}" [${room.id}]. Stop work for this room and do not ` +
         'write in it; only the owner can invite you back. Your own project and other rooms are unchanged.' });
   }
