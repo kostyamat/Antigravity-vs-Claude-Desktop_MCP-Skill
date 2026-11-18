@@ -22,7 +22,7 @@ function board(messages, cursors) {
     getDb: () => ({ prepare: () => ({ get: (...keys) => {
       const hits = keys.filter(k => k in (cursors || {})).map(k => cursors[k]);
       return { n: hits.length ? Math.max(...hits) : null };
-    }, all: pid => messages.filter(m => m.replyTo === pid).map(m => ({ from_session: m.fromSession })) }) })
+    }, all: pid => messages.filter(m => m.replyTo === pid).map(m => ({ from_session: m.fromSession, status: m.status })) }) })
   };
   const router = { roomAdmits: m => !m.room || m.room !== 'foreign-room' };
   return createMailbox(db, router);
@@ -96,9 +96,18 @@ assert.deepStrictEqual([b.fresh, b.unread, b.urgent], [false, 0, 0], 'nothing pa
   const lead = msg({ from: 'Claude', fromSession: 'local_lead-x', to: 'Kostiantyn', toSession: 'human/web', replyTo: q.id, status: 'answer' });
   const leadNote = msg({ from: 'Claude', fromSession: 'local_lead-x', to: 'Kostiantyn', toSession: 'human/web', replyTo: q.id, status: 'info' });
   const box = list => board(list).urgentFor('Claude', WIN, WIN, 0).map(m => m.id);
-  assert.deepStrictEqual(box([q, mineIn, lead]), [q.id, lead.id], 'a lead\'s answer to the owner reaches the window that took part');
+  assert.deepStrictEqual(box([q, mineIn, lead]), [q.id, lead.id], 'a lead\'s answer to the owner wakes the window waiting in it');
   assert.deepStrictEqual(box([q, mineIn, leadNote]), [q.id], 'a status note in the thread is read, it does not wake');
   assert.deepStrictEqual(box([q, lead]), [q.id], 'a window that took no part is not given the answers');
+  const myAnswer = msg({ from: 'Claude', fromSession: WIN, to: 'Kostiantyn', toSession: 'human/web', replyTo: q.id, status: 'answer' });
+  assert.deepStrictEqual(box([q, myAnswer, lead]), [q.id], 'a window that has answered is not woken by the others\' answers');
+  const forMeList = list => { const b = board(list).open('Claude', WIN, WIN); return list.filter(m => b.isForMe(m)).map(m => m.id); };
+  assert.ok(forMeList([q, myAnswer, lead]).includes(lead.id), '…but reads them when it looks');
+  // An agent's roll call to the room: answers go to the agent that asked, nobody else is woken.
+  const roll = msg({ from: 'Claude', fromSession: 'local_head', status: 'question', priority: 'normal' });
+  const myRoll = msg({ from: 'Claude', fromSession: WIN, to: 'Claude', toSession: 'local_head', replyTo: roll.id, status: 'answer' });
+  const otherRoll = msg({ from: 'Claude', fromSession: 'local_lead-y', to: 'Claude', toSession: 'local_head', replyTo: roll.id, status: 'answer' });
+  assert.deepStrictEqual(box([roll, myRoll, otherRoll]), [roll.id], 'an answer to an agent\'s roll call wakes nobody but the one who asked');
   const toOne = msg(Object.assign({ status: 'question', to: 'Claude', toSession: 'local_lead-x' }, OWNER));
   const ans = msg({ from: 'Claude', fromSession: 'local_lead-x', to: 'Kostiantyn', toSession: 'human/web', replyTo: toOne.id, status: 'answer' });
   const mine2 = msg({ from: 'Claude', fromSession: WIN, to: 'Kostiantyn', toSession: 'human/web', replyTo: toOne.id, status: 'info' });

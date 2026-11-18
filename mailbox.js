@@ -40,30 +40,38 @@ function createMailbox(bridgeDb, router) {
       return true;
     };
 
-    // A question put to a whole room is a conversation of the room: whoever took part in it
-    // (asked it, or answered it) is given every answer, to whomever each is addressed. The
-    // owner asked a shared room "what do the leads say?"; the leads answered him, the window
-    // that was waiting for their word never saw it, and its own call to them, written as a
-    // reply to him, reached none of them (18.11, #6481–#6492).
+    // A question the OWNER put to a whole room is a conversation of the room: whoever took part
+    // in it is given every answer, to whomever each is addressed. He asked a shared room "what do
+    // the leads say?"; the leads answered him, and the window waiting for their word never saw it
+    // (18.11, #6481–#6492). Only his questions: an agent's roll call to the room, answered by
+    // seven leads, woke every one of them for each of the others' answers (18.11, #6612–#6652).
+    // And of the participants only one still waiting in it (it said "working", asked, or is
+    // blocked) is woken; one that has answered reads the rest when it next looks.
     const threads = new Map();
     const mine = s => lowerWindow.has(String(s || '').trim().toLowerCase());
-    const inThread = m => {
-      if (!sid || !m.room || !m.replyTo || isMyOwn(m)) return false;
+    const thread = m => {
+      if (!sid || !m.room || !m.replyTo || isMyOwn(m)) return '';
       const pid = Number(m.replyTo);
       if (!threads.has(pid)) {
-        let ok = false;
+        let state = '';
         try {
           const p = bridgeDb.getMessageById(pid);
-          if (p && p.room === m.room && (!p.toSession || p.toSession === 'all') && WAITING_STATUSES.includes(p.status)) {
-            ok = mine(p.fromSession) || bridgeDb.getDb().prepare('SELECT from_session FROM messages WHERE reply_to = ?')
-              .all(pid).some(r => mine(r.from_session));
+          if (p && p.room === m.room && isHuman(p.fromSession) && (!p.toSession || p.toSession === 'all') &&
+              WAITING_STATUSES.includes(p.status)) {
+            const mineIn = bridgeDb.getDb().prepare('SELECT from_session, status FROM messages WHERE reply_to = ? ORDER BY id')
+              .all(pid).filter(r => mine(r.from_session));
+            if (mineIn.length) {
+              const last = mineIn[mineIn.length - 1].status;
+              state = ['working', 'question', 'blocked'].includes(last) ? 'waiting' : 'seen';
+            }
           }
         } catch (_) {}
-        threads.set(pid, ok);
+        threads.set(pid, state);
       }
-      return threads.get(pid) && (!sid || router.roomAdmits(m, cards));
+      const st = threads.get(pid);
+      return st && (!sid || router.roomAdmits(m, cards)) ? st : '';
     };
-    const isForMe = m => addressed(m) || inThread(m);
+    const isForMe = m => addressed(m) || !!thread(m);
 
     const isMyOwn = m => {
       if (!reader) return false;
@@ -85,8 +93,8 @@ function createMailbox(bridgeDb, router) {
       if (Date.now() - new Date(m.ts).getTime() > URGENT_HOURS * 3600e3) return false;
       if (m.priority === 'P0') return true;
       if (m.priority === 'fyi') return false;             // "for information": read whenever, never a wake-up
-      // Only in the room's conversation, not addressed to it: the answers wake it, the rest waits.
-      if (!addressed(m)) return URGENT_STATUSES.includes(m.status);
+      // Only in the room's conversation, not addressed to it: the answers wake it while it waits there.
+      if (!addressed(m)) return thread(m) === 'waiting' && URGENT_STATUSES.includes(m.status);
       // The owner is heard wherever he speaks. On the Square he asks "whoever
       // built this, speak up" exactly because he cannot name the window.
       if (isHuman(m.fromSession)) return true;
