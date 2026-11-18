@@ -514,7 +514,7 @@ const TOOLS = [
         cwd: { type: 'string', description: 'Working directory of this session. Stays on this machine; the database is never published.' },
         title: { type: 'string', description: 'Window title, so the human recognises the session in the board.' },
         to: { type: 'string', description: 'Recipient: "Claude", "Gemini", or "all" (default is "all" unless replying).' },
-        toSession: { type: 'string', description: 'Who it is for: the recipient\'s window id, or its project (the folder name, e.g. "MyApp") — every window of that project receives it, whichever account is signed in. Not needed with replyTo. A helper may leave it out: the message goes to its lead.' },
+        toSession: { type: 'string', description: 'Who it is for: the recipient\'s window id, or its project (the folder name, e.g. "MyApp") — every window of that project receives it, whichever account is signed in. Not needed with replyTo. A helper may leave it out: the message goes to its lead — also when it names its own room with its lead or writes to "all" there — and becomes the reply to the lead\'s open question to it.' },
         replyTo: { type: 'number', description: 'Message ID (#N) being replied to. Automatically links thread and routes to parent author.' },
         topic: { type: 'string', description: 'Short topic/category (e.g. "auth", "refactoring") for filtering.' },
         room: { type: 'string', description: 'Room id, name or part of the name: keeps this message inside that conversation. Left out, the bridge uses the room of the message you reply to, your lead\'s room if you are a helper, or the one room you share with the recipient; when that is not exactly one room the call is refused and lists the rooms to choose from.' },
@@ -1295,7 +1295,7 @@ function doPost(id, a) {
   let toAgent = normAgent(a.to) || '';
   let toSession = (a.toSession || '').trim();
   let topic = (a.topic || '').trim();
-  const replyTo = typeof a.replyTo === 'number' ? a.replyTo : null;
+  let replyTo = typeof a.replyTo === 'number' ? a.replyTo : null;   // a helper's answer may be linked to the question below
 
   if (replyTo) {
     const parent = bridgeDb.getMessageById(replyTo);
@@ -1328,10 +1328,23 @@ function doPost(id, a) {
 
   // A helper that names nobody means its lead. It forgot whom to report to after
   // every compaction; the pair is on record, so it no longer has to know.
+  // Also when it names its own pair room or writes to "all": the lead's watchman wakes only for
+  // mail addressed to the lead, and such an answer reached nobody (helper-address.js).
   const boss = isAgent ? router.leadOf(mineWin) : null;
-  if (boss && !toSession && !replyTo && !String(a.room || '').trim() && a.square !== true) {
-    toSession = boss.lead;
-    if (!toAgent || toAgent === 'all') toAgent = router.agentOf(boss.lead);
+  if (boss) {
+    let recent = [];
+    try {
+      recent = bridgeDb.getDb().prepare('SELECT id, from_session, to_session, status FROM messages WHERE room = ? ORDER BY id DESC LIMIT 40')
+        .all(String(boss.room || '')).reverse().map(m => ({ id: m.id, fromSession: m.from_session, toSession: m.to_session, status: m.status }));
+    } catch (_) {}
+    const pairRoom = boss.room ? bridgeDb.getRoom(boss.room) : null;
+    const lead = require('./helper-address').toLead({ boss, mine: mineWin, toSession, replyTo, namedRoom: a.room, square: a.square,
+      roomName: pairRoom ? pairRoom.name : '', recent, same: (x, y) => !!x && !!y && (x === y || router.same(x, y)) });
+    if (lead) {
+      toSession = lead.toSession;
+      if (lead.replyTo) replyTo = lead.replyTo;
+      if (!toAgent || toAgent === 'all') toAgent = router.agentOf(boss.lead);
+    }
   }
 
   // The address is the recipient's window (or its project), never whatever the
