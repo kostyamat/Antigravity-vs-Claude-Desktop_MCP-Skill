@@ -390,7 +390,7 @@ function renderWindows() {
     '" title="' + esc(c.name || '') + '">' +
     '<input type="checkbox" value="' + esc(c.id) + '"' + (picked.has(c.id) ? ' checked' : '') + '>' +
     '<div class="row-main"><div class="row-name">' + esc(c.projectName ? c.projectName + ' \u00b7 ' + (c.name || 'window') : (c.name || 'Untitled window')) + '</div>' +
-    '<div class="row-meta">' + esc([c.projectName ? '' : project(c), c.helperOf ? 'helper of ' + c.helperOf : '', c.busy ? 'working now' : '',
+    '<div class="row-meta">' + esc([c.deaf ? '\ud83d\udca4 not listening \u2014 open it or ring it' : '', c.projectName ? '' : project(c), c.helperOf ? 'helper of ' + c.helperOf : '', c.busy ? 'working now' : '',
       c.activeAt ? ago(c.activeAt) : ''].filter(Boolean).join(' · ')) + '</div></div></label>';
   // Every group (Claude by account, Antigravity) folds, and is folded until the owner opens it:
   // the list of windows ran to dozens of rows (owner, 18.11). A filter typed opens them all, and a

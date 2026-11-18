@@ -1551,6 +1551,22 @@ function doPost(id, a) {
     ? `ℹ️ to everyone in room ${rec.room} — the room you are talking in; the Square is the owner's`
     : 'ℹ️ addressed to all (`to: "all"`), on the Square');
   if (rec.file) hints.push(`📄 long text stored completely in ${rec.file}`);
+  // A Claude window that is not listening (no watchman: no turn since its client restarted) hears
+  // nothing until it is rung; a Claude sender can ring it itself (listening.js).
+  try {
+    const t = String(rec.toSession || '').trim();
+    if (from === 'Claude' && t && !isHuman(t) && !peerLink.parseAddress(t)) {
+      const wins = /^local_/.test(t) ? [t] : bridgeDb.lineMembers(t).map(m => m.member).filter(w => /^local_/.test(w));
+      const { listening } = require('./listening');
+      if (wins.length && !wins.some(w => listening(w))) {
+        const w = wins[wins.length - 1];
+        const title = String(((router.cardOf(w) || {}).name) || router.nameOf(w) || w);
+        hints.push(`🔔 "${title}" is not listening to the board (no turn since its client restarted): ring it now — ` +
+          `ListAgents, then SendMessage({to: "${title.replace(/"/g, '\\"')}", message: "Board #${nextId}${rec.room ? ' in room ' + rec.room : ''} ` +
+          'is for you: read it with get_messages."}). Once is enough.');
+      }
+    }
+  } catch (_) {}
 
   ok(id, `✅ Recorded as #${nextId}${rec.room ? ` in room ${rec.room}` : ''}${rec.to !== 'all' ? ` for ${rec.to}` : ''}` +
         `${rec.toSession ? ` [session: ${rec.toSession}]` : ''}` +

@@ -23,6 +23,7 @@ const { spawn } = require('child_process');
 const bridgeDb = require('./bridge-db');
 const cardsLib = require('./cards');
 const archiver = require('./room-archive').createArchiver(bridgeDb, path.resolve(__dirname));
+const { listening } = require('./listening');
 const { wakeAntigravity } = require('./wake-antigravity');
 const { inviteText } = require('./room-invite');
 const router = require('./room-routing').createRouter(bridgeDb, cardsLib);
@@ -413,6 +414,8 @@ function apiCards(hours) {
       if (line && line !== c.id) { out.line = line; out.projectName = projectName(line) || line; }
       const boss = helpers.find(h => h.helper === c.id);
       if (boss) out.helperOf = router.nameOf(boss.lead);
+      // A Claude window with no watchman hears nothing until it is opened or rung (listening.js).
+      if (c.agent === 'Claude' && !c.busy) { const l = listening(c.id); if (l === false) out.deaf = true; }
       return out;
     })
     // The windows of a linked machine, as last heard from it: addressed as <id>@<machine>.
