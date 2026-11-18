@@ -480,9 +480,9 @@ function fail(id, message) {
   sendResponse({ jsonrpc: '2.0', id, error: { code: -32000, message } });
 }
 
-const IDENTITY_TOOLS = new Set(['post_message', 'get_messages', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand', 'report_usage',
+const IDENTITY_TOOLS = new Set(['post_message', 'get_messages', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand', 'reserve_files', 'report_usage',
   'mark_read', 'list_docs', 'read_doc', 'ack_doc']);
-const WRITING_TOOLS = new Set(['post_message', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand']);
+const WRITING_TOOLS = new Set(['post_message', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand', 'reserve_files']);
 
 const TOOLS = [
   {
@@ -844,6 +844,30 @@ const TOOLS = [
     }
   },
   {
+    name: 'reserve_files',
+    description:
+      'Reserve files you are about to edit, so that no other agent edits and commits them meanwhile. Paths or globs ' +
+      'relative to the repository root ("src/main/**", "README.md"); a reserved folder holds its files. Refused, with the ' +
+      'holder\'s name, when another window holds an overlapping reservation — ask it or wait. While held, the global ' +
+      'pre-commit hook stops another agent\'s commit that touches those files (the owner is only told). Reserve before a ' +
+      'longer edit that a lead and a helper could both touch; release when committed: release: true (with paths, or all ' +
+      'yours in that repository). list: true shows what is held there.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sender: { type: 'string', description: '"Claude" or "Gemini".' },
+        sessionId: { type: 'string', description: 'Your own window id.' },
+        repo: { type: 'string', description: 'The repository root folder. Default: your project folder.' },
+        paths: { type: 'array', items: { type: 'string' }, description: 'Paths or globs relative to the repository root.' },
+        reason: { type: 'string', description: 'What you are doing in them, in a few words.' },
+        minutes: { type: 'number', description: 'How long to hold them (default 120, at most a day).' },
+        release: { type: 'boolean', description: 'Release these paths, or all of yours in the repository when no paths are given.' },
+        list: { type: 'boolean', description: 'Show the reservations held in the repository.' }
+      },
+      required: ['sender', 'sessionId']
+    }
+  },
+  {
     name: 'book_stand',
     description:
       'Take or release a stand — a physical device on the bench that only one window may install on at a time. ' +
@@ -1001,6 +1025,7 @@ function handleRequest(req) {
   try {
     if (toolName === 'set_helper') return pairTools.doSetHelper(id, args);
     if (toolName === 'book_stand') return pairTools.doBookStand(id, args);
+    if (toolName === 'reserve_files') return doReserveFiles(id, args);
     if (toolName === 'bridge_setup') return doSetup(id, args);
     if (toolName === 'report_usage') return doReportUsage(id, args);
     if (toolName === 'post_message') return doPost(id, args);
@@ -1126,6 +1151,35 @@ function doListCards(id, a) {
 // A conversation that needs someone it does not have. The invited window joins
 // the room and is woken by a message addressed to it, in the room, so it reads
 // the history and the room's documents instead of being briefed from scratch.
+function doReserveFiles(id, a) {
+  const res = require('./file-reservations').createReservations(() => bridgeDb.getDb());
+  const me = router.windowOf(a.canonicalId) || router.windowOf(a.sessionId) || String(a.sessionId || '').trim();
+  if (!me) return fail(id, 'reserve_files: the board does not know which window you are — pass sessionId.');
+  let repo = String(a.repo || '').trim();
+  if (!repo) { try { repo = String((router.cardOf(me) || {}).project || ''); } catch (_) {} }
+  if (!repo) return fail(id, 'reserve_files: pass repo — the repository root folder.');
+  const fmt = r => `${r.pattern} — "${r.holder_name || r.holder}" until ${String(r.until).slice(0, 16).replace('T', ' ')}${r.reason ? ': ' + r.reason : ''}`;
+  if (a.list === true) {
+    const all = res.active(repo);
+    return ok(id, all.length ? `Reserved in ${repo}:\n` + all.map(fmt).join('\n') : `Nothing is reserved in ${repo}.`);
+  }
+  if (a.release === true) {
+    const n = res.release({ repo, holder: me, patterns: a.paths });
+    return ok(id, `✅ Released ${n} reservation(s) in ${repo}.`);
+  }
+  let out;
+  try {
+    out = res.reserve({ repo, holder: me, holderName: router.nameOf(me), agent: router.agentOf(me), patterns: a.paths, reason: a.reason, minutes: a.minutes });
+  } catch (e) { return fail(id, 'reserve_files: ' + e.message); }
+  if (out.conflicts.length) {
+    return fail(id, 'reserve_files: held by another window — ask it, or wait:\n' + out.conflicts.map(c =>
+      `${c.pattern} overlaps ${c.theirs} — "${c.holderName || c.holder}" [${c.holder}] until ${String(c.until).slice(0, 16).replace('T', ' ')}${c.reason ? ': ' + c.reason : ''}`).join('\n') +
+      '\nNothing was reserved.');
+  }
+  return ok(id, `✅ Reserved in ${repo} until ${String(out.until).slice(0, 16).replace('T', ' ')}: ${out.taken.join(', ')}. ` +
+    'Release them when committed: reserve_files({release: true}).');
+}
+
 function doInviteToRoom(id, a) {
   const room = router.findRoom(a.room, [a.canonicalId, a.sessionId, router.windowOf(a.sessionId)]);
   if (!room) return fail(id, `invite_to_room: no single room matches "${a.room}" — see list_rooms.`);
@@ -1290,6 +1344,12 @@ function doPost(id, a) {
 
   const storedMessage = text.length > INLINE_LIMIT ? (text.slice(0, INLINE_LIMIT) + '\n…') : text;
 
+  // The same idempotencyKey from the same window within a day is the same message: a retry after the
+  // client's own time-out returns the one already written.
+  const idemSender = String(a.canonicalId || a.sessionId || from).trim();
+  const idemKey = String(a.idempotencyKey || '').trim().slice(0, 200);
+  const idemHit = idemKey ? bridgeDb.idempotentMessage(idemSender, idemKey) : null;
+  if (idemHit) return ok(id, `↩️ Already on the board as #${idemHit} (same idempotencyKey) — not recorded twice.`);
   const dup = bridgeDb.findRecentDuplicate(from, storedMessage, 60);
   if (dup) {
     return ok(id, `↩️ Already on the board as #${dup.id} — duplicate not recorded.`);
@@ -1428,6 +1488,7 @@ function doPost(id, a) {
   const saved = bridgeDb.addMessage(rec);
   const nextId = saved.id;
   rec.id = nextId;
+  if (idemKey) bridgeDb.rememberIdempotent(idemSender, idemKey, nextId);
 
   if (text.length > INLINE_LIMIT) {
     ensureDir(BODIES_DIR);

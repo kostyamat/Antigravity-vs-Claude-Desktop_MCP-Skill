@@ -205,6 +205,15 @@ function initSchema(db) {
       machine TEXT NOT NULL,
       at TEXT
     );
+    -- A post_message given an idempotency key: the same key from the same sender within a day is the
+    -- same message, returned instead of written twice (a client that retries after its own time-out).
+    CREATE TABLE IF NOT EXISTS idempotency (
+      sender TEXT NOT NULL,
+      key TEXT NOT NULL,
+      message_id INTEGER NOT NULL,
+      at TEXT,
+      PRIMARY KEY (sender, key)
+    );
     -- The owner stopped the work: while this row exists no hook, watchman, waker or the
     -- supervisor wakes a session (owner, 16.11: sessions told to sleep were woken all night).
     CREATE TABLE IF NOT EXISTS board_pause (
@@ -639,6 +648,35 @@ function getMessageById(id) {
   return rowToMessage(row);
 }
 
+function idempotentMessage(sender, key, hours = 24) {
+  if (!sender || !key) return null;
+  try {
+    const r = getDb().prepare('SELECT message_id FROM idempotency WHERE sender = ? AND key = ? AND at > ?')
+      .get(String(sender), String(key), new Date(Date.now() - hours * 3600e3).toISOString());
+    return r ? Number(r.message_id) : null;
+  } catch (_) { return null; }
+}
+function rememberIdempotent(sender, key, messageId) {
+  if (!sender || !key) return;
+  try {
+    getDb().prepare('INSERT OR REPLACE INTO idempotency (sender, key, message_id, at) VALUES (?, ?, ?, ?)')
+      .run(String(sender), String(key), Number(messageId), new Date().toISOString());
+  } catch (_) {}
+}
+
+// A write that meets a busy database once more after busy_timeout: tried again up to three times,
+// with a short random pause, before the error goes up (WAL readers upgrading to writers can get
+// SQLITE_BUSY that the busy handler does not retry).
+function retryBusy(fn) {
+  for (let i = 0; ; i++) {
+    try { return fn(); } catch (e) {
+      if (i >= 3 || !/SQLITE_BUSY|database is locked/i.test(String(e && (e.message || e.code)))) throw e;
+      const ms = 50 + Math.floor(Math.random() * 100) * (i + 1);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    }
+  }
+}
+
 function findRecentDuplicate(fromAgent, message, seconds = 60) {
   const db = getDb();
   const cutoff = new Date(Date.now() - seconds * 1000).toISOString();
@@ -663,7 +701,7 @@ function addMessage(msg) {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  const res = stmt.run(
+  const res = retryBusy(() => stmt.run(
     ts,
     msg.from || msg.sender || '?',
     msg.fromSession || '',
@@ -678,7 +716,7 @@ function addMessage(msg) {
     msg.file || null,
     readByStr,
     msg.room || ''
-  );
+  ));
 
   const newId = Number(res.lastInsertRowid);
   return getMessageById(newId);
@@ -1693,6 +1731,9 @@ module.exports = {
   readRooms,
   renameRoom,
   pinRoom,
+  idempotentMessage,
+  rememberIdempotent,
+  retryBusy,
   roomOrigin,
   mirrorRoom,
   boardPaused,

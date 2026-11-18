@@ -21,6 +21,15 @@ if [ -n "$junk" ]; then
 fi
 
 agent=$(detect_agent)
+
+# Files another window reserved (agent-bridge file reservations): an agent's commit over them is stopped,
+# the owner's is not. No node or no board: nothing is checked.
+guard="$(dirname "$0")/../reservation-guard.js"
+if [ -f "$guard" ] && command -v node >/dev/null 2>&1; then
+    held=$(printf '%s\n' "$staged" | node "$guard" "$agent" 2>&1) || fail=1
+    [ -n "$held" ] && printf '%s\n' "$held" >&2
+fi
+
 if [ "$agent" = "gemini" ]; then
     cat >&2 <<'EOF'
 
