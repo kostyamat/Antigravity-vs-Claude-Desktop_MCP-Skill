@@ -8,7 +8,7 @@ never overwritten.
 
 ---
 
-## Unreleased
+## v2.8.11 — 2026-11-18
 
 **A cut-off session says so in its slice.** The block the supervisor writes at the top of a project's slice when its
 session stopped mid-work is headed *CUT OFF HERE — added by the supervisor, NOT committed*; the lead folds it in,
