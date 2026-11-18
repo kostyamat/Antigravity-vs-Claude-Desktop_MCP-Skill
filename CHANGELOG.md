@@ -8,6 +8,12 @@ never overwritten.
 
 ---
 
+## Unreleased
+
+**A letter to everyone in a machine's room reaches that machine.** Said to everyone in "Machine: …", it now goes to
+that machine's room for this one, read there by its windows that are in the room here (it used to stay on this machine;
+only mail to one window travelled). Counted from the first time the board sees the room: nothing older is sent late.
+
 ## v2.8.13 — 2026-11-18
 
 **The key field is there before Tailscale is.** The board page shows the one-time key field whenever the machine is
