@@ -30,7 +30,7 @@ function createMailbox(bridgeDb, router) {
     const lowerLine = new Set([...myLine].map(x => String(x).trim().toLowerCase()));
     const lowerWindow = new Set([...myWindow].map(x => String(x).trim().toLowerCase()));
 
-    const isForMe = m => {
+    const addressed = m => {
       if (m.toSession && m.toSession !== 'all') {
         if (!sid) return false;
         if (!lowerLine.has(String(m.toSession).trim().toLowerCase())) return false;
@@ -39,6 +39,31 @@ function createMailbox(bridgeDb, router) {
       if (sid && !router.roomAdmits(m, cards)) return false;
       return true;
     };
+
+    // A question put to a whole room is a conversation of the room: whoever took part in it
+    // (asked it, or answered it) is given every answer, to whomever each is addressed. The
+    // owner asked a shared room "what do the leads say?"; the leads answered him, the window
+    // that was waiting for their word never saw it, and its own call to them, written as a
+    // reply to him, reached none of them (18.11, #6481–#6492).
+    const threads = new Map();
+    const mine = s => lowerWindow.has(String(s || '').trim().toLowerCase());
+    const inThread = m => {
+      if (!sid || !m.room || !m.replyTo || isMyOwn(m)) return false;
+      const pid = Number(m.replyTo);
+      if (!threads.has(pid)) {
+        let ok = false;
+        try {
+          const p = bridgeDb.getMessageById(pid);
+          if (p && p.room === m.room && (!p.toSession || p.toSession === 'all') && WAITING_STATUSES.includes(p.status)) {
+            ok = mine(p.fromSession) || bridgeDb.getDb().prepare('SELECT from_session FROM messages WHERE reply_to = ?')
+              .all(pid).some(r => mine(r.from_session));
+          }
+        } catch (_) {}
+        threads.set(pid, ok);
+      }
+      return threads.get(pid) && (!sid || router.roomAdmits(m, cards));
+    };
+    const isForMe = m => addressed(m) || inThread(m);
 
     const isMyOwn = m => {
       if (!reader) return false;
@@ -59,6 +84,8 @@ function createMailbox(bridgeDb, router) {
       if (!isForMe(m) || isMyOwn(m) || m.status === 'ack') return false;
       if (Date.now() - new Date(m.ts).getTime() > URGENT_HOURS * 3600e3) return false;
       if (m.priority === 'P0') return true;
+      // Only in the room's conversation, not addressed to it: the answers wake it, the rest waits.
+      if (!addressed(m)) return URGENT_STATUSES.includes(m.status);
       // The owner is heard wherever he speaks. On the Square he asks "whoever
       // built this, speak up" exactly because he cannot name the window.
       if (isHuman(m.fromSession)) return true;

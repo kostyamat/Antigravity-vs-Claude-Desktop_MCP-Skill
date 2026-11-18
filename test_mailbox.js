@@ -18,10 +18,11 @@ function board(messages, cursors) {
       ? new Set([sid]) : new Set([sid, SIBLING, LINE]),
     getCursor: () => 0,
     readAllMessages: ({ since } = {}) => messages.filter(m => m.id > (since || 0)),
+    getMessageById: n => messages.find(m => m.id === n) || null,
     getDb: () => ({ prepare: () => ({ get: (...keys) => {
       const hits = keys.filter(k => k in (cursors || {})).map(k => cursors[k]);
       return { n: hits.length ? Math.max(...hits) : null };
-    } }) })
+    }, all: pid => messages.filter(m => m.replyTo === pid).map(m => ({ from_session: m.fromSession })) }) })
   };
   const router = { roomAdmits: m => !m.room || m.room !== 'foreign-room' };
   return createMailbox(db, router);
@@ -85,6 +86,23 @@ assert.ok(b.last.length === 1 && b.last[0].startsWith('#' + mine.id), 'shows the
 
 b = board([...noise, mine, note], { ['Claude/' + WIN]: note.id }).briefFor('Claude', WIN, WIN);
 assert.deepStrictEqual([b.fresh, b.unread, b.urgent], [false, 0, 0], 'nothing past its own cursor');
+
+// A question to the whole room is a conversation: who took part gets every answer in it.
+{
+  const OWNER = { from: 'Kostiantyn', fromSession: 'human/web' };
+  const q = msg(Object.assign({ status: 'question', message: 'what do the leads say?' }, OWNER));
+  const mineIn = msg({ from: 'Claude', fromSession: WIN, to: 'Kostiantyn', toSession: 'human/web', replyTo: q.id, status: 'working' });
+  const lead = msg({ from: 'Claude', fromSession: 'local_lead-x', to: 'Kostiantyn', toSession: 'human/web', replyTo: q.id, status: 'answer' });
+  const leadNote = msg({ from: 'Claude', fromSession: 'local_lead-x', to: 'Kostiantyn', toSession: 'human/web', replyTo: q.id, status: 'info' });
+  const box = list => board(list).urgentFor('Claude', WIN, WIN, 0).map(m => m.id);
+  assert.deepStrictEqual(box([q, mineIn, lead]), [q.id, lead.id], 'a lead\'s answer to the owner reaches the window that took part');
+  assert.deepStrictEqual(box([q, mineIn, leadNote]), [q.id], 'a status note in the thread is read, it does not wake');
+  assert.deepStrictEqual(box([q, lead]), [q.id], 'a window that took no part is not given the answers');
+  const toOne = msg(Object.assign({ status: 'question', to: 'Claude', toSession: 'local_lead-x' }, OWNER));
+  const ans = msg({ from: 'Claude', fromSession: 'local_lead-x', to: 'Kostiantyn', toSession: 'human/web', replyTo: toOne.id, status: 'answer' });
+  const mine2 = msg({ from: 'Claude', fromSession: WIN, to: 'Kostiantyn', toSession: 'human/web', replyTo: toOne.id, status: 'info' });
+  assert.deepStrictEqual(box([toOne, mine2, ans]), [], 'a question to one window stays between them');
+}
 
 // A window that never read: the agent-wide cursor is not borrowed, history is not counted.
 b = board([...noise, mine, note], { Claude: 5 }).briefFor('Claude', WIN, WIN);
