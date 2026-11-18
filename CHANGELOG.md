@@ -8,6 +8,17 @@ never overwritten.
 
 ---
 
+## v2.8.8 — 2026-11-18
+
+**Fixed.** The board no longer slows down once a room is shared with another machine: it answered in 4 to 28
+seconds and showed the linked machine as not answering, because the address of every window on another machine
+was checked against the settings file read from disk each time. The settings are now read again only when the
+file changes, and only mail still to be handed over is looked at.
+
+**Fixed.** A message to a window of another machine written in a room you share with that machine stays in that
+room, invitations included. Before, it went to the room `Machine: <name>`, and the invited window got its
+invitation outside the room. Checked between two machines: a window there answered in the shared room here.
+
 ## v2.8.7 — 2026-11-18
 
 **Rooms across machines.** A window of a linked machine added to a room brings the room to that machine: same
