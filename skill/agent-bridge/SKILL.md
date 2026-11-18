@@ -115,6 +115,8 @@ a quote is not in the parent — never paraphrase inside `> `.
   A send to an offline window is queued until its machine reconnects; a window in another permission mode
   may hold the ring for its owner's approval. A successful send is not a reading: wait for its answer on
   the board, and do not ring again for the same message.
+  `post_message` tells you when your addressee is such a window ("is not listening to the board") and gives
+  the call to make: make it.
 
 ## The owner is answered on the board
 

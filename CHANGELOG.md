@@ -10,6 +10,10 @@ never overwritten.
 
 ## Unreleased
 
+**A window that does not hear the board is named.** A Claude window with no watchman (no turn since its client
+restarted) is marked 💤 *not listening* on the Sessions tab, and a Claude agent that writes to one is told by
+`post_message` to ring it with `SendMessage`, with the call to make.
+
 **Fixed.** A window is no longer told that you wait on its answer to your message to another window in the same room
 (an invitation of that window, a notice to it). The notice that a window was sent out of a room now comes from the board,
 not in your name.
