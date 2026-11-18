@@ -37,11 +37,22 @@ const TEXT_DIR = path.join(__dirname, 'docs', 'converted');
 const DOCS_DIR = path.join(__dirname, 'docs');
 const MAX_BODY = 90e6;           // an attachment is at most 40 MB, base64 adds a third
 
+// Read again only when the file changed: parseAddress asks for it once per address, the pump
+// once per member of every room message, and reading it from disk each time (3.6 ms) kept the
+// board's process half busy (18.11, 263 messages every five seconds).
+let configCache = null;
 function readConfig() {
-  try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) || {}; } catch (_) { return {}; }
+  let mtime = -1;
+  try { mtime = fs.statSync(CONFIG_FILE).mtimeMs; } catch (_) { configCache = null; return {}; }
+  if (configCache && configCache.mtime === mtime) return configCache.cfg;
+  let cfg = {};
+  try { cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) || {}; } catch (_) { cfg = {}; }
+  configCache = { mtime, cfg };
+  return cfg;
 }
 function writeConfig(cfg) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+  configCache = null;
 }
 
 function slug(s) {
@@ -358,11 +369,16 @@ async function pump(deps) {
     const since = new Date(Date.now() - RETRY_HOURS * 3600e3).toISOString();
     // Addressed to a window over there, or said in a room shared with a machine — by this
     // machine (what came from a neighbour is not sent back), and not the board's own notes.
+    // Only what is still to go: said after the room was shared, and not yet handed over
+    // everywhere (a machine still waiting keeps the message in the list).
     const rows = bridgeDb.getDb().prepare(`
       SELECT m.id FROM messages m
       WHERE m.ts > ? AND (m.to_session LIKE '%@%'
         OR (m.room <> '' AND m.from_session NOT LIKE '%@%' AND m.from_session NOT LIKE 'board/%' AND m.from_session NOT LIKE 'supervisor/%'
-            AND (m.room IN (SELECT room FROM peer_rooms) OR m.room IN (SELECT room FROM room_origin))))
+            AND (EXISTS (SELECT 1 FROM peer_rooms pr WHERE pr.room = m.room AND m.ts > pr.since)
+                 OR m.room IN (SELECT room FROM room_origin))))
+        AND NOT (EXISTS (SELECT 1 FROM peer_refs r WHERE r.local_id = m.id AND r.state IN ('sent', 'refused', 'received'))
+                 AND NOT EXISTS (SELECT 1 FROM peer_refs r WHERE r.local_id = m.id AND r.state NOT IN ('sent', 'refused', 'received')))
       ORDER BY m.id
     `).all(since);
     for (const row of rows) {
