@@ -157,8 +157,9 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
         // fyi: read with the lead's next look at the board, not a wake-up — the lead does not stop.
         say({ to: 'Claude', toSession: lead, room, status: 'info', priority: 'fyi',
           text: `Supervisor: Antigravity quota is at ${left} %. Your helper${names.length > 1 ? 's' : ''} ${names.map(n => '"' + n + '"').join(', ')} ` +
-            'stop after the step in hand. You do NOT stop: carry on with your own work, and do yourself what cannot wait for them. ' +
-            'They are set going again when the quota is back or the account is switched. Do not answer this.' });
+            'pause after the step in hand. Their tasks wait for them: do NOT take them over or do them yourself (the owner keeps ' +
+            'the volume of work on Antigravity to spare Claude\'s quota). Go on with your own work. They are set going again when ' +
+            'the quota is back or the account is switched, and you are told then. Do not answer this.' });
       }
       const paused = Object.assign({}, config().paused || {});
       paused.gemini = { at: new Date().toISOString(), account: q.account, left, helpers, resetsAt: pool.reset || '' };
@@ -274,7 +275,8 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
         say({ to: 'Claude', toSession: lead, room, status: 'info',
           text: `Supervisor: ${because || 'the Antigravity account was switched'} — your helper${hs.length > 1 ? 's are' : ' is'} back: ` +
             hs.map(h => `"${h.name}" (room ${h.room})`).join(', ') + '. Each goes on with the task it stopped at. Read its last report in its ' +
-            'room now, and give the next task to any that has finished or is waiting on you. Do not answer this message.' });
+            'room now and hand out the work at once: the next task to any that has finished, the rest of the plan to any that waits on ' +
+            'you. Anything of theirs you took over while they were paused goes back to them. Do not answer this message.' });
       }
       done.push(`${(paused.gemini.helpers || []).length} helper(s)`);
       delete paused.gemini;

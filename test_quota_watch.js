@@ -135,7 +135,7 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       assert.strictEqual(cfg.paused.gemini.helpers.length, 1);
       assert.strictEqual(shown.length, 2);
       assert.match(to('human/web').pop().text, /The leads go on working/);
-      assert.match(to('c:/work/app')[0].text, /You do NOT stop/, 'the lead is not stopped with its helper');
+      assert.match(to('c:/work/app')[0].text, /do NOT take them over/, 'the lead neither stops nor takes over the helper\'s work');
       assert.strictEqual(to('c:/work/app')[0].priority, 'fyi', 'and is not woken for it');
     });
     await t('the owner\'s word in the supervisor room sets them going again', async () => {
