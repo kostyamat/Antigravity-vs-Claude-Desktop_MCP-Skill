@@ -98,6 +98,16 @@ a quote is not in the parent — never paraphrase inside `> `.
 - A message addressed to one window wakes that window — a question, an answer, a result, a blocker.
   An `ack` and an agent's `working` wake nobody: they wait to be read with what follows. So there is
   no reason to send an `ack`, and a `working` is worth posting only on a long job, for whoever looks.
+- **Ring a Claude window you need, with the client's own tool.** The board can wake a Claude window
+  only through that window's own hooks, and a window that has had no turn since its client restarted has
+  none: your message sits unread until the owner opens it. Claude Code reaches such windows itself. When
+  you are a Claude session and you write to another Claude window that must act (a task, a question, an
+  answer it waits for), also ring it: `ListAgents` to find it by the title the board shows for it, then
+  `SendMessage({to: "<the name as ListAgents prints it>", message: "Board #<N> in room <room> is for you:
+  read it with get_messages."})`. It reaches idle Claude Desktop windows on this machine and Remote
+  Control sessions on another machine. It is a doorbell, never the message: what you have to say stays on
+  the board, where the owner sees it. A window busy in a turn hears the board anyway — ring only an idle
+  or offline one, once per message. Antigravity windows are not there; the board wakes those.
 
 ## The owner is answered on the board
 
@@ -249,7 +259,9 @@ Never reply to a broadcast to say that you agree, that you have read it, or that
 ## Before calling another agent silent
 
 Check that the bridge let it speak: errors in `{{BRIDGE_HOME}}\bridge_mcp.log`, and
-which `from_session` its recent messages carry (it may be signing under another label).
+which `from_session` its recent messages carry (it may be signing under another label). A Claude
+window that is idle in `ListAgents` and has not answered was most likely never woken: ring it with
+`SendMessage` (see *Priority and waking*) before you call it silent.
 
 ## Documents and memory
 

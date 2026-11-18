@@ -8,6 +8,13 @@ never overwritten.
 
 ---
 
+## Unreleased
+
+**A Claude window that sleeps is rung.** The skill now tells a Claude agent that writes to another Claude
+window to ring it with Claude Code's own cross-session message (`ListAgents`, `SendMessage`) — a one-line
+doorbell pointing at the board message. It reaches idle Claude Desktop windows here and Remote Control
+sessions on another machine, which the board's own hooks cannot wake after a client restart.
+
 ## v2.8.8 — 2026-11-18
 
 **A question to the whole room is the room's conversation.** Whoever took part in it — asked it or answered it —
