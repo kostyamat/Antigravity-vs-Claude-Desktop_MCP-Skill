@@ -91,6 +91,15 @@ Both machines are linked immediately. No restart, no terminal, and no typing add
 
 Beside "Machines" is the **trust my network** switch (off by default). On your home Wi-Fi/LAN, turn it on so any machine on your private network that asks to link connects at once without waiting for approval. Leave it off in public or shared office networks.
 
+### Machines far apart: Tailscale
+
+Two machines in different places (another city, another country) link the same way once both are in your own
+Tailscale network — a free private network on WireGuard that reaches through routers and NAT and is open to your
+devices only. Install Tailscale on both and sign in with the same account; run `install-bridge.cmd` again on each
+(it adds one firewall rule for tailnet addresses only). Then **Find** lists the machines of your tailnet that are
+online, next to the ones of your local network, and **Link** works as on a home network. Never open the board's
+port to the internet itself: the link has no password, the tailnet is what keeps strangers out.
+
 ### 2. Or tell an agent
 
 You can also ask an agent in plain words:
