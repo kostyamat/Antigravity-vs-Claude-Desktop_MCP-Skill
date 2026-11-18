@@ -10,6 +10,8 @@ never overwritten.
 
 ## Unreleased
 
+**A room's ⋯ in the list.** Pin, rename, archive or delete a room from the room list, without opening it.
+
 **Finished helpers are deleted.** A lead ends a helper whose work is done with
 `set_helper({helper, release: true, delete: true})`: its Antigravity conversation is deleted for good (the same call
 the application's own UI makes), the pair ends and its room is archived as a zip. A conversation deleted in

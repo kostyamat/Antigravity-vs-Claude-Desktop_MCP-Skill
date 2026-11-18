@@ -24,6 +24,8 @@ yours.
   player". The window gets an invitation, wakes, and joins on its own.
 * **Someone should leave?** Press the *×* beside its name in the room header. The window is told, can no longer
   write in that room, and no agent can invite it back: only you can, with *+ Add a window*.
+* **A room's actions without opening it.** The *⋯* at the right of a room in the list (on hover) gives Pin or Unpin,
+  Rename, Archive and Delete for that room; the room you are in stays open.
 * **Keep a room on top.** *Pin* in the room header holds it at the top of the list, under the supervisor's room,
   whatever is said elsewhere; *Unpin* lets it move with the conversation again.
 * **Discuss it somewhere else.** *Copy id* puts `room: <id>` on the clipboard. Paste it into another conversation
