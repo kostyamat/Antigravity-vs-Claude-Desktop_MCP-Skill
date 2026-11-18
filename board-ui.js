@@ -309,6 +309,33 @@ function inviteFromOwner(owner, room, card, known) {
   });
 }
 
+// The owner adds a window to a room of this board, or sends one out — from the page, or from a
+// neighbour's board whose copy of the room he changed there (peer-link.js, room-member).
+async function ownerRoomMember(action, id, card, agentHint, from) {
+  const known = new Map(cardsLib.allCards({ allAccounts: true }).map(c => [c.id, c]));
+  const by = from || ownerName();
+  if (action === 'add') {
+    const out = bridgeDb.addRoomMember(id, card, (known.get(card) || {}).agent || agentHint || '', { owner: true });
+    const room = bridgeDb.getRoom(id);
+    // A window of another machine gets the room there first, then the invitation in it.
+    if (room && peerLink.parseAddress(card)) { try { await peerLink.syncRooms(peerDeps); } catch (_) {} }
+    if (room) inviteFromOwner(from, room, card, known.get(card));
+    return out;
+  }
+  // Sent out: remembered, so neither an agent's invite nor its own post brings it back, and
+  // the window is told in the room, addressed to it.
+  const room = bridgeDb.getRoom(id);
+  const was = room && (room.members || []).find(m => m.card === card);
+  const out = bridgeDb.removeRoomMember(id, card, { by });
+  if (room && was) {
+    const agent = was.agent || ((known.get(card) || {}).agent) || (/^local_/.test(card) ? 'Claude' : 'Gemini');
+    apiPost({ from: by, room: room.id, to: agent, toSession: card, status: 'info',
+      text: `The owner removed you from room "${room.name}" [${room.id}]. Stop work for this room and do not ` +
+        'write in it; only the owner can invite you back. Your own project and other rooms are unchanged.' });
+  }
+  return out;
+}
+
 function apiEdit(data) {
   const id = Number(data.id);
   const text = (data.text || '').trim();
@@ -410,6 +437,12 @@ function apiRooms() {
   // owner is warned and where he gives the board its orders.
   let top = '';
   try { top = supervisor.view().room || ''; } catch (_) {}
+  // Shared across machines: made on another one (origin), or with windows of other machines in it.
+  rooms = rooms.map(r => {
+    const origin = bridgeDb.roomOrigin(r.id);
+    const shared = [...peerLink.machinesOf(r)];
+    return origin || shared.length ? Object.assign({}, r, { origin, sharedWith: shared }) : r;
+  });
   // Pinned by the owner: the order readRooms gave, under the supervisor's room.
   rooms = rooms.map(r => r.pinned_at ? Object.assign({}, r, { pinned: true, ownerPinned: true }) : r);
   if (top) rooms = rooms.filter(r => r.id === top).map(r => Object.assign({}, r, { pinned: true, fixed: true })).concat(rooms.filter(r => r.id !== top));
@@ -595,7 +628,7 @@ const server = http.createServer((req, res) => {
     const what = req.url.slice('/api/room/'.length).split('?')[0];
     let body = '';
     req.on('data', c => { body += c; if (body.length > 1e6) req.destroy(); });
-    req.on('end', () => {
+    req.on('end', async () => {
       let out;
       try {
         const d = JSON.parse(body || '{}');
@@ -607,23 +640,12 @@ const server = http.createServer((req, res) => {
           if (out && out.id) {
             for (const m of members) inviteFromOwner(d.from, out, m.card, known.get(m.card));
           }
-        } else if (what === 'add') {
-          const known = new Map(cardsLib.allCards({ allAccounts: true }).map(c => [c.id, c]));
-          out = bridgeDb.addRoomMember(d.id, d.card, (known.get(d.card) || {}).agent || d.agent || '', { owner: true });
-          const room = bridgeDb.getRoom(String(d.id || ''));
-          if (room) inviteFromOwner(d.from, room, d.card, known.get(d.card));
-        } else if (what === 'remove') {
-          // The owner sends a window out: remembered, so neither an agent's invite nor its own
-          // post brings it back, and the window is told in the room, addressed to it.
-          const room = bridgeDb.getRoom(String(d.id || ''));
-          const known = new Map(cardsLib.allCards({ allAccounts: true }).map(c => [c.id, c]));
-          const was = room && (room.members || []).find(m => m.card === d.card);
-          out = bridgeDb.removeRoomMember(d.id, d.card, { by: String(d.from || '').trim() || ownerName() });
-          if (room && was) {
-            const agent = was.agent || ((known.get(d.card) || {}).agent) || (/^local_/.test(d.card) ? 'Claude' : 'Gemini');
-            apiPost({ from: String(d.from || '').trim() || ownerName(), room: room.id, to: agent, toSession: d.card, status: 'info',
-              text: `The owner removed you from room "${room.name}" [${room.id}]. Stop work for this room and do not ` +
-                'write in it; only the owner can invite you back. Your own project and other rooms are unchanged.' });
+        } else if (what === 'add' || what === 'remove') {
+          // A room another machine shares with this one is that machine's to change: asked there.
+          if (bridgeDb.roomOrigin(String(d.id || ''))) {
+            out = await peerLink.changeMember(bridgeDb, String(d.id), String(d.card || ''), d.agent || '', what, String(d.from || '').trim() || ownerName());
+          } else {
+            out = await ownerRoomMember(what, String(d.id || ''), String(d.card || ''), d.agent || '', String(d.from || '').trim());
           }
         } else if (what === 'pin') {
           out = bridgeDb.pinRoom(d.id, d.pinned !== false);
@@ -1131,7 +1153,8 @@ setInterval(() => {
 setInterval(() => { try { require('./project-line').dropArchived(bridgeDb, cardsLib); } catch (_) {} }, 3600e3).unref();
 
 // What the neighbour's door and the outgoing mail need from this board.
-const peerDeps = { bridgeDb, cardsLib, router, projectSlice: require('./project-slice'), skillReader: require('./skill-reader') };
+const peerDeps = { bridgeDb, cardsLib, router, projectSlice: require('./project-slice'), skillReader: require('./skill-reader'),
+                   roomMember: (action, id, card, agent, by) => ownerRoomMember(action, id, card, agent, by) };
 setInterval(() => { peerLink.pump(peerDeps); }, 5000).unref();
 peerLink.refreshCards();
 setInterval(() => { peerLink.refreshCards(); }, 30000).unref();

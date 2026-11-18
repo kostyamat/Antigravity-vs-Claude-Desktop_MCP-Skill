@@ -198,6 +198,13 @@ function initSchema(db) {
       PRIMARY KEY (room, card)
     );
     CREATE INDEX IF NOT EXISTS idx_room_members_card ON room_members(card);
+    -- A room made on another machine and shared with this one: the machine it was made on
+    -- holds its membership, this board keeps a copy under the same id (peer-link.js).
+    CREATE TABLE IF NOT EXISTS room_origin (
+      room TEXT PRIMARY KEY,
+      machine TEXT NOT NULL,
+      at TEXT
+    );
     -- The owner stopped the work: while this row exists no hook, watchman, waker or the
     -- supervisor wakes a session (owner, 16.11: sessions told to sleep were woken all night).
     CREATE TABLE IF NOT EXISTS board_pause (
@@ -1435,6 +1442,35 @@ function removedFromRoom(room, card) {
   return rows.some(r => mine.has(String(r.card).toLowerCase()));
 }
 
+// The machine a room was made on, when it was made on another one; '' for a room of this board.
+function roomOrigin(id) {
+  try { const r = getDb().prepare('SELECT machine FROM room_origin WHERE room = ?').get(String(id)); return r ? r.machine : ''; }
+  catch (_) { return ''; }
+}
+
+// The copy of a room another machine shares with this one: same id and name, and exactly the
+// members that machine holds. A room of this board under the same id is never overwritten.
+function mirrorRoom(id, name, members, machine) {
+  const db = getDb();
+  const rid = String(id || '').trim();
+  if (!rid || !machine) throw new Error('a shared room needs an id and its machine');
+  const had = db.prepare('SELECT 1 FROM rooms WHERE id = ?').get(rid);
+  const origin = roomOrigin(rid);
+  if (had && origin !== machine) throw new Error(`room "${rid}" already exists on this machine and is not ${machine}'s`);
+  const now = new Date().toISOString();
+  if (had) db.prepare('UPDATE rooms SET name = ? WHERE id = ?').run(String(name || rid), rid);
+  else db.prepare('INSERT INTO rooms (id, name, account, created_at, last_activity) VALUES (?, ?, ?, ?, ?)')
+    .run(rid, String(name || rid), '', now, now);
+  db.prepare('INSERT OR REPLACE INTO room_origin (room, machine, at) VALUES (?, ?, ?)').run(rid, String(machine), now);
+  db.prepare('DELETE FROM room_members WHERE room = ?').run(rid);
+  const ins = db.prepare('INSERT OR IGNORE INTO room_members (room, card, agent) VALUES (?, ?, ?)');
+  for (const m of members || []) {
+    const card = String((m && m.card) || '').trim();
+    if (card) ins.run(rid, card, String((m && m.agent) || ''));
+  }
+  return getRoom(rid);
+}
+
 // The owner's stop: { since, by } while the work is stopped, null otherwise.
 function boardPaused() {
   try { return getDb().prepare('SELECT since, by FROM board_pause WHERE id = 1').get() || null; } catch (_) { return null; }
@@ -1657,6 +1693,8 @@ module.exports = {
   readRooms,
   renameRoom,
   pinRoom,
+  roomOrigin,
+  mirrorRoom,
   boardPaused,
   setBoardPaused,
   touchRoom,

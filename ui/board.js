@@ -150,7 +150,8 @@ function renderRooms() {
   // Rooms stay sorted by what was last said in them, across both accounts, so
   // the one being talked in is on top wherever it was made. Whose it is goes in
   // the line under the name rather than into a block of its own.
-  const whose = r => r.elsewhere ? ' · ' + (CARD_EMAILS[r.account] || 'other account') : '';
+  const whose = r => (r.elsewhere ? ' · ' + (CARD_EMAILS[r.account] || 'other account') : '') +
+    (r.origin ? ' · \ud83d\udda7 from ' + r.origin : (r.sharedWith || []).length ? ' · \ud83d\udda7 with ' + r.sharedWith.join(', ') : '');
   // The filter: every word typed must be in the line the server says the room is found by
   // (project, task, agent, machine — room-search.js). The supervisor's room and the room
   // that is open stay in the list whatever is typed.

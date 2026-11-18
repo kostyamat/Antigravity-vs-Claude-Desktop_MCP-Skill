@@ -194,7 +194,98 @@ function ensureTable(bridgeDb) {
       PRIMARY KEY (local_id, machine)
     );
     CREATE INDEX IF NOT EXISTS peer_refs_remote ON peer_refs (machine, remote_id);
+    CREATE TABLE IF NOT EXISTS peer_rooms (
+      room TEXT NOT NULL,
+      machine TEXT NOT NULL,
+      hash TEXT DEFAULT '',
+      since TEXT,
+      PRIMARY KEY (room, machine)
+    );
   `);
+}
+
+// ── shared rooms ─────────────────────────────────────────────────────────────────
+//
+// A room with a window of another machine in it is that machine's room too. The owner
+// invited a window of artempc into a room here, and on artempc there was no such room:
+// the window was told "no single room matches", and everything said with it went through
+// "Machine: …" instead (owner, 18.11: inviting the other machine's windows "is done the
+// hard way now"). So the board that made the room sends it to every machine with a member
+// in it: the same id and name, and its members as that machine names them (its own windows
+// bare, the others as <id>@<machine>). What is said in the room travels both ways.
+// The machine that made the room holds its membership; a copy asks it for a change.
+
+// The machines with a window in this room.
+function machinesOf(room, cfg) {
+  const out = new Set();
+  for (const m of (room && room.members) || []) { const a = parseAddress(m.card, cfg); if (a) out.add(a.machine); }
+  return out;
+}
+// The room's members as `machine` names them.
+function membersFor(room, machine, me) {
+  return ((room && room.members) || []).map(m => {
+    const a = parseAddress(m.card);
+    if (a && a.machine === machine) return { card: a.target, agent: m.agent || '' };
+    if (a || /@/.test(m.card)) return { card: m.card, agent: m.agent || '' };
+    return { card: `${m.card}@${me}`, agent: m.agent || '' };
+  }).sort((x, y) => x.card.localeCompare(y.card));
+}
+
+// A machine that cannot take a room (asleep, or a board too old for shared rooms) is asked
+// again after a pause, not every five seconds.
+const roomRetry = new Map();
+const ROOM_RETRY_MS = 10 * 60000;
+async function syncRooms(deps) {
+  const { bridgeDb } = deps;
+  const me = machineName();
+  const db = bridgeDb.getDb();
+  const rooms = (bridgeDb.readRooms() || []).filter(r => !bridgeDb.roomOrigin(r.id) && !/^Machine: /.test(r.name));
+  const want = new Map();
+  for (const r of rooms) for (const machine of machinesOf(r)) want.set(r.id + '\u0000' + machine, { r, machine });
+  // A machine whose last window left the room is told once more, with no window of its own in it.
+  for (const row of db.prepare('SELECT room, machine FROM peer_rooms').all()) {
+    const k = row.room + '\u0000' + row.machine;
+    const r = rooms.find(x => x.id === row.room);
+    if (!want.has(k) && r && peerByName(row.machine)) want.set(k, { r, machine: row.machine, last: true });
+  }
+  for (const { r, machine, last } of want.values()) {
+    const members = membersFor(r, machine, me);
+    const hash = JSON.stringify([r.name, members]);
+    const had = db.prepare('SELECT hash, since FROM peer_rooms WHERE room = ? AND machine = ?').get(r.id, machine);
+    if (had && had.hash === hash) { if (last) db.prepare('DELETE FROM peer_rooms WHERE room = ? AND machine = ?').run(r.id, machine); continue; }
+    const key = r.id + '\u0000' + machine;
+    if (Date.now() < (roomRetry.get(key) || 0)) continue;
+    let res;
+    try { res = await request(peerByName(machine), 'POST', '/api/peer/room', { id: r.id, name: r.name, members }, 5000); }
+    catch (_) { res = { status: 0 }; }
+    if (res.status !== 200) { roomRetry.set(key, Date.now() + ROOM_RETRY_MS); continue; }
+    roomRetry.delete(key);
+    if (last) { db.prepare('DELETE FROM peer_rooms WHERE room = ? AND machine = ?').run(r.id, machine); continue; }
+    db.prepare(`INSERT INTO peer_rooms (room, machine, hash, since) VALUES (?, ?, ?, ?)
+      ON CONFLICT(room, machine) DO UPDATE SET hash = excluded.hash`).run(r.id, machine, hash, new Date().toISOString());
+  }
+}
+
+// When the room was first shared with `machine`: what was said before stays where it was said.
+function sharedSince(bridgeDb, room, machine) {
+  if (bridgeDb.roomOrigin(room) === machine) return '';            // a copy: everything said here goes home
+  const r = bridgeDb.getDb().prepare('SELECT since FROM peer_rooms WHERE room = ? AND machine = ?').get(room, machine);
+  return r ? r.since : null;
+}
+
+// A copy's owner adds or sends out a window: asked of the machine that holds the room.
+async function changeMember(bridgeDb, roomId, card, agent, action, by) {
+  const origin = bridgeDb.roomOrigin(roomId);
+  const peer = origin && peerByName(origin);
+  if (!peer) throw new Error(`room "${roomId}" belongs to machine "${origin}", which is not linked`);
+  const me = machineName();
+  const a = parseAddress(card);
+  const there = a && a.machine === origin ? a.target : a ? card : `${card}@${me}`;
+  let r;
+  try { r = await request(peer, 'POST', '/api/peer/room-member', { id: roomId, card: there, agent: agent || '', action, by: by || '' }, 8000); }
+  catch (e) { throw new Error(`machine "${origin}" holds this room and did not answer: ${e.message}`); }
+  if (r.status !== 200) throw new Error(`machine "${origin}": ${r.json.error || 'answered ' + r.status}`);
+  return r.json;
 }
 function ref(bridgeDb, localId, machine) {
   return bridgeDb.getDb().prepare('SELECT * FROM peer_refs WHERE local_id = ? AND machine = ?').get(localId, machine) || null;
@@ -262,36 +353,62 @@ async function pump(deps) {
   try {
     const { bridgeDb } = deps;
     ensureTable(bridgeDb);
+    await syncRooms(deps);
+    const me = machineName();
     const since = new Date(Date.now() - RETRY_HOURS * 3600e3).toISOString();
+    // Addressed to a window over there, or said in a room shared with a machine — by this
+    // machine (what came from a neighbour is not sent back), and not the board's own notes.
     const rows = bridgeDb.getDb().prepare(`
       SELECT m.id FROM messages m
-      WHERE m.to_session LIKE '%@%' AND m.ts > ?
-        AND NOT EXISTS (SELECT 1 FROM peer_refs r WHERE r.local_id = m.id AND r.state IN ('sent', 'refused', 'received'))
+      WHERE m.ts > ? AND (m.to_session LIKE '%@%'
+        OR (m.room <> '' AND m.from_session NOT LIKE '%@%' AND m.from_session NOT LIKE 'board/%' AND m.from_session NOT LIKE 'supervisor/%'
+            AND (m.room IN (SELECT room FROM peer_rooms) OR m.room IN (SELECT room FROM room_origin))))
       ORDER BY m.id
     `).all(since);
     for (const row of rows) {
       const m = bridgeDb.getMessageById(row.id);
-      const addr = m && parseAddress(m.toSession);
-      if (!addr) continue;
-      const parent = m.replyTo ? ref(bridgeDb, m.replyTo, addr.machine) : null;
-      const payload = {
-        id: m.id, ts: m.ts, from: m.from, fromSession: m.fromSession || '', target: addr.target,
-        topic: m.topic || '', priority: m.priority || 'normal', status: m.status || 'info',
-        progress: m.progress || '', message: bodyOf(m), replyToRemote: parent ? parent.remote_id : 0
-      };
-      const att = attachmentOf(m);
-      if (att) payload.attachment = att;
-      const doc = documentOf(bridgeDb, m);
-      if (doc) payload.document = doc;
-      let r;
-      try { r = await request(addr.peer, 'POST', '/api/peer/deliver', payload); }
-      catch (e) { waiting(deps, m, addr, e.message); continue; }
-      if (r.status === 200 && r.json.id) {
-        setRef(bridgeDb, m.id, addr.machine, r.json.id, 'sent');
-      } else {
-        setRef(bridgeDb, m.id, addr.machine, 0, 'refused');
-        notice(deps, m, `Machine "${addr.machine}" did not take #${m.id}: ${r.json.error || 'answered ' + r.status}. ` +
-          'It was not delivered. Its windows and projects: list_cards({machine: "' + addr.machine + '"}).');
+      if (!m) continue;
+      const addr = parseAddress(m.toSession);
+      const dests = new Map();
+      if (addr) dests.set(addr.machine, addr.peer);
+      if (m.room && !/@/.test(m.fromSession || '')) {
+        const room = bridgeDb.getRoom(m.room);
+        for (const machine of machinesOf(room)) {
+          const from = sharedSince(bridgeDb, m.room, machine);
+          if (from !== null && String(m.ts) > from) dests.set(machine, peerByName(machine));
+        }
+      }
+      for (const [machine, peer] of dests) {
+        if (!peer) continue;
+        const had = ref(bridgeDb, m.id, machine);
+        if (had && ['sent', 'refused', 'received'].includes(had.state)) continue;
+        const parent = m.replyTo ? ref(bridgeDb, m.replyTo, machine) : null;
+        const mine = addr && addr.machine === machine;
+        const to = String(m.toSession || '');
+        const payload = {
+          id: m.id, ts: m.ts, from: m.from, fromSession: m.fromSession || '', target: mine ? addr.target : '',
+          // Said to the room, or to someone not on that machine: it lands in the room there.
+          room: m.room && sharedSince(bridgeDb, m.room, machine) !== null ? m.room : '',
+          toSession: mine ? '' : /^human/i.test(to) ? 'human/web' : !to ? '' : parseAddress(to) ? to : `${to}@${me}`,
+          topic: m.topic || '', priority: m.priority || 'normal', status: m.status || 'info',
+          progress: m.progress || '', message: bodyOf(m), replyToRemote: parent ? parent.remote_id : 0
+        };
+        if (!payload.target && !payload.room) continue;
+        const att = attachmentOf(m);
+        if (att) payload.attachment = att;
+        const doc = documentOf(bridgeDb, m);
+        if (doc) payload.document = doc;
+        const where = { machine, peer, target: payload.target || payload.room };
+        let r;
+        try { r = await request(peer, 'POST', '/api/peer/deliver', payload); }
+        catch (e) { waiting(deps, m, where, e.message); continue; }
+        if (r.status === 200 && r.json.id) {
+          setRef(bridgeDb, m.id, machine, r.json.id, 'sent');
+        } else {
+          setRef(bridgeDb, m.id, machine, 0, 'refused');
+          notice(deps, m, `Machine "${machine}" did not take #${m.id}: ${r.json.error || 'answered ' + r.status}. ` +
+            'It was not delivered. Its windows and projects: list_cards({machine: "' + machine + '"}).');
+        }
       }
     }
   } catch (_) { /* the board must outlive a neighbour's trouble */ } finally { pumping = false; }
@@ -348,18 +465,26 @@ function deliver(deps, machine, p) {
   if (dup) return { status: 200, json: { id: dup.local_id, duplicate: true } };
 
   const target = String(p.target || '').trim();
-  const human = /^(human|owner)/i.test(target);
-  const win = human ? '' : router.windowOf(target);
-  if (!human && !win) {
+  // A room both machines hold: said there, it is put there.
+  const sharedRoom = p.room ? bridgeDb.getRoom(String(p.room)) : null;
+  const shared = sharedRoom && ((sharedRoom.members || []).some(x => (parseAddress(x.card) || {}).machine === machine) ||
+                                bridgeDb.roomOrigin(sharedRoom.id) === machine) ? sharedRoom : null;
+  if (!target && !shared) return { status: 404, json: { error: `room "${p.room || ''}" is not shared with ${machine} here` } };
+  const toRoom = !target;
+  const human = /^(human|owner)/i.test(target) || (toRoom && /^human/i.test(String(p.toSession || '')));
+  const named = toRoom ? String(p.toSession || '').replace(new RegExp('@' + machineName() + '$'), '') : target;
+  const win = human || !named ? '' : (router.windowOf(named) || (toRoom ? named : ''));
+  if (!toRoom && !human && !win) {
     return { status: 404, json: { error: `"${target}" is no window and no project on this machine` } };
   }
-  const agent = human ? '' : router.agentOf(win);
+  const agent = human || !win ? '' : (router.agentOf(win) || '');
   const parent = Number(p.replyToRemote) ? bridgeDb.getMessageById(Number(p.replyToRemote)) : null;
-  const room = human ? ((parent && parent.room) || '') : ((parent && parent.room) || roomFor(bridgeDb, machine, win, agent));
+  const room = shared ? shared.id
+    : human ? ((parent && parent.room) || '') : ((parent && parent.room) || roomFor(bridgeDb, machine, win, agent));
   const sender = `${String(p.fromSession || 'unknown')}@${machine}`;
   // The window that wrote becomes a member of the machine's room, so the owner
-  // can pick it there as an addressee of his own.
-  if (room && !/^human/i.test(sender)) {
+  // can pick it there as an addressee of his own. A shared room's members are its maker's to set.
+  if (room && !shared && !/^human/i.test(sender)) {
     try {
       const r = bridgeDb.getRoom(room);
       if (r && !(r.members || []).some(x => x.card === sender)) bridgeDb.addRoomMember(room, sender, String(p.from || ''));
@@ -399,7 +524,7 @@ function deliver(deps, machine, p) {
   }
   const rec = bridgeDb.addMessage({
     ts: new Date().toISOString(), from: String(p.from || '?'), fromSession: sender,
-    to: human ? (readConfig().adminName || 'all') : (agent || 'all'), toSession: human ? 'human/web' : win, room,
+    to: human ? (readConfig().adminName || 'all') : (agent || 'all'), toSession: human ? 'human/web' : (win || ''), room,
     replyTo: parent ? parent.id : null, topic: String(p.topic || ''), priority: p.priority === 'P0' ? 'P0' : (p.priority === 'fyi' ? 'fyi' : 'normal'),
     status: String(p.status || 'info'), progress: String(p.progress || ''), message: text, file, readBy: []
   });
@@ -459,6 +584,18 @@ async function handle(req, res, deps) {
       try {
         return send(200, { machine: machineName(), name, text: deps.skillReader.readSkill(name, url.searchParams.get('file') || undefined) });
       } catch (e) { return send(404, { error: e.message }); }
+    }
+    if (what === 'room' && req.method === 'POST') {
+      const b = await readBody(req, 200000);
+      try { return send(200, { room: deps.bridgeDb.mirrorRoom(b.id, b.name, b.members, peer.name).id }); }
+      catch (e) { return send(409, { error: e.message }); }
+    }
+    if (what === 'room-member' && req.method === 'POST') {
+      const b = await readBody(req, 20000);
+      if (!deps.roomMember) return send(501, { error: 'this board does not change rooms for a neighbour' });
+      if (deps.bridgeDb.roomOrigin(String(b.id || ''))) return send(409, { error: 'this room is a copy here too' });
+      try { return send(200, await deps.roomMember(b.action === 'remove' ? 'remove' : 'add', String(b.id || ''), String(b.card || ''), String(b.agent || ''), `${b.by || 'owner'}@${peer.name}`)); }
+      catch (e) { return send(400, { error: e.message }); }
     }
     if (what === 'deliver' && req.method === 'POST') {
       const out = deliver(deps, peer.name, await readBody(req, MAX_BODY));
@@ -672,5 +809,5 @@ module.exports = {
   isPrivate, listenHost, myPort, knocked, linkTo, allow, refuse, setTrust, find, overview, localApi, myAddresses,
   machineName, peers, enabled, peerByName, parseAddress, isLoopback, admits, peerAt,
   request, ask, pump, handle, deliver, roomFor, ensureTable, ref, link, unlink, knownProject,
-  refreshCards, neighbourCards
+  refreshCards, neighbourCards, syncRooms, changeMember, machinesOf, membersFor
 };

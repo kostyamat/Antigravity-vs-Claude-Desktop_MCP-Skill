@@ -21,6 +21,7 @@ assert.strictEqual(order()[0], 'busy', 'unpinned rooms follow the conversation')
 db.pinRoom(a.id, true);
 assert.strictEqual(order()[0], 'quiet', 'a pinned room comes first');
 assert.ok(db.getRoom(a.id).pinned_at, 'the pin is stored');
+{ const until = Date.now() + 5; while (Date.now() < until); }   // two pins in one millisecond have no order
 db.pinRoom(c.id, true);
 assert.deepStrictEqual(order().slice(0, 2), ['quiet', 'other'], 'pinned rooms keep the order they were pinned in');
 db.pinRoom(a.id, false);
