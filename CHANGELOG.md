@@ -8,7 +8,7 @@ never overwritten.
 
 ---
 
-## Unreleased
+## v2.8.13 — 2026-11-18
 
 **The tailnet reaches the board only.** Where Tailscale is installed, the firewall now blocks every other TCP port,
 all UDP and ping from tailnet addresses; GUIDE gives the access rule for Tailscale's admin page that allows port 8787
