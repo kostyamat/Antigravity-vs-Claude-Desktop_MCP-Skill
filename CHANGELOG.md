@@ -8,7 +8,7 @@ never overwritten.
 
 ---
 
-## Unreleased
+## v2.8.12 — 2026-11-18
 
 **Machines in different corners of the planet.** With Tailscale on both, the bridge treats tailnet addresses
 (100.64.0.0/10) as your own network: **Find** lists the tailnet's online machines, **Link** works as at home, and the
