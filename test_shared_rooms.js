@@ -101,6 +101,17 @@ const cardsOf = (s, room) => (s.db.getRoom(room).members || []).map(m => m.card)
       assert.strictEqual(got.length, 1, 'in the room on beta');
       assert.strictEqual(got[0].to_session, 'local_b1');
     });
+    await t('said to everyone in a machine\'s letterbox room, it reaches that machine\'s letterbox', async () => {
+      A.db.addMessage({ from: 'Owner', fromSession: 'human/web', to: 'all', toSession: '', room: letterbox.id, message: 'to everyone on beta' });
+      A.db.addMessage({ from: 'Owner', fromSession: 'human/web', to: 'Claude', toSession: 'local_a1', room: letterbox.id, message: 'to a window here' });
+      await A.peer.pump(A.deps);
+      const box = (B.db.readRooms() || []).find(r => r.name === 'Machine: alpha');
+      assert.ok(box, 'beta has a letterbox for alpha');
+      const got = msgs(B, box.id).map(m => m.message);
+      assert.deepStrictEqual(got, ['to everyone on beta'], 'only what was said to everyone travels');
+      await A.peer.pump(A.deps);
+      assert.strictEqual(msgs(B, box.id).length, 1, 'sent once');
+    });
     await t('a copy is never written over a room of the machine itself', async () => {
       B.db.createRoom('Mine', [{ card: 'local_b5', agent: 'Claude' }], '');
       assert.throws(() => B.db.mirrorRoom('mine', 'Mine', [], 'alpha'), /already exists/);
@@ -110,5 +121,5 @@ const cardsOf = (s, room) => (s.db.getRoom(room).members || []).map(m => m.card)
     for (const s of [A, B]) { try { s.db.getDb().close(); } catch (_) {} }
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) {}
   }
-  console.log(n + '/8 passed');
+  console.log(n + "/9 passed");
 })().catch(e => { console.error(e); process.exit(1); });

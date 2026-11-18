@@ -283,7 +283,23 @@ async function syncRooms(deps) {
     db.prepare(`INSERT INTO peer_rooms (room, machine, hash, since) VALUES (?, ?, ?, ?)
       ON CONFLICT(room, machine) DO UPDATE SET hash = excluded.hash`).run(r.id, machine, hash, new Date().toISOString());
   }
+  // A machine's letterbox room: what is said there to everyone goes to that machine's letterbox
+  // (18.11, #6753: the owner's «to all» in "Machine: artempc" stayed here). Counted from the
+  // moment the board first sees the room, so nothing said before is sent late.
+  for (const r of bridgeDb.readRooms() || []) {
+    const machine = letterboxOf(r);
+    if (!machine || r.archived || !peerByName(machine)) continue;
+    db.prepare("INSERT OR IGNORE INTO peer_rooms (room, machine, hash, since) VALUES (?, ?, 'letterbox', ?)")
+      .run(r.id, machine, new Date().toISOString());
+  }
 }
+
+// The machine whose letterbox this room is, or ''.
+function letterboxOf(room) {
+  const m = /^Machine: (.+)$/.exec(String((room && room.name) || ''));
+  return m ? m[1].trim() : '';
+}
+const toEveryone = to => !to || String(to).toLowerCase() === 'all';
 
 // The room the sender named, when it is shared with `machine`: mail to a window there that is
 // said in a shared room stays in that room. Only mail that names no shared room goes to the
@@ -339,7 +355,8 @@ function roomFor(bridgeDb, machine, card, agent) {
     // by itself: the first letter to a neighbour landed in the owner's own room.
     // A marker member makes the set unique; it is taken out once the room exists.
     const marker = `machine:${machine}`;
-    room = bridgeDb.createRoom(name, [{ card, agent: agent || '' }, { card: marker, agent: '' }], '');
+    const first = card ? [{ card, agent: agent || '' }] : [];   // no window: a letter to everyone opened it
+    room = bridgeDb.createRoom(name, [...first, { card: marker, agent: '' }], '');
     try { bridgeDb.getDb().prepare('DELETE FROM room_members WHERE room = ? AND card = ?').run(room.id, marker); } catch (_) {}
   } else if (card && !(room.members || []).some(m => m.card === card)) {
     try { bridgeDb.addRoomMember(room.id, card, agent || ''); } catch (_) { /* sent out by the owner */ }
@@ -395,7 +412,8 @@ async function pump(deps) {
       SELECT m.id FROM messages m
       WHERE m.ts > ? AND (m.to_session LIKE '%@%'
         OR (m.room <> '' AND m.from_session NOT LIKE '%@%' AND m.from_session NOT LIKE 'board/%' AND m.from_session NOT LIKE 'supervisor/%'
-            AND (EXISTS (SELECT 1 FROM peer_rooms pr WHERE pr.room = m.room AND m.ts > pr.since)
+            AND (EXISTS (SELECT 1 FROM peer_rooms pr WHERE pr.room = m.room AND m.ts > pr.since
+                         AND NOT (pr.hash = 'letterbox' AND m.to_session NOT IN ('', 'all')))
                  OR m.room IN (SELECT room FROM room_origin))))
         AND NOT (EXISTS (SELECT 1 FROM peer_refs r WHERE r.local_id = m.id AND r.state IN ('sent', 'refused', 'received'))
                  AND NOT EXISTS (SELECT 1 FROM peer_refs r WHERE r.local_id = m.id AND r.state NOT IN ('sent', 'refused', 'received')))
@@ -409,7 +427,11 @@ async function pump(deps) {
       if (addr) dests.set(addr.machine, addr.peer);
       if (m.room && !/@/.test(m.fromSession || '')) {
         const room = bridgeDb.getRoom(m.room);
-        for (const machine of machinesOf(room)) {
+        const box = letterboxOf(room);
+        if (box) {
+          const from = sharedSince(bridgeDb, m.room, box);
+          if (!addr && toEveryone(m.toSession) && from !== null && String(m.ts) > from) dests.set(box, peerByName(box));
+        } else for (const machine of machinesOf(room)) {
           const from = sharedSince(bridgeDb, m.room, machine);
           if (from !== null && String(m.ts) > from) dests.set(machine, peerByName(machine));
         }
@@ -421,15 +443,20 @@ async function pump(deps) {
         const parent = m.replyTo ? ref(bridgeDb, m.replyTo, machine) : null;
         const mine = addr && addr.machine === machine;
         const to = String(m.toSession || '');
+        const box = !mine && m.room && letterboxOf(bridgeDb.getRoom(m.room)) === machine;
         const payload = {
           id: m.id, ts: m.ts, from: m.from, fromSession: m.fromSession || '', target: mine ? addr.target : '',
           // Said to the room, or to someone not on that machine: it lands in the room there.
-          room: m.room && sharedSince(bridgeDb, m.room, machine) !== null ? m.room : '',
+          room: !box && m.room && sharedSince(bridgeDb, m.room, machine) !== null ? m.room : '',
+          // Said to everyone in that machine's letterbox: it lands in this machine's letterbox there.
+          // with the windows of that machine the letterbox here holds, so they are its readers there.
+          letterbox: box ? (bridgeDb.getRoom(m.room).members || []).map(x => parseAddress(x.card))
+            .filter(a => a && a.machine === machine).map(a => a.target) : undefined,
           toSession: mine ? '' : /^human/i.test(to) ? 'human/web' : !to ? '' : parseAddress(to) ? to : `${to}@${me}`,
           topic: m.topic || '', priority: m.priority || 'normal', status: m.status || 'info',
           progress: m.progress || '', message: bodyOf(m), replyToRemote: parent ? parent.remote_id : 0
         };
-        if (!payload.target && !payload.room) continue;
+        if (!payload.target && !payload.room && !payload.letterbox) continue;
         const att = attachmentOf(m);
         if (att) payload.attachment = att;
         const doc = documentOf(bridgeDb, m);
@@ -505,7 +532,7 @@ function deliver(deps, machine, p) {
   const sharedRoom = p.room ? bridgeDb.getRoom(String(p.room)) : null;
   const shared = sharedRoom && ((sharedRoom.members || []).some(x => (parseAddress(x.card) || {}).machine === machine) ||
                                 bridgeDb.roomOrigin(sharedRoom.id) === machine) ? sharedRoom : null;
-  if (!target && !shared) return { status: 404, json: { error: `room "${p.room || ''}" is not shared with ${machine} here` } };
+  if (!target && !shared && !p.letterbox) return { status: 404, json: { error: `room "${p.room || ''}" is not shared with ${machine} here` } };
   const toRoom = !target;
   const human = /^(human|owner)/i.test(target) || (toRoom && /^human/i.test(String(p.toSession || '')));
   const named = toRoom ? String(p.toSession || '').replace(new RegExp('@' + machineName() + '$'), '') : target;
@@ -518,6 +545,16 @@ function deliver(deps, machine, p) {
   const room = shared ? shared.id
     : human ? ((parent && parent.room) || '') : ((parent && parent.room) || roomFor(bridgeDb, machine, win, agent));
   const sender = `${String(p.fromSession || 'unknown')}@${machine}`;
+  // Said to everyone in this machine's letterbox there: its windows named there read it here.
+  if (toRoom && !shared && room && Array.isArray(p.letterbox)) {
+    const r = bridgeDb.getRoom(room);
+    for (const w of p.letterbox.map(String).filter(w => /^[\w.-]+$/.test(w))) {
+      const id = router.windowOf(w) || '';
+      if (id && r && !(r.members || []).some(x => x.card === id)) {
+        try { bridgeDb.addRoomMember(room, id, router.agentOf(id) || ''); } catch (_) {}
+      }
+    }
+  }
   // The window that wrote becomes a member of the machine's room, so the owner
   // can pick it there as an addressee of his own. A shared room's members are its maker's to set.
   if (room && !shared && !/^human/i.test(sender)) {
