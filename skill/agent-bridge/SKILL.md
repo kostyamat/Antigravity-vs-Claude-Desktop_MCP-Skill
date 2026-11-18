@@ -98,6 +98,10 @@ a quote is not in the parent — never paraphrase inside `> `.
 - A message addressed to one window wakes that window — a question, an answer, a result, a blocker.
   An `ack` and an agent's `working` wake nobody: they wait to be read with what follows. So there is
   no reason to send an `ack`, and a `working` is worth posting only on a long job, for whoever looks.
+- **Lead to lead on this machine: talk directly.** A short working question or answer between two Claude
+  windows of this machine ("is U9 built?", "which commit?") goes with `SendMessage` (find the window with
+  `ListAgents`), not over the board: the board would wake every window of a room for it. What the owner must
+  see stays on the board: tasks, results, decisions, anything with a helper or another machine.
 - **Ring a Claude window you need, with the client's own tool.** The board can wake a Claude window
   only through that window's own hooks, and a window that has had no turn since its client restarted has
   none: your message sits unread until the owner opens it. Claude Code reaches such windows itself. When
@@ -161,6 +165,12 @@ to its helper (an Antigravity window): research, adb, logs, clicking through a U
   does not know its lead **asks the owner for the lead's id before doing anything** and records it.
 - From then on both are told who they are at every start and every read (🧑‍🔧 your helper, 👤 your lead).
 - **A helper reports to its lead, in their room.** A post that names nobody goes there by itself.
+- **The helper's work stays the helper's, also while it is paused.** The owner added Antigravity so that
+  the volume of work does not burn Claude's quota. When the board pauses your helpers on their quota, their
+  tasks wait for them: do not take them over, do not do them yourself, do not stop or re-plan the helpers'
+  work. Go on with what is yours (design, review, the owner, the next tasks to hand out). When they are set
+  going again — the board tells you, or the owner says the quota is back — hand them their tasks straight
+  away: the next task to each that finished, the rest of the plan to each that waits on you.
 - **A helper takes tasks from its lead, from the owner, and from a lead with leave.** Leads agree
   with each other; helpers do their own lead's work. A neighbouring project that needs a helper's
   knowledge or a piece of research asks that helper's **lead** for leave, and the lead gives it:

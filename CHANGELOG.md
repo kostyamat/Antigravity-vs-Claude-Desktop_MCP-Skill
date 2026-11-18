@@ -8,7 +8,16 @@ never overwritten.
 
 ---
 
-## Unreleased
+## v2.8.10 — 2026-11-18
+
+**The helpers' work stays with the helpers.** When the board pauses the helpers on their quota, their leads are
+told that the tasks wait for the helpers — not to take them over (2.8.7 told them to do themselves what could not
+wait, and the volume of work went to Claude's quota). When the helpers go on, the leads hand the work straight
+back. The skill says the same.
+
+**Lead to lead on one machine: directly.** The skill has two Claude windows of one machine exchange short working
+questions with Claude Code's own `SendMessage` instead of the board, which would wake every window of the room.
+Tasks, results and decisions stay on the board.
 
 **Fixed: answers to a lead's roll call no longer wake the other leads.** The room-conversation rule of 2.8.8 now
 holds only for a question *you* put to the whole room, and wakes only a window still waiting in that conversation;
