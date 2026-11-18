@@ -163,7 +163,7 @@ function renderRooms() {
   html += shown.map(r => row(r.id, (r.pinned ? '\ud83d\udccc ' : '') + r.name,
     r.messages + (r.messages === 1 ? ' message' : ' messages') + (r.lastTs ? ' · ' + ago(r.lastTs) : '') + whose(r),
     r.name + '\n' + r.members.map(m => windowName(m.card, m.agent)).join('\n'))).join('');
-  if (!ROOMS.length) html += '<div class="hint" style="padding:8px">No rooms yet. Tick two windows under Windows to make one.</div>';
+  if (!ROOMS.length) html += '<div class="hint" style="padding:8px">No rooms yet. Tick two sessions under Sessions to make one.</div>';
   $('#roomList').innerHTML = html;
 }
 
@@ -268,7 +268,7 @@ function renderHead() {
     const n = windowName(m.card, m.agent);
     return '<span class="member" title="' + esc(n + ' · ' + clientName(m.agent)) + '"><i class="c-' + kind(m.agent) + '"></i><span>' + esc(n) + '</span>' +
       '<button type="button" class="member-x" data-card="' + esc(m.card) + '" title="Remove from this room">×</button></span>';
-  }).join('') + '<button type="button" class="link-btn" id="addWindow">+ Add a window</button>' +
+  }).join('') + '<button type="button" class="link-btn" id="addWindow">+ Add a session</button>' +
     '<span id="leaveBtns"></span>';
   $('#addWindow').onclick = () => showPanel('windows');
   // The owner sends a window out. It is told, and only he can invite it back (+ Add a window).
@@ -392,7 +392,17 @@ function renderWindows() {
     '<div class="row-main"><div class="row-name">' + esc(c.projectName ? c.projectName + ' \u00b7 ' + (c.name || 'window') : (c.name || 'Untitled window')) + '</div>' +
     '<div class="row-meta">' + esc([c.projectName ? '' : project(c), c.helperOf ? 'helper of ' + c.helperOf : '', c.busy ? 'working now' : '',
       c.activeAt ? ago(c.activeAt) : ''].filter(Boolean).join(' · ')) + '</div></div></label>';
-  const group = (title, list) => list.length ? '<div class="group">' + title + '</div>' + list.map(row).join('') : '';
+  // Every group (Claude by account, Antigravity) folds, and is folded until the owner opens it:
+  // the list of windows ran to dozens of rows (owner, 18.11). A filter typed opens them all, and a
+  // group holding a window ticked or already in the open room is shown open.
+  let sec = 'here';
+  const group = (title, list) => {
+    if (!list.length) return '';
+    const key = sec + ':' + String(title).replace(/<[^>]*>/g, '').toLowerCase();
+    const open = q || OPENED.has(key) || list.some(c => picked.has(c.id));
+    return '<details class="wgroup" data-sec="' + esc(key) + '"' + (open ? ' open' : '') + '><summary class="group">' + title +
+      ' <span class="count">' + list.length + '</span></summary>' + list.map(row).join('') + '</details>';
+  };
   const shownAll = CARDS.filter(match);
   // Windows of another machine get a section of their own, below this machine's:
   // mixed into this machine's list they read as windows open here.
@@ -429,9 +439,11 @@ function renderWindows() {
   const here = mine + elsewhere + group('Antigravity', shown.filter(c => c.agent !== 'Claude'));
   const machines = [...new Set(shownAll.filter(c => c.machine).map(c => c.machine))].sort();
   // A filter typed in the box opens every section, so a match is never hidden.
+  // This machine opens by default; another machine's section is folded until opened.
   const section = (key, title, body) => body ? '<details class="machine" data-sec="' + esc(key) + '"' +
-    (q || !CLOSED.has(key) ? ' open' : '') + '><summary>' + title + '</summary>' + body + '</details>' : '';
+    (q || (key === 'here' ? !CLOSED.has(key) : OPENED.has(key)) ? ' open' : '') + '><summary>' + title + '</summary>' + body + '</details>' : '';
   const theirs = m => {
+    sec = 'm:' + m;
     const list = shownAll.filter(c => c.machine === m);
     return group('Claude', list.filter(c => c.agent === 'Claude')) + group('Antigravity', list.filter(c => c.agent !== 'Claude'));
   };
@@ -446,13 +458,20 @@ function renderWindows() {
   updateTray();
 }
 
-// Which machine sections the owner folded; kept in this browser only.
-const CLOSED = new Set((() => { try { return JSON.parse(localStorage.getItem('closedSections') || '[]'); } catch (_) { return []; } })());
+// Which sections the owner folded (this machine) or opened (the rest: closed by default); kept in this browser only.
+const readSet = k => new Set((() => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch (_) { return []; } })());
+const CLOSED = readSet('closedSections');
+const OPENED = readSet('openedSections');
 document.addEventListener('toggle', e => {
   const d = e.target;
-  if (!d.matches || !d.matches('details.machine') || $('#winFilter').value.trim()) return;
-  if (d.open) CLOSED.delete(d.dataset.sec); else CLOSED.add(d.dataset.sec);
-  try { localStorage.setItem('closedSections', JSON.stringify([...CLOSED])); } catch (_) {}
+  if (!d.matches || !d.matches('details.machine, details.wgroup') || $('#winFilter').value.trim()) return;
+  const key = d.dataset.sec;
+  if (key === 'here') { if (d.open) CLOSED.delete(key); else CLOSED.add(key); }
+  else if (d.open) OPENED.add(key); else OPENED.delete(key);
+  try {
+    localStorage.setItem('closedSections', JSON.stringify([...CLOSED]));
+    localStorage.setItem('openedSections', JSON.stringify([...OPENED]));
+  } catch (_) {}
 }, true);
 
 // Stands somebody holds: one line above the feed, in every room, because a
