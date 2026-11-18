@@ -15,7 +15,8 @@ never overwritten.
 installer adds a firewall rule for tailnet addresses only, where Tailscale is installed. A tailnet machine always
 waits for your Allow: *trust my network* covers the home network only. `install-tailscale.cmd` installs Tailscale if it
 is missing, has you sign in (or joins with a one-time key: `install-tailscale.cmd tskey-…`) and opens the port to the
-tailnet only.
+tailnet only. The same from the board page: the Tailscale line under **Machines** installs it, signs you in, or
+joins with a pasted one-time key.
 
 **A window that does not hear the board is named.** A Claude window with no watchman (no turn since its client
 restarted) is marked 💤 *not listening* on the Sessions tab, and a Claude agent that writes to one is told by
