@@ -95,8 +95,9 @@ Beside "Machines" is the **trust my network** switch (off by default). On your h
 
 Two machines in different places (another city, another country) link the same way once both are in your own
 Tailscale network — a free private network on WireGuard that reaches through routers and NAT and is open to your
-devices only. On the board page, under **Machines**, the Tailscale line does it: *Install* when it is missing, then
-*Sign in* (your machines, in the browser) or a one-time key and *Join* (a friend's machine). Or, from a console, run
+devices only. On the board page, under **Machines**, the Tailscale line does it: *Sign in* (in the browser, with an account in
+your tailnet — a friend who accepted your invitation signs in with his own), or paste a one-time key and press *Join*,
+which installs Tailscale first when it is missing. Or, from a console, run
 `install-tailscale.cmd` from the bridge folder: it installs Tailscale if it is
 missing, opens the sign-in in your browser (you sign in, with the same account on both), and opens the board's port to
 tailnet addresses only. A friend's machine: `install-tailscale.cmd tskey-…` with a one-time key you make in Tailscale's
