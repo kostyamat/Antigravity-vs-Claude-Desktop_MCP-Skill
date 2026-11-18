@@ -1,6 +1,7 @@
 'use strict';
 // node test_quota_watch.js — what the board knows of Claude's limits, the supervisor's quota
-// ticker (warn at 10 %, stop at 5 %, go on at the owner's word), and the rescue of a session
+// ticker (Gemini: warn at 10 %, stop at 5 %; Claude: 25 % and 12 %, or sooner at the pace it is spent;
+// go on when the limit is back or at the owner's word), and the rescue of a session
 // that was cut off into its project's slice.
 const assert = require('assert');
 const fs = require('fs');
@@ -36,6 +37,28 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       claudeQuota.report({ account: 'acc-1', win: 'local_w1', usage: claudeQuota.parseUsage(result) });
       assert.strictEqual(claudeQuota.shouldAsk('acc-1'), false);
       assert.strictEqual(claudeQuota.shouldAsk(''), false, 'no account, nobody to ask about');
+    });
+    await t('two measurements give the pace, and the figure is read as what it has become', () => {
+      const all = JSON.parse(fs.readFileSync(path.join(home, 'run', 'claude_usage.json'), 'utf8'));
+      const ago = m => new Date(Date.now() - m * 60000).toISOString();
+      all.accounts['acc-r'] = { at: ago(10), windows: [{ label: '5-hour limit', used: 60, resetsAt: soon }],
+                                prev: { at: ago(20), windows: [{ label: '5-hour limit', used: 50, resetsAt: soon }] } };
+      fs.writeFileSync(path.join(home, 'run', 'claude_usage.json'), JSON.stringify(all));
+      const w = claudeQuota.read().find(x => x.account === 'acc-r').worst;
+      assert.strictEqual(w.measured, 40);
+      assert.strictEqual(w.rate, 1, 'one per cent a minute');
+      assert.strictEqual(w.left, 30, 'ten minutes later at that pace');
+    });
+    await t('the limit message names the reset; the same exhaustion seen twice is one event', () => {
+      assert.match(claudeQuota.resetFromText("You've hit your 5-hour limit · resets 10pm (Europe/Madrid)", new Date(2026, 10, 17, 21, 7)),
+        new RegExp('^' + new Date(2026, 10, 17, 22, 0).toISOString()));
+      assert.strictEqual(claudeQuota.resetFromText('rate_limit'), '');
+      claudeQuota.exhausted({ account: 'acc-x', win: 'w1', why: 'hit your 5-hour limit · resets 11pm' });
+      const first = claudeQuota.read().find(x => x.account === 'acc-x').exhausted;
+      claudeQuota.exhausted({ account: 'acc-x', win: 'w2', why: 'hit your 5-hour limit · resets 11pm' });
+      assert.strictEqual(claudeQuota.read().find(x => x.account === 'acc-x').exhausted.at, first.at);
+      claudeQuota.clearExhausted('acc-x');
+      assert.strictEqual(claudeQuota.read().find(x => x.account === 'acc-x').exhausted, null);
     });
     await t('the worst window comes first, as per cent left', () => {
       const a = claudeQuota.read().find(x => x.account === 'acc-1');
@@ -110,7 +133,8 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       assert.strictEqual(to('c:/work/app').length, 1);
       assert.strictEqual(cfg.paused.gemini.helpers.length, 1);
       assert.strictEqual(shown.length, 2);
-      assert.match(to('human/web').pop().text, /write here: resume/);
+      assert.match(to('human/web').pop().text, /The leads go on working/);
+      assert.match(to('c:/work/app')[0].text, /You do NOT stop/, 'the lead is not stopped with its helper');
     });
     await t('the owner\'s word in the supervisor room sets them going again', async () => {
       rows.push({ id: 7, message: 'thanks', from_session: 'human/web', room: 'supervisor' });
@@ -122,23 +146,71 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       assert.strictEqual(cfg.paused.gemini, undefined);
       assert.ok(RESUME_WORD.test('Resume') && !RESUME_WORD.test('do not resume yet'));
     });
-    await t('10 % of Claude: the leads of that account who are at work are told to save', async () => {
+    await t('the Antigravity quota coming back sets the helpers going without a word', async () => {
+      rows.length = 0;                                 // no word of the owner's this time
+      pool = Object.assign({}, pool, { remaining: 0.04 });
+      cfg.quotaLevel = {};
+      await watch.tick('supervisor');
+      assert.ok(cfg.paused.gemini);
+      cfg.paused.gemini.at = new Date(Date.now() - 120000).toISOString();
+      pool = Object.assign({}, pool, { remaining: 0.9 });
+      const r = await watch.tick('supervisor');
+      assert.ok(r.gemini.recovered && r.gemini.recovered.length);
+      assert.match(to('gem-1').pop().text, /quota is back — go on/);
+      assert.strictEqual(cfg.paused.gemini, undefined);
+    });
+    await t('Claude is warned at 25 %, or sooner when the pace would reach the stop within 20 minutes', () => {
+      assert.strictEqual(watch.claudeLevel({ left: 40, rate: 0 }), 0);
+      assert.strictEqual(watch.claudeLevel({ left: 24, rate: 0 }), 1);
+      assert.strictEqual(watch.claudeLevel({ left: 40, rate: 1.5 }), 1, '40 - 30 = 10: under the stop within 20 minutes');
+      assert.strictEqual(watch.claudeLevel({ left: 12, rate: 0 }), 2);
+    });
+    await t('20 % of Claude: the leads of that account who are at work are told to save', async () => {
       pool = Object.assign({}, pool, { remaining: 0.9 });
       said.length = 0; shown.length = 0;
-      claudeNow = [{ account: 'acc-1', stale: false, ageMin: 2, worst: { label: '5-hour limit', left: 9, resetsAt: soon } }];
+      claudeNow = [{ account: 'acc-1', stale: false, ageMin: 2, worst: { label: '5-hour limit', left: 20, resetsAt: soon } }];
       await watch.tick('supervisor');
       assert.strictEqual(to('c:/work/app').length, 1, 'one message per project, not per window');
       assert.match(to('c:/work/app')[0].text, /Stop heavy operations/);
       assert.strictEqual(to('c:/work/b').length, 0, 'an idle project is not disturbed');
       assert.strictEqual(shown.length, 1);
     });
-    await t('5 % of Claude: told to stop; resume tells them to go on', async () => {
+    await t('below 12 % of Claude: told to stop; resume tells them to go on', async () => {
       claudeNow = [{ account: 'acc-1', stale: false, ageMin: 2, worst: { label: '5-hour limit', left: 3, resetsAt: soon } }];
       await watch.tick('supervisor');
       assert.match(to('c:/work/app').pop().text, /STOP/);
+      assert.match(to('gem-1').pop().text, /Do NOT wait for it/, 'the stopped lead\'s helper carries on');
       assert.strictEqual(cfg.paused.claude.leads.length, 1);
       assert.deepStrictEqual(watch.resume('claude', 'supervisor'), ['1 lead(s)']);
       assert.match(to('c:/work/app').pop().text, /account was switched/);
+      assert.strictEqual(cfg.paused.claude, undefined);
+    });
+    await t('after the owner\'s resume an exhausted limit does not stop the leads again a minute later', async () => {
+      said.length = 0;
+      let cleared = 0;
+      const ex = { at: new Date().toISOString(), why: 'hit your 5-hour limit', resetsAt: soon };
+      let now = [{ account: 'acc-1', stale: false, ageMin: 2, worst: null, exhausted: ex }];
+      const w2 = createQuotaWatch({ bridgeDb, cardsLib, router, gemini, claude: { read: () => now, clearExhausted: () => { cleared++; now = []; } },
+        say: m => { said.push(m); return said.length; }, alert: { t: alertLib.t, when: () => 'soon', show: () => '' },
+        config: () => cfg, save: p => { cfg = Object.assign({}, cfg, p); return cfg; }, isHuman: s => /^human/.test(s) });
+      await w2.tick('supervisor');
+      assert.match(to('c:/work/app').pop().text, /STOP/);
+      w2.resume('claude', 'supervisor');
+      assert.strictEqual(cleared, 1, 'the mark is cleared');
+      const before = to('c:/work/app').length;
+      await w2.tick('supervisor');
+      assert.strictEqual(to('c:/work/app').length, before, 'not stopped again');
+    });
+    await t('the stopped limit reaching its reset time sets the leads going without a word', async () => {
+      said.length = 0;
+      cfg.quotaLevel = {};
+      claudeNow = [{ account: 'acc-1', stale: false, ageMin: 2, worst: { label: '5-hour limit', left: 3, rate: 0, resetsAt: soon } }];
+      await watch.tick('supervisor');
+      assert.ok(cfg.paused.claude);
+      cfg.paused.claude.resetsAt = new Date(Date.now() - 1000).toISOString();
+      claudeNow = [{ account: 'acc-1', stale: false, ageMin: 2, worst: null }];
+      await watch.tick('supervisor');
+      assert.match(to('c:/work/app').pop().text, /limit is back — go on/);
       assert.strictEqual(cfg.paused.claude, undefined);
     });
     await t('an old measurement is not acted on', async () => {
@@ -198,7 +270,7 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       fs.utimesSync(slice, old - 600, old - 600);
       assert.ok(rescue.rescueProject(proj, { transcript: tr }).written);
     });
-    console.log(n + '/17 passed');
+    console.log(n + '/23 passed');
   } catch (e) {
     console.error(e);
     process.exitCode = 1;

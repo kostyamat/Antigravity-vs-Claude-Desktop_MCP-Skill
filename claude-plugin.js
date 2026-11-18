@@ -52,6 +52,9 @@ function bridgeHooks({ nodeExe, scriptsDir, pyCmd }) {
     { event: 'Stop', needle: 'bridge-hook.js" stop', hook: { type: 'command', command: node('stop'), timeout: 15 } },
     { event: 'StopFailure', needle: 'bridge-hook.js" failed', hook: { type: 'command', command: node('failed'), timeout: 30 } },
     { event: 'Stop', needle: 'bridge-hook.js" watch', hook: watch },
+    // A turn that failed (the usage limit) runs no Stop hook: without this the window heard
+    // nothing more until the owner typed into it (17.11, an hour of unread P0s).
+    { event: 'StopFailure', needle: 'bridge-hook.js" watch', hook: Object.assign({}, watch) },
     { event: 'SessionStart', needle: 'bridge-hook.js" watch', hook: Object.assign({}, watch) }
   ];
 }

@@ -14,6 +14,11 @@
 
 const WARN_LEFT = 10;          // per cent left: warn
 const STOP_LEFT = 5;           // per cent left: stop the work, ask for another account
+// Claude is warned and stopped earlier: its figure is a report, minutes old, and saving a
+// lead's context costs a few per cent of its own — at 5 % there was no room left to save.
+const CLAUDE_WARN_LEFT = 25;
+const CLAUDE_STOP_LEFT = 12;
+const CLAUDE_AHEAD_MIN = 20;   // at the pace measured, would the stop come within this? Then warn now.
 const HELPER_ACTIVE_HOURS = 12;   // a helper silent longer than this is not at work: nothing to stop
 const LEAD_ACTIVE_HOURS = 3;
 
@@ -31,6 +36,10 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
   const short = id => String(id || '').slice(0, 8);
 
   function level(left) { return left <= STOP_LEFT ? 2 : left <= WARN_LEFT ? 1 : 0; }
+  function claudeLevel(w) {
+    if (w.left <= CLAUDE_STOP_LEFT) return 2;
+    return w.left <= CLAUDE_WARN_LEFT || w.left - (w.rate || 0) * CLAUDE_AHEAD_MIN <= CLAUDE_STOP_LEFT ? 1 : 0;
+  }
 
   // One action per level per reset period per account.
   function due(kind, account, lvl, reset) {
@@ -89,6 +98,11 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
     if (!pool) return { account: q.account, left: null };
     const left = pctLeft(pool.remaining), lvl = level(left);
     const res = { account: q.account, left, level: lvl, pools: q.pools };
+    // Back: the quota refilled or another account is in — the helpers go on by themselves.
+    const pg = (config().paused || {}).gemini;
+    if (pg && !lvl && Date.parse(pg.at) < Date.now() - 60000) {
+      res.recovered = resume('gemini', room, null, q.account !== pg.account ? 'the Antigravity account was switched' : 'the Antigravity quota is back');
+    }
     if (!lvl || !due('gemini', q.account, lvl, pool.reset)) return res;
 
     const what = gemini.poolName(pool), acc = mask(q.account);
@@ -113,11 +127,11 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
       for (const [lead, names] of byLead) {
         say({ to: 'Claude', toSession: lead, room, status: 'info',
           text: `Supervisor: Antigravity quota is at ${left} %. Your helper${names.length > 1 ? 's' : ''} ${names.map(n => '"' + n + '"').join(', ')} ` +
-            'were told to stop after the step in hand. Give them nothing until the owner switches the account and says resume; ' +
-            'I set them going again then. Do not answer this.' });
+            'stop after the step in hand. You do NOT stop: carry on with your own work, and do yourself what cannot wait for them. ' +
+            'They are set going again when the quota is back or the account is switched. Do not answer this.' });
       }
       const paused = Object.assign({}, config().paused || {});
-      paused.gemini = { at: new Date().toISOString(), account: q.account, left, helpers };
+      paused.gemini = { at: new Date().toISOString(), account: q.account, left, helpers, resetsAt: pool.reset || '' };
       save({ paused });
       const names = helpers.map(h => h.name).slice(0, 12).join(', ');
       if (helpers.length) lines.push(alert.t('helpers', { n: helpers.length, names }));
@@ -126,7 +140,8 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
         text: `Supervisor: Antigravity quota is at ${left} % for account ${acc} (${what}; resets ${pool.reset || 'time unknown'}). ` +
           (helpers.length ? `I stopped ${helpers.length} helper(s): ` + helpers.map(h => `"${h.name}" (of ${h.leadName}, room ${h.room})`).join('; ') + '. '
                           : 'No helper has been at work in the last hours, so nobody was stopped. ') +
-          'Switch the Antigravity account, then write here: resume. I will set the helpers going again.' + (others ? ` Other accounts: ${others}.` : '') });
+          'The leads go on working. Switch the Antigravity account if you want the helpers back before the quota refills: I see it ' +
+          'and set them going myself (writing "resume" here does it too).' + (others ? ` Other accounts: ${others}.` : '') });
       res.stopped = helpers.length;
     }
     const no = alert.show(alert.t('head'), lines);
@@ -140,12 +155,20 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
   function watchClaude(room) {
     const out = [];
     for (const a of claude.read()) {
-      const w = a.exhausted ? { label: a.exhausted.why || 'usage limit', left: 0, resetsAt: (a.worst || {}).resetsAt || '' } : a.worst;
+      const w = a.exhausted ? { label: a.exhausted.why || 'usage limit', left: 0, rate: 0, resetsAt: a.exhausted.resetsAt || '' } : a.worst;
+      const pc = (config().paused || {}).claude;
+      // Back: the stopped account's limit refilled (its reset time passed, or a measurement after
+      // the stop shows enough) — the leads are told to go on without waiting for the owner's word.
+      if (pc && pc.account === a.account && !a.exhausted) {
+        const fresh = w && !a.stale && Date.parse(a.at) > Date.parse(pc.at) && claudeLevel(w) === 0;
+        const reset = pc.resetsAt && Date.parse(pc.resetsAt) <= Date.now();
+        if (fresh || reset) out.push({ account: a.account, recovered: resume('claude', room, null, 'the Claude limit is back') });
+      }
       if (!w || (a.stale && !a.exhausted)) { out.push({ account: a.account, left: null, ageMin: a.ageMin }); continue; }
-      const lvl = level(w.left);
-      const res = { account: a.account, left: w.left, level: lvl, what: w.label };
+      const lvl = claudeLevel(w);
+      const res = { account: a.account, left: w.left, level: lvl, what: w.label, rate: w.rate || 0 };
       out.push(res);
-      const period = w.resetsAt || (a.exhausted ? a.exhausted.at : '');
+      const period = w.resetsAt || (a.exhausted ? a.exhausted.at.slice(0, 13) : '');
       if (!lvl || !due('claude', a.account, lvl, period)) continue;
 
       const leads = workingLeads(a.account);
@@ -159,30 +182,38 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
             text: `Supervisor, for the owner: the Claude quota of this account is at ${w.left} % (${w.label}; resets ${w.resetsAt || 'time unknown'}). ` +
               'Stop heavy operations now — builds, long research, wide refactors, anything that reads much. Commit what is verified, ' +
               'rewrite .agents/HANDOFF.md with the exact next step and bring the documentation up to date. Start no new piece of work. ' +
-              `At ${STOP_LEFT} % you will be told to stop. Do not answer this.` });
+              `At ${CLAUDE_STOP_LEFT} % you will be told to stop. Do not answer this.` });
         }
         if (leads.length) lines.push(alert.t('leadsWarned', { n: leads.length, names }));
         lines.push(alert.t('next', { stop: STOP_LEFT }));
         say({ to: 'all', toSession: 'human/web', room, status: 'question',
           text: `Supervisor: Claude quota is at ${w.left} % for account ${acc} (${w.label}; resets ${w.resetsAt || 'time unknown'}). ` +
             (leads.length ? `I told ${leads.length} lead(s) to drop heavy work and save: ${names}. ` : '') +
-            `At ${STOP_LEFT} % I tell them to stop and ask you to switch the account.` });
+            `At ${CLAUDE_STOP_LEFT} % I tell them to stop and ask you to switch the account.` });
       } else {
         for (const l of leads) {
           say({ to: 'Claude', toSession: l.line, room, status: 'blocked',
             text: `Supervisor, for the owner: the Claude quota of this account is at ${w.left} % (${w.label}) — STOP. Finish only the step ` +
               'you are in, commit it, rewrite .agents/HANDOFF.md now (state, the exact next step, what your helpers hold), then end the ' +
-              'turn and wait. The owner is switching the account; the board tells this project when to go on. Do not answer this.' });
+              'turn and wait. Your helpers keep working on what you gave them. The board tells this project when to go on. Do not answer this.' });
+        }
+        // The other side does not stop: each stopped lead's helpers at work are told to carry on.
+        const leadLines = new Set(leads.map(l => l.line));
+        for (const h of workingHelpers().filter(h => leadLines.has(h.lead))) {
+          say({ to: 'Gemini', toSession: h.helper, room: h.room, status: 'info',
+            text: `Supervisor: your lead "${h.leadName}" is out of Claude quota and has stopped for now. Do NOT wait for it: carry on ` +
+              'with the task it gave you, finish it, and post the result here — the lead reads it when it is back. Start nothing it did not ask for.' });
         }
         const paused = Object.assign({}, config().paused || {});
-        paused.claude = { at: new Date().toISOString(), account: a.account, left: w.left, leads };
+        paused.claude = { at: new Date().toISOString(), account: a.account, left: w.left, leads, resetsAt: w.resetsAt || '' };
         save({ paused });
         if (leads.length) lines.push(alert.t('leads', { n: leads.length, names }));
         lines.push(alert.t('switch', { who: 'Claude' }));
         say({ to: 'all', toSession: 'human/web', room, status: 'blocked',
           text: `Supervisor: Claude quota is ${w.left ? 'at ' + w.left + ' %' : 'used up'} for account ${acc} (${w.label}; resets ${w.resetsAt || 'time unknown'}). ` +
             (leads.length ? `I told ${leads.length} lead(s) to save and stop: ${names}. ` : 'No lead of that account worked in the last hours. ') +
-            'Switch the Claude account, then write here: resume. I will tell the leads to go on.' });
+            'Their helpers go on working. When the limit is back I tell the leads to go on myself; if you switch the Claude account ' +
+            'sooner, write here: resume.' });
         res.stopped = leads.length;
       }
       const no = alert.show(alert.t(w.left ? 'head' : 'headOut'), lines);
@@ -195,13 +226,13 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
   // ── the owner's word ─────────────────────────────────────────────────────────────────────
 
   // Set going again whoever was stopped. `only`: 'gemini' | 'claude' | '' (both).
-  function resume(only, room, replyTo) {
+  function resume(only, room, replyTo, because) {
     const paused = Object.assign({}, config().paused || {});
     const done = [];
     if (paused.gemini && only !== 'claude') {
       for (const h of paused.gemini.helpers || []) {
         say({ to: 'Gemini', toSession: h.helper, room: h.room, status: 'question',
-          text: 'Supervisor, for the owner: the Antigravity account was switched — go on. Take up the task you stopped at, from the three ' +
+          text: `Supervisor, for the owner: ${because || 'the Antigravity account was switched'} — go on. Take up the task you stopped at, from the three ` +
             `lines you posted here (or from your lead's last task in this room if you posted none). You report to your lead, "${h.leadName}", as before.` });
       }
       done.push(`${(paused.gemini.helpers || []).length} helper(s)`);
@@ -210,16 +241,20 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
     if (paused.claude && only !== 'gemini') {
       for (const l of paused.claude.leads || []) {
         say({ to: 'Claude', toSession: l.line, room, status: 'question',
-          text: 'Supervisor, for the owner: the Claude account was switched — go on. Read .agents/HANDOFF.md first (another window of this ' +
-            'project may have written it), then continue from its exact next step. Your helpers are told separately.' });
+          text: `Supervisor, for the owner: ${because || 'the Claude account was switched'} — go on. Read .agents/HANDOFF.md first (another ` +
+            'window of this project may have written it), then continue from its exact next step. Your helpers kept working: read their ' +
+            'reports in their rooms.' });
       }
       done.push(`${(paused.claude.leads || []).length} lead(s)`);
       delete paused.claude;
+      // The limit the leads were stopped on is over: its mark must not stop them again a minute
+      // later (17.11: resumed five times in 50 minutes, stopped again within a minute each time).
+      try { if (claude.clearExhausted) claude.clearExhausted(); } catch (_) {}
     }
     // A new account starts with a clean sheet: its own warnings are due again.
     save({ paused, quotaLevel: {} });
     say({ to: 'all', toSession: 'human/web', room, replyTo: replyTo || null, status: done.length ? 'done' : 'answer',
-      text: done.length ? `Supervisor: resumed — ${done.join(' and ')} were told to go on.`
+      text: done.length ? `Supervisor: resumed${because ? ' (' + because + ')' : ''} — ${done.join(' and ')} were told to go on.`
                         : 'Supervisor: nobody is stopped on a quota right now, so there is nobody to resume.' });
     return done;
   }
@@ -253,7 +288,7 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
     return out;
   }
 
-  return { tick, resume, workingHelpers, workingLeads, level };
+  return { tick, resume, workingHelpers, workingLeads, level, claudeLevel };
 }
 
-module.exports = { createQuotaWatch, WARN_LEFT, STOP_LEFT, RESUME_WORD };
+module.exports = { createQuotaWatch, WARN_LEFT, STOP_LEFT, CLAUDE_WARN_LEFT, CLAUDE_STOP_LEFT, RESUME_WORD };

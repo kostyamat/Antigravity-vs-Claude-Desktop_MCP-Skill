@@ -25,9 +25,13 @@ const path = require('path');
 
 const RUN_DIR = process.env.BRIDGE_RUN_DIR || path.join(__dirname, 'run');
 const FILE = () => path.join(RUN_DIR, 'claude_usage.json');
-const ASK_EVERY_MIN = 20;      // how old a measurement may get before a window is asked again
-const ASK_LOW_MIN = 8;         // …when little is left
-const ASK_PAUSE_MIN = 5;       // one window was just asked: do not ask the next one at once
+// Asked often enough to see a limit coming: seven leads on one account once spent the last
+// 6 % of a 5-hour window in forty minutes, and the 20-minute ask saw it only when it was gone
+// (owner, 18.11: Claude's quota is read too late, when it is already gone and there is no time to save).
+const ASK_EVERY_MIN = 12;      // how old a measurement may get before a window is asked again
+const ASK_LOW_MIN = 4;         // …when half or less is left
+const ASK_LOW_LEFT = 50;
+const ASK_PAUSE_MIN = 2;       // one window was just asked: do not ask the next one at once
 const STALE_MIN = 90;          // older than this, a figure is not acted on
 
 function load() {
@@ -80,21 +84,53 @@ function report({ account, win, usage, by }) {
   const all = load();
   const now = new Date().toISOString();
   if (account && usage.windows.length) {
-    all.accounts[account] = { at: now, by: by || 'report', win: win || '', plan: usage.plan || (all.accounts[account] || {}).plan || '',
-                              windows: usage.windows, asked: '' };
+    const was = all.accounts[account] || {};
+    // The measurement before is kept: two of them give the rate the limit is being spent at.
+    const prev = was.at && (was.windows || []).length ? { at: was.at, windows: was.windows } : (was.prev || null);
+    all.accounts[account] = { at: now, by: by || 'report', win: win || '', plan: usage.plan || was.plan || '',
+                              windows: usage.windows, asked: '', prev };
   }
   if (win && usage.context) all.sessions[win] = Object.assign({ at: now, account: account || '' }, usage.context);
   store(all);
   return all.accounts[account] || null;
 }
 
+// "You've hit your 5-hour limit · resets 10pm (Europe/Madrid)": the next such local time after
+// `at`, as ISO; '' when the text names none. The limit message gives the hour on this machine's clock.
+function resetFromText(why, at) {
+  const m = /resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(String(why || ''));
+  if (!m) return '';
+  let h = Number(m[1]) % 12;
+  if (/pm/i.test(m[3])) h += 12;
+  const base = new Date(at || Date.now());
+  const d = new Date(base);
+  d.setHours(h, Number(m[2] || 0), 0, 0);
+  if (d <= base) d.setDate(d.getDate() + 1);
+  return d.toISOString();
+}
+
 // A turn ended on the usage limit: that account has nothing left of something, now.
+// The same exhaustion seen again (another window's failed turn) keeps its first time, so it
+// is one event, announced once — not a new stop for every turn that hits it.
 function exhausted({ account, win, why }) {
   if (!account) return;
   const all = load();
   const a = all.accounts[account] || { windows: [], plan: '' };
-  a.exhausted = { at: new Date().toISOString(), win: win || '', why: String(why || '').slice(0, 200) };
+  const now = new Date().toISOString();
+  const resetsAt = resetFromText(why, now);
+  const old = a.exhausted;
+  const same = old && Date.now() - Date.parse(old.at) < 6 * 3600e3 && (!old.resetsAt || Date.parse(old.resetsAt) > Date.now()) &&
+    (!resetsAt || !old.resetsAt || old.resetsAt === resetsAt);
+  a.exhausted = same ? Object.assign({}, old, { resetsAt: old.resetsAt || resetsAt, last: now })
+                     : { at: now, win: win || '', why: String(why || '').slice(0, 200), resetsAt };
   all.accounts[account] = a;
+  store(all);
+}
+
+// The owner switched the account, or the limit came back: the marks of an exhausted limit go.
+function clearExhausted(account) {
+  const all = load();
+  for (const [k, a] of Object.entries(all.accounts)) if (!account || k === account) delete a.exhausted;
   store(all);
 }
 
@@ -104,15 +140,27 @@ function read(now) {
   const t = now || Date.now();
   const out = [];
   for (const [account, a] of Object.entries(load().accounts)) {
+    const ageMin = a.at ? Math.round((t - Date.parse(a.at)) / 60000) : Infinity;
+    const prevOf = w => ((a.prev && a.prev.windows) || []).find(p => p.label === w.label && (p.resetsAt || '') === (w.resetsAt || ''));
     const windows = (a.windows || [])
       // A window whose reset time has passed has been refilled since it was measured.
       .filter(w => !(w.resetsAt && Date.parse(w.resetsAt) <= t))
-      .map(w => ({ label: w.label, left: Math.max(0, Math.round(100 - w.used)), resetsAt: w.resetsAt }))
+      .map(w => {
+        const measured = Math.max(0, Math.round(100 - w.used));
+        // Per cent spent per minute between the last two measurements, and what is left by now at
+        // that pace: a figure twelve minutes old is acted on as what it has become, not as it was.
+        const p = prevOf(w);
+        const span = p && a.prev ? (Date.parse(a.at) - Date.parse(a.prev.at)) / 60000 : 0;
+        const rate = p && span >= 1 && w.used > p.used ? (w.used - p.used) / span : 0;
+        const left = Math.max(0, Math.round(measured - rate * (Number.isFinite(ageMin) ? ageMin : 0)));
+        return { label: w.label, left, measured, rate: Math.round(rate * 100) / 100, resetsAt: w.resetsAt };
+      })
       .sort((x, y) => x.left - y.left);
-    const ageMin = a.at ? Math.round((t - Date.parse(a.at)) / 60000) : Infinity;
-    // An exhausted mark stands until a newer measurement, or two hours.
-    const ex = a.exhausted && (!a.at || Date.parse(a.exhausted.at) > Date.parse(a.at)) && t - Date.parse(a.exhausted.at) < 2 * 3600e3
-      ? a.exhausted : null;
+    // An exhausted mark stands until its reset time, when the limit message named one; else until a
+    // newer measurement, or two hours.
+    const e = a.exhausted;
+    const ex = e && (e.resetsAt ? Date.parse(e.resetsAt) > t
+                                : (!a.at || Date.parse(e.at) > Date.parse(a.at)) && t - Date.parse(e.at) < 2 * 3600e3) ? e : null;
     out.push({ account, at: a.at || '', ageMin, stale: ageMin > STALE_MIN, plan: a.plan || '', windows,
                worst: windows[0] || null, exhausted: ex });
   }
@@ -126,7 +174,7 @@ function shouldAsk(account, now) {
   const all = load();
   const a = all.accounts[account] || {};
   const known = read(t).find(x => x.account === account);
-  const every = known && known.worst && known.worst.left <= 20 ? ASK_LOW_MIN : ASK_EVERY_MIN;
+  const every = known && known.worst && known.worst.left <= ASK_LOW_LEFT ? ASK_LOW_MIN : ASK_EVERY_MIN;
   if (a.at && t - Date.parse(a.at) < every * 60000) return false;
   if (a.asked && t - Date.parse(a.asked) < ASK_PAUSE_MIN * 60000) return false;
   all.accounts[account] = Object.assign({ windows: [], plan: '' }, a, { asked: new Date(t).toISOString() });
@@ -146,4 +194,4 @@ function sessions(now) {
     percent: s.size ? Math.round(100 * s.tokens / s.size) : 0, ageMin: Math.round((t - Date.parse(s.at)) / 60000) }));
 }
 
-module.exports = { parseUsage, fromStatusline, report, exhausted, read, shouldAsk, sessions, ASK_LINE, STALE_MIN };
+module.exports = { parseUsage, fromStatusline, report, exhausted, clearExhausted, resetFromText, read, shouldAsk, sessions, ASK_LINE, STALE_MIN };

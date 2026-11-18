@@ -11,8 +11,8 @@ const t = (name, fn) => { fn(); n++; console.log('ok ' + name); };
 
 const hooks = cp.bridgeHooks({ nodeExe: 'C:/node/node.exe', scriptsDir: path.join('X:', 'bridge'), pyCmd: 'python' });
 
-t('nine hooks, six events', () => {
-  assert.strictEqual(hooks.length, 9);
+t('ten hooks, six events', () => {
+  assert.strictEqual(hooks.length, 10);
   const j = cp.hooksJson(hooks).hooks;
   assert.deepStrictEqual(Object.keys(j).sort(), ['PreCompact', 'PreToolUse', 'SessionStart', 'Stop', 'StopFailure', 'UserPromptSubmit']);
   assert.match(j.StopFailure[0].hooks[0].command, /bridge-hook\.js" failed$/);
@@ -20,13 +20,15 @@ t('nine hooks, six events', () => {
   assert.strictEqual(j.SessionStart[1].matcher, 'compact');
   assert.strictEqual(j.PreToolUse[0].matcher, 'mcp__agent-bridge__.*');
   assert.ok(j.Stop[1].hooks[0].asyncRewake);
+  assert.ok(j.StopFailure[1].hooks[0].asyncRewake, 'a failed turn re-arms the watchman too');
   assert.ok(!JSON.stringify(j).includes('\\\\'), 'commands use forward slashes');
 });
 
-t('the two watch hooks are separate objects', () => {
+t('the three watch hooks are separate objects', () => {
   const w = hooks.filter(h => h.needle.endsWith('watch'));
-  assert.strictEqual(w.length, 2);
+  assert.strictEqual(w.length, 3);
   assert.notStrictEqual(w[0].hook, w[1].hook);
+  assert.notStrictEqual(w[1].hook, w[2].hook);
 });
 
 t('strip takes only bridge hooks, keeps the user\'s own', () => {
