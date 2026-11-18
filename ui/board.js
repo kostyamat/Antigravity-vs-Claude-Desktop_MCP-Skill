@@ -140,7 +140,9 @@ function renderRooms() {
     return '<div class="row' + (on ? ' on' : '') + (unread ? ' unread' : '') + '" data-room="' + esc(id) + '" title="' + esc(title || name) + '">' +
       '<div class="row-main"><div class="row-name">' + esc(name) + '</div>' +
       '<div class="row-meta">' + esc(meta) + '</div></div>' +
-      (unread ? '<i class="dot-new" aria-label="new messages"></i>' : '') + '</div>';
+      (unread ? '<i class="dot-new" aria-label="new messages"></i>' : '') +
+      (id !== SQUARE ? '<button type="button" class="row-menu" data-menu="' + esc(id) + '" title="Pin, rename, archive or delete without opening the room" aria-label="Room actions">\u22ef</button>' : '') +
+      '</div>';
   };
   const loose = DATA.filter(m => !m.room);
   const lastLoose = loose.length ? loose[loose.length - 1].ts : '';
@@ -167,9 +169,50 @@ function renderRooms() {
 
 $('#roomFilter').addEventListener('input', renderRooms);
 $('#roomList').addEventListener('click', e => {
+  const menu = e.target.closest('[data-menu]');
+  if (menu) { e.stopPropagation(); openRoomMenu(menu); return; }
   const r = e.target.closest('[data-room]');
   if (r) enterRoom(r.dataset.room);
 });
+
+// A room's actions from the list, without opening it (owner, 18.11): pin, rename, archive, delete.
+const ROOMMENU = document.createElement('div');
+ROOMMENU.id = 'roommenu'; ROOMMENU.hidden = true;
+document.body.appendChild(ROOMMENU);
+function closeRoomMenu() { ROOMMENU.hidden = true; ROOMMENU.dataset.room = ''; }
+function openRoomMenu(btn) {
+  const r = roomById(btn.dataset.menu);
+  if (!r) return;
+  if (!ROOMMENU.hidden && ROOMMENU.dataset.room === r.id) return closeRoomMenu();
+  ROOMMENU.dataset.room = r.id;
+  ROOMMENU.innerHTML = (r.fixed ? '' : '<button type="button" data-act="pin">' + (r.ownerPinned ? 'Unpin' : 'Pin') + '</button>') +
+    '<button type="button" data-act="rename">Rename</button>' +
+    '<button type="button" data-act="archive">Archive</button>' +
+    '<button type="button" data-act="delete" class="danger">Delete</button>';
+  ROOMMENU.hidden = false;
+  const b = btn.getBoundingClientRect(), w = ROOMMENU.offsetWidth, h = ROOMMENU.offsetHeight;
+  ROOMMENU.style.left = Math.max(8, Math.min(b.right - w, window.innerWidth - w - 8)) + 'px';
+  ROOMMENU.style.top = (b.bottom + h + 8 > window.innerHeight ? Math.max(8, b.top - h - 4) : b.bottom + 4) + 'px';
+}
+ROOMMENU.addEventListener('click', async e => {
+  const a = e.target.closest('[data-act]'); if (!a) return;
+  const r = roomById(ROOMMENU.dataset.room); closeRoomMenu();
+  if (!r) return;
+  if (a.dataset.act === 'pin') {
+    const j = await post('/api/room/pin', { id: r.id, pinned: !r.ownerPinned });
+    if (j && j.error) alert(j.error);
+    await loadRooms(); if (ROOM === r.id) renderHead();
+  } else if (a.dataset.act === 'rename') {
+    const name = prompt('Room name', r.name);
+    if (name == null || !name.trim() || name.trim() === r.name) return;
+    await post('/api/room/rename', { id: r.id, name: name.trim() });
+    await loadRooms(); if (ROOM === r.id) renderHead();
+  } else {
+    leaveRoomAfter(a.dataset.act, r);
+  }
+});
+document.addEventListener('click', e => { if (!ROOMMENU.hidden && !e.target.closest('#roommenu,[data-menu]')) closeRoomMenu(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeRoomMenu(); });
 
 async function loadRooms() {
   try {
@@ -302,7 +345,7 @@ async function leaveRoomAfter(action, r) {
   if (action === 'archive') alert('Archived to:\n' + j.file);
   await loadRooms();
   await loadDocs();
-  ROOM = null; enterRoom(SQUARE);
+  if (ROOM === r.id) { ROOM = null; enterRoom(SQUARE); }
   await load(true);
 }
 $('#roomArchive').onclick = () => { const r = roomById(ROOM); if (r) leaveRoomAfter('archive', r); };

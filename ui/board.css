@@ -268,6 +268,19 @@ details.machine .group { padding-left: 22px; }
 .receipt.late { color: var(--danger); font-weight: 600; }
 
 /* The quote offered at the selection, and the line to answer it. */
+/* The ⋯ on a room row and its menu: a room's actions without opening it. */
+.row .row-menu { flex: none; border: 0; background: none; color: var(--ink-3); font-size: 16px; line-height: 1; padding: 2px 6px;
+  border-radius: 5px; cursor: pointer; opacity: 0; }
+.row:hover .row-menu, .row.on .row-menu, .row-menu:focus-visible { opacity: 1; }
+.row .row-menu:hover { background: var(--line); color: var(--ink); }
+@media (hover: none) { .row .row-menu { opacity: 1; } }
+#roommenu { position: fixed; z-index: 60; display: flex; flex-direction: column; min-width: 140px; padding: 4px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 22px rgba(0, 0, 0, .22); }
+#roommenu[hidden] { display: none; }
+#roommenu button { border: 0; background: none; text-align: left; font-size: 13px; padding: 6px 10px; border-radius: 5px; color: var(--ink); cursor: pointer; }
+#roommenu button:hover { background: var(--hover); }
+#roommenu button.danger { color: #c0392b; }
+
 #selpop {
   position: fixed; z-index: 50; display: flex; flex-wrap: wrap; gap: 2px; max-width: min(460px, calc(100vw - 16px));
   background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px;
