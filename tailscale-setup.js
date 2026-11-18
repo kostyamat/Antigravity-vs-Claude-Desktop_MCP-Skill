@@ -128,10 +128,11 @@ function install() {
 }
 // Join with a one-time key made in Tailscale's admin page. Then the board's port is opened to the tailnet.
 function join(key) {
+  const k = String(key || '').trim();
+  if (!/^tskey-[\w-]+$/.test(k)) return Promise.reject(new Error('that is not a Tailscale auth key (it starts with "tskey-")'));
+  // A friend's machine usually has no Tailscale yet: the key is all it needs — install first, then join.
+  if (!exe()) return install().then(() => join(k));
   return new Promise((resolve, reject) => {
-    const k = String(key || '').trim();
-    if (!/^tskey-[\w-]+$/.test(k)) return reject(new Error('that is not a Tailscale auth key (it starts with "tskey-")'));
-    if (!exe()) return reject(new Error('Tailscale is not installed'));
     const p = spawn(exe(), ['up', '--authkey=' + k], { windowsHide: true });
     let err = '';
     p.stderr.on('data', d => { err += d; });

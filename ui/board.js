@@ -1092,13 +1092,13 @@ function machinesLines(m) {
 let TAILSCALE = null;
 function tailscaleLine(t) {
   if (!t) return '';
+  const keyRow = '<div class="ts-join"><i class="none"></i><input type="password" id="tsKey" class="field" placeholder="one-time key: tskey-…" autocomplete="off">' +
+    '<button type="button" class="link-btn" data-ts="join" title="Paste the one-time key you were given and join (Tailscale is installed first if it is missing)">Join</button></div>';
   if (!t.installed) return '<div><i></i>Tailscale: not installed <button type="button" class="link-btn" data-ts="install" ' +
-    'title="Install Tailscale to link machines far apart. Windows will ask for permission.">Install</button></div>';
+    'title="Install Tailscale to link machines far apart. Windows will ask for permission.">Install</button></div>' + keyRow;
   if (t.state === 'Running') return '<div title="' + esc((t.peers || []).length ? 'Online in the tailnet: ' + t.peers.join(', ') : 'No other machine of the tailnet is online') +
     '"><i class="up"></i>Tailscale: ' + esc(t.name || 'this machine') + ' ' + esc(t.ip || '') + '</div>';
-  return '<div><i></i>Tailscale: not in a tailnet <button type="button" class="link-btn" data-ts="signin" title="Your machines: sign in with your Tailscale account in the browser">Sign in</button></div>' +
-    '<div class="ts-join"><i class="none"></i><input type="password" id="tsKey" class="field" placeholder="or a one-time key: tskey-…" autocomplete="off">' +
-    '<button type="button" class="link-btn" data-ts="join" title="A friend\'s machine: the one-time key made in Tailscale\'s admin page">Join</button></div>';
+  return '<div><i></i>Tailscale: not in a tailnet <button type="button" class="link-btn" data-ts="signin" title="Sign in with your Tailscale account in the browser">Sign in</button></div>' + keyRow;
 }
 async function loadTailscale() {
   try { TAILSCALE = await post('/api/machines/tailscale', {}); } catch (_) { TAILSCALE = null; }
@@ -1201,7 +1201,7 @@ $('#apps').addEventListener('click', async e => {
     const action = ts.dataset.ts;
     const key = action === 'join' ? String(($('#tsKey') || {}).value || '').trim() : '';
     if (action === 'join' && !key) { alert('Paste the one-time key (tskey-…) first.'); return; }
-    ts.disabled = true; ts.textContent = action === 'install' ? 'Installing…' : action === 'join' ? 'Joining…' : 'Opening…';
+    ts.disabled = true; ts.textContent = action === 'install' ? 'Installing…' : action === 'join' ? 'Joining… (may install first)' : 'Opening…';
     const r = await post('/api/machines/tailscale', { action, key });
     if (r && r.error) alert('Tailscale: ' + r.error);
     else if (r && r.url) window.open(r.url, '_blank', 'noopener');
