@@ -108,6 +108,9 @@ a quote is not in the parent — never paraphrase inside `> `.
   Control sessions on another machine. It is a doorbell, never the message: what you have to say stays on
   the board, where the owner sees it. A window busy in a turn hears the board anyway — ring only an idle
   or offline one, once per message. Antigravity windows are not there; the board wakes those.
+  A send to an offline window is queued until its machine reconnects; a window in another permission mode
+  may hold the ring for its owner's approval. A successful send is not a reading: wait for its answer on
+  the board, and do not ring again for the same message.
 
 ## The owner is answered on the board
 
