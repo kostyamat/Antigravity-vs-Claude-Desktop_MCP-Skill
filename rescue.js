@@ -89,10 +89,12 @@ function block(folder, info, why) {
   const commits = sliceAt ? git(folder, 'log', '--since=' + new Date(sliceAt).toISOString(), '--format=%h %s', '-8').split('\n').filter(Boolean) : [];
   const out = [
     START,
-    `## 🛟 Cut off — read this first (written by the board from the transcript, ${new Date().toISOString().slice(0, 16)}Z)`,
+    // Said in its own heading: cut off here, added by the supervisor, not committed (owner, 18.11).
+    `## 🛟 CUT OFF HERE — added by the supervisor, NOT committed (${new Date().toISOString().slice(0, 16)}Z) — read this first`,
     `The last session of this project stopped in the middle of its work: ${why || info.why || 'reason unknown'} ` +
-      `(transcript ends ${String(info.endedAt).slice(0, 16)}Z). These are facts lifted from the transcript and from git, not the ` +
-      'lead\'s own slice: check them, fold what holds into the slice below, then delete this block.'
+      `(transcript ends ${String(info.endedAt).slice(0, 16)}Z). The supervisor lifted these facts from the transcript and from git ` +
+      'and wrote them here without a commit; they are not the lead\'s own slice. Check them, fold what holds into the slice below, ' +
+      'delete this block, and commit the slice.'
   ];
   if (info.lastOwner) out.push('- **The owner\'s last request:** ' + cut(info.lastOwner, 500));
   if (info.said.length) out.push('- **The last things the lead said:** ' + info.said.map((s, i) => `(${i + 1}) ${cut(s, 320)}`).join(' '));
