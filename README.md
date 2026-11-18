@@ -62,9 +62,10 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
   session did not write down, sorts and routes on your order, and has pictures described for agents. The reading
   is done by one Antigravity conversation on a fast model. See `skill/agent-bridge/references/SUPERVISOR.md`.
 * **Quotas, watched for you.** The supervisor measures the Antigravity quota and each Claude account's plan limits
-  every minute, with no model. At 10 % left it warns; at 5 % it tells the helpers (Antigravity) or the lead
-  sessions (Claude) to save and stop, and asks you to switch the account; write *resume* in its room and it sets
-  them going again. Every warning is a window of the bridge's own in the middle of the screen, above everything
+  every minute, with no model. Antigravity: at 10 % left it warns, at 5 % it stops the helpers. Claude: at 25 % it
+  warns the leads to save (sooner, when the pace it measures would reach the stop within twenty minutes), at 12 %
+  it stops them. Only the side that ran out stops: the other one goes on working. When the limit refills or
+  another Antigravity account comes in, it sets them going itself; *resume* in its room does it at once. Every warning is a window of the bridge's own in the middle of the screen, above everything
   (`bin/quota-alert.exe`, `bin/quota-alert` for Linux/X11; sources in `tools/quota-alert`) — not a system
   notification, which is easy to miss. Its text follows the system language: English, Ukrainian, Russian,
   German, French, Spanish (`alertLanguage` in `bridge_config.json` overrides). Claude's limits cannot be read from
@@ -568,8 +569,10 @@ MIT.
   3. На сторінці дошки іншої машини з'явиться рядок: `Machine "<ім'я>" (<ip>) asks to link` з кнопками **Allow** та **Refuse**. Натисніть **Allow**.
   Один клік на кожній машині. Жодного термінала, жодних перезапусків і не треба вводити IP-адреси. Стан кожної машини показано поруч: `linked`, `waits for Allow on that machine` або `does not answer`. Кнопка **Unlink** завжди поруч для від'єднання.
 * **Квоти під наглядом.** Наглядач щохвилини, без моделі, міряє квоту Antigravity і ліміти плану кожного акаунта
-  Claude. На 10 % попереджає; на 5 % каже помічникам (Antigravity) або сесіям лідів (Claude) зберегтися й
-  зупинитися і просить вас змінити акаунт; напишіть у його кімнаті *продовжити* — і він запускає їх далі. Кожне
+  Claude. Antigravity: на 10 % попереджає, на 5 % зупиняє помічників. Claude: на 25 % каже лідам зберегтися
+  (раніше, якщо за виміряним темпом зупинка настане за двадцять хвилин), на 12 % зупиняє їх. Зупиняється лише
+  той бік, у якого скінчилась квота, інший працює далі. Коли ліміт відновився або прийшов інший акаунт
+  Antigravity, він сам запускає їх далі; *продовжити* в його кімнаті робить це одразу. Кожне
   попередження — власне вікно мосту посеред екрана поверх усього (`bin/quota-alert.exe`, для Linux/X11
   `bin/quota-alert`; джерела в `tools/quota-alert`), а не системне сповіщення, яке легко пропустити. Мова тексту —
   за мовою системи: англійська, українська, російська, німецька, французька, іспанська (перевизначає

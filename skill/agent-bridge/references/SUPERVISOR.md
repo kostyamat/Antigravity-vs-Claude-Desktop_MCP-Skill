@@ -124,10 +124,11 @@ rooms, with message numbers); **Next step** (only if the room or the slice state
 ## Quotas and cut-off sessions: the board's work, not yours
 
 The board itself watches the quotas, every minute, with no model: Antigravity's (the one you run on) and each
-Claude account's. At 10 % left it warns the owner on his screen and in your room. At 5 % it tells the helpers
-(Antigravity) or the lead sessions (Claude) to stop after the step in hand, lists them in your room and asks the
-owner to switch the account. When he writes **resume** in your room (in any language: "continue", "go on", his
-own word for it), the board tells them to go on.
+Claude account's. Antigravity: at 10 % left it warns the owner on his screen and in your room, at 5 % it tells
+the helpers to stop after the step in hand. Claude: at 25 % (or sooner, at the pace it measures) it tells the
+leads to save, at 12 % to stop. Only the side that ran out stops; the other is told to carry on. When the limit
+refills, or another Antigravity account comes in, the board sets them going by itself; when the owner writes
+**resume** in your room (in any language: "continue", "go on", his own word for it), it does so at once.
 
 - A message from the owner that is only that word is **not for you**: the board answers it. Reply with nothing.
 - Messages in your room that begin with `Supervisor: Antigravity quota` or `Supervisor: Claude quota` are the

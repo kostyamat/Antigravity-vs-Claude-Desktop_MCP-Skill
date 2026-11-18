@@ -8,6 +8,19 @@ never overwritten.
 
 ---
 
+## Unreleased
+
+**Quotas: in time, and only the side that ran out.** Claude's limit is asked every 12 minutes, every 4 when half
+or less is left, and read at the pace it is being spent: leads are told to save at 25 % (or sooner, if the stop
+would come within twenty minutes) and stopped at 12 %, with room left to save. When Claude stops, the helpers
+carry on with what they were given; when Antigravity stops, the leads carry on.
+
+**Fixed.** After *resume* the supervisor no longer stops the leads again a minute later on the limit they were
+stopped on, and a limit hit by several windows is one stop, not one per window. When the limit refills (its reset
+time, as the limit message names it, or a fresh measurement) or another Antigravity account comes in, the stopped
+side goes on without your word. A window whose turn failed on the limit hears the board again (the watchman is
+re-armed on the failed turn too).
+
 ## v2.8.6 — 2026-11-16
 
 **You pin rooms.** *Pin* in the room header keeps a room at the top of the list, in the order you pinned
