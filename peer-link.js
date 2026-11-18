@@ -863,6 +863,13 @@ async function localApi(req, res) {
     if (what === 'refuse') { refuse(String(d.url || '')); return send(200, { ok: true }); }
     if (what === 'unlink') return send(200, { ok: unlink(String(d.name || '')) });
     if (what === 'trust') return send(200, { trust: setTrust(d.on === true) });
+    if (what === 'tailscale') {
+      const ts = require('./tailscale-setup');
+      if (d.action === 'install') return send(200, await ts.install());
+      if (d.action === 'join') return send(200, await ts.join(d.key));
+      if (d.action === 'signin') return send(200, await ts.signIn());
+      return send(200, ts.status());
+    }
     send(404, { error: 'no such call' });
   } catch (e) { send(400, { error: e.message }); }
 }

@@ -87,5 +87,67 @@ function main() {
   return 0;
 }
 
-module.exports = { ensureTailnetRule };
+// ── for the board page (Machines → Tailscale): the owner joins without a console ──────────────────────
+
+// { installed, state, name, ip, peers } — state "Running" when this machine is in the tailnet.
+function status() {
+  const e = exe();
+  if (!e) return { installed: false };
+  let s = {};
+  try { s = JSON.parse(run(e, ['status', '--json']).stdout || '{}'); } catch (_) {}
+  const self = s.Self || {};
+  const peers = Object.values(s.Peer || {}).filter(p => p && p.Online !== false).map(p => p.HostName).filter(Boolean);
+  return { installed: true, state: s.BackendState || 'unknown', name: self.HostName || '', ip: (self.TailscaleIPs || []).find(ip => /^100\./.test(ip)) || '', peers };
+}
+
+const { spawn } = require('child_process');
+// Install with winget (Windows asks for permission). Resolves when done.
+function install() {
+  return new Promise((resolve, reject) => {
+    if (exe()) return resolve(status());
+    if (process.platform !== 'win32') return reject(new Error('install Tailscale from https://tailscale.com/download'));
+    const p = spawn('winget', ['install', '--id', 'Tailscale.Tailscale', '-e', '--silent', '--accept-package-agreements', '--accept-source-agreements'], { windowsHide: true });
+    p.on('error', () => reject(new Error('winget is not here — install Tailscale from https://tailscale.com/download')));
+    p.on('close', () => exe() ? resolve(status()) : reject(new Error('Tailscale did not install — https://tailscale.com/download')));
+  });
+}
+// Join with a one-time key made in Tailscale's admin page. Then the board's port is opened to the tailnet.
+function join(key) {
+  return new Promise((resolve, reject) => {
+    const k = String(key || '').trim();
+    if (!/^tskey-[\w-]+$/.test(k)) return reject(new Error('that is not a Tailscale auth key (it starts with "tskey-")'));
+    if (!exe()) return reject(new Error('Tailscale is not installed'));
+    const p = spawn(exe(), ['up', '--authkey=' + k], { windowsHide: true });
+    let err = '';
+    p.stderr.on('data', d => { err += d; });
+    p.on('error', e => reject(e));
+    p.on('close', () => {
+      const s = status();
+      if (s.state !== 'Running') return reject(new Error('not in the tailnet: ' + (err.trim().slice(0, 200) || s.state)));
+      try { ensureTailnetRule(); } catch (_) {}
+      resolve(s);
+    });
+  });
+}
+// Sign in in the owner's browser: resolves with the login link Tailscale prints; the sign-in finishes there.
+function signIn() {
+  return new Promise((resolve, reject) => {
+    if (!exe()) return reject(new Error('Tailscale is not installed'));
+    if (status().state === 'Running') return resolve({ already: true });
+    const p = spawn(exe(), ['up'], { windowsHide: true, detached: true });
+    let out = '', done = false;
+    const look = d => {
+      out += d;
+      const m = /https:\/\/login\.tailscale\.com\/\S+/.exec(out);
+      if (m && !done) { done = true; resolve({ url: m[0] }); }
+    };
+    p.stdout.on('data', look); p.stderr.on('data', look);
+    p.on('error', e => { if (!done) { done = true; reject(e); } });
+    p.on('close', () => { if (!done) { done = true; status().state === 'Running' ? resolve({ already: true }) : reject(new Error(out.trim().slice(0, 200) || 'no sign-in link')); } });
+    setTimeout(() => { if (!done) { done = true; reject(new Error('Tailscale gave no sign-in link in time')); } }, 30000).unref();
+    p.unref();
+  });
+}
+
+module.exports = { ensureTailnetRule, status, install, join, signIn };
 if (require.main === module) process.exitCode = main();

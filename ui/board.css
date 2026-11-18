@@ -286,6 +286,9 @@ details.wgroup > summary .count { color: var(--ink-3); letter-spacing: 0; }
 #roommenu button:hover { background: var(--hover); }
 #roommenu button.danger { color: #c0392b; }
 
+.apps .ts-join input { flex: 1; min-width: 0; padding: 2px 6px; font-size: 12px; }
+.apps .ts-join i.none { visibility: hidden; }
+
 #selpop {
   position: fixed; z-index: 50; display: flex; flex-wrap: wrap; gap: 2px; max-width: min(460px, calc(100vw - 16px));
   background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px;

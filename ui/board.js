@@ -1058,6 +1058,7 @@ async function checkApps() {
   if (j.antigravity) { try { quo = await (await fetch('/api/quota')).json(); } catch (_) {} }
   let mach = null;
   try { mach = await (await fetch('/api/machines')).json(); } catch (_) {}
+  if (TAILSCALE === null) await loadTailscale();
   $('#apps').innerHTML = pauseLine(pau) + line('Claude Desktop', j.claude, 'claude') + line('Antigravity', j.antigravity, 'antigravity') +
     quotaLine(quo) + supervisorLine(sup, j.antigravity) + machinesLines(mach) + updateLine(upd);
 }
@@ -1081,10 +1082,28 @@ function machinesLines(m) {
     out += '<div title="' + esc(f.url + ' · bridge ' + f.version) + '"><i></i>Found "' + esc(f.machine) + '" at ' + esc(f.address) + btn('mach-link', f.url, 'Link') + '</div>';
   }
   if (FOUND && !FOUND.filter(x => !linked.has(x.url)).length) out += '<div><i></i>No other board found on this network</div>';
+  out += tailscaleLine(TAILSCALE);
   out += '<div title="This machine: ' + esc(m.me) + ' · ' + esc((m.addresses || []).join(', ')) + ' · port ' + esc(String(m.port)) + '"><i class="' + ((m.linked || []).length ? 'up' : '') +
     '"></i>Machines' + btn('mach-find', '1', 'Find') + ' · trust my network: ' + (m.trust ? 'on' : 'off') + btn('mach-trust', m.trust ? 'off' : 'on', m.trust ? 'Turn off' : 'Turn on') + '</div>';
   return out;
 }
+// Tailscale: machines in other corners of the planet (owner, 18.11). Installed or not, in the tailnet or
+// not; a one-time key from the owner joins this machine without a console.
+let TAILSCALE = null;
+function tailscaleLine(t) {
+  if (!t) return '';
+  if (!t.installed) return '<div><i></i>Tailscale: not installed <button type="button" class="link-btn" data-ts="install" ' +
+    'title="Install Tailscale to link machines far apart. Windows will ask for permission.">Install</button></div>';
+  if (t.state === 'Running') return '<div title="' + esc((t.peers || []).length ? 'Online in the tailnet: ' + t.peers.join(', ') : 'No other machine of the tailnet is online') +
+    '"><i class="up"></i>Tailscale: ' + esc(t.name || 'this machine') + ' ' + esc(t.ip || '') + '</div>';
+  return '<div><i></i>Tailscale: not in a tailnet <button type="button" class="link-btn" data-ts="signin" title="Your machines: sign in with your Tailscale account in the browser">Sign in</button></div>' +
+    '<div class="ts-join"><i class="none"></i><input type="password" id="tsKey" class="field" placeholder="or a one-time key: tskey-…" autocomplete="off">' +
+    '<button type="button" class="link-btn" data-ts="join" title="A friend\'s machine: the one-time key made in Tailscale\'s admin page">Join</button></div>';
+}
+async function loadTailscale() {
+  try { TAILSCALE = await post('/api/machines/tailscale', {}); } catch (_) { TAILSCALE = null; }
+}
+
 // The supervisor is the owner's to switch. The tooltip says what its last round saw.
 function supervisorLine(s, antigravityUp) {
   if (!s || s.error) return '';
@@ -1175,6 +1194,18 @@ $('#apps').addEventListener('click', async e => {
     pz.disabled = true;
     const r = await post('/api/pause', { on: pz.dataset.pause === 'on' }).catch(x => ({ error: x.message }));
     if (r && r.error) alert(r.error);
+    return checkApps();
+  }
+  const ts = e.target.closest('[data-ts]');
+  if (ts) {
+    const action = ts.dataset.ts;
+    const key = action === 'join' ? String(($('#tsKey') || {}).value || '').trim() : '';
+    if (action === 'join' && !key) { alert('Paste the one-time key (tskey-…) first.'); return; }
+    ts.disabled = true; ts.textContent = action === 'install' ? 'Installing…' : action === 'join' ? 'Joining…' : 'Opening…';
+    const r = await post('/api/machines/tailscale', { action, key });
+    if (r && r.error) alert('Tailscale: ' + r.error);
+    else if (r && r.url) window.open(r.url, '_blank', 'noopener');
+    TAILSCALE = null;
     return checkApps();
   }
   const rs = e.target.closest('[data-resume]');
