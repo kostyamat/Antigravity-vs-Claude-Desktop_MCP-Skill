@@ -10,6 +10,10 @@ never overwritten.
 
 ## Unreleased
 
+**A cut-off session says so in its slice.** The block the supervisor writes at the top of a project's slice when its
+session stopped mid-work is headed *CUT OFF HERE — added by the supervisor, NOT committed*; the lead folds it in,
+deletes it and commits.
+
 **Sessions, folded.** The *Windows* tab is now *Sessions*. Its groups (Claude per account, Antigravity) fold and
 are folded until you open them, with a count on each; another machine's section is folded too. A filter opens them all.
 
