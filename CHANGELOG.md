@@ -10,6 +10,11 @@ never overwritten.
 
 ## v2.8.8 — 2026-11-18
 
+**A question to the whole room is the room's conversation.** Whoever took part in it — asked it or answered it —
+gets every answer in it, whomever each is addressed to, and is woken by them. Before, a window waiting in a room
+for the leads' word never saw their answers, because they were addressed to you, and its own call to them, written
+as a reply to you, reached none of them.
+
 **Fixed.** The board no longer slows down once a room is shared with another machine: it answered in 4 to 28
 seconds and showed the linked machine as not answering, because the address of every window on another machine
 was checked against the settings file read from disk each time. The settings are now read again only when the
