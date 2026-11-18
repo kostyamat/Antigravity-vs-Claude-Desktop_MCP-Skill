@@ -106,6 +106,20 @@ port to the internet itself: the link has no password, the tailnet is what keeps
 tailnet always waits for your **Allow**, even with *trust my network* on. A friend's machine joins your tailnet with a
 one-time auth key you make in Tailscale's admin page — never with your account's password.
 
+**Only the board, nothing else.** On every machine with Tailscale the installer lets the tailnet reach the board's
+port and nothing else: other TCP ports, UDP and ping from tailnet addresses are blocked by the Windows Firewall (a
+block wins over any other program's allow rule, so file sharing and remote desktop stay closed to the tailnet). For
+the whole tailnet, a friend's machine included, put this into Tailscale's admin page → *Access controls*:
+
+```json
+{
+  "acls": [
+    { "action": "accept", "src": ["*"], "dst": ["*:8787"] }
+  ],
+  "ssh": []
+}
+```
+
 ### 2. Or tell an agent
 
 You can also ask an agent in plain words:
