@@ -8,7 +8,7 @@ never overwritten.
 
 ---
 
-## Unreleased
+## v2.8.9 — 2026-11-18
 
 **Stops in time, for Antigravity too.** The helpers are warned at 30 % and stopped at 15 %, sooner when the pace
 measured minute by minute would empty the quota within eight minutes. At 10 % and 5 % the quota was gone before the
