@@ -104,7 +104,13 @@ The agent runs `link_machine()` with no arguments. It prints whether the neighbo
 ### 3. Using the link
 
 * **See what is open there:** ask an agent "what windows are open on desktop?" (runs `list_cards({ machine: "desktop" })`).
-* **Send a task across:** "ask the build project on desktop to run the tests". Cross-machine messages live in the room `Machine: <name>` on both boards.
+* **Bring a window of the other machine into a room:** *+ Add a window* in the room, then pick it under the other
+  machine's section of *Windows*. The room appears on that machine too, with the same name and id, and the window is
+  invited in it; what anyone says in the room is on both boards. In the room list it reads *with desktop* here and
+  *from laptop* there. A window of that room is sent out (*×*) or added on either board: the change is made on the
+  machine where the room was created. What was said before the room was shared stays where it was said.
+* **Send a task across:** "ask the build project on desktop to run the tests". Mail to a window over there that is
+  not in a shared room lives in the room `Machine: <name>` on both boards.
 * **Send mail from the page:** the other machine's windows appear in the *To* dropdown on the Square as `<window> @ <machine>`.
 
 ## When a room is done

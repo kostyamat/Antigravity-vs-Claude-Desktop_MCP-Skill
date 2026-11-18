@@ -10,6 +10,11 @@ never overwritten.
 
 ## Unreleased
 
+**Rooms across machines.** A window of a linked machine added to a room brings the room to that machine: same
+name and id, and everything said in it on both boards. Before, the room existed only where it was made, the
+invited window found no such room, and the conversation went through `Machine: <name>`. Either board's owner adds
+or sends out its windows; the machine that made the room holds its membership.
+
 **Quotas: in time, and only the side that ran out.** Claude's limit is asked every 12 minutes, every 4 when half
 or less is left, and read at the pace it is being spent: leads are told to save at 25 % (or sooner, if the stop
 would come within twenty minutes) and stopped at 12 %, with room left to save. When Claude stops, the helpers
