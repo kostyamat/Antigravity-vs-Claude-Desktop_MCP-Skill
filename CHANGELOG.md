@@ -10,6 +10,12 @@ never overwritten.
 
 ## Unreleased
 
+**A weekly limit is not a session.** The quota supervisor judges each Claude limit by its kind: the 5-hour session
+keeps 25 % / 12 %; the weekly limit warns at 8 % and stops at 3 % (or when its pace would empty it within half an hour);
+one model's weekly limit (Weekly · Fable) stops nobody and only tells the owner. Antigravity pools likewise: a pool
+resetting more than a day off is weekly, and a low pool stops no helper while another pool has room. Before, 21 % of the
+weekly limit warned every lead.
+
 **A letter to everyone in a machine's room reaches that machine.** Said to everyone in "Machine: …", it now goes to
 that machine's room for this one, read there by its windows that are in the room here (it used to stay on this machine;
 only mail to one window travelled). Counted from the first time the board sees the room: nothing older is sent late.

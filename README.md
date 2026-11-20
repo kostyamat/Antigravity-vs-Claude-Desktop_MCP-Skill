@@ -64,7 +64,9 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
 * **Quotas, watched for you.** The supervisor measures the Antigravity quota and each Claude account's plan limits
   every minute, with no model. Antigravity: at 30 % left it warns, at 15 % it stops the helpers, sooner at the pace it measures. Claude: at 25 % it
   warns the leads to save (sooner, when the pace it measures would reach the stop within twenty minutes), at 12 %
-  it stops them. Only the side that ran out stops: the other one goes on working. When the limit refills or
+  it stops them. Those lines are for the 5-hour session limit; the weekly limit warns at 8 % and stops at 3 % (or when
+  its pace would empty it within half an hour), and one model's weekly limit (Weekly · Fable) stops nobody — the
+  owner is only told. An Antigravity pool is judged the same way, and a low pool stops no helper while another has room. Only the side that ran out stops: the other one goes on working. When the limit refills or
   another Antigravity account comes in, it sets them going itself; *resume* in its room does it at once. Every warning is a window of the bridge's own in the middle of the screen, above everything
   (`bin/quota-alert.exe`, `bin/quota-alert` for Linux/X11; sources in `tools/quota-alert`) — not a system
   notification, which is easy to miss. Its text follows the system language: English, Ukrainian, Russian,
@@ -570,7 +572,9 @@ MIT.
   Один клік на кожній машині. Жодного термінала, жодних перезапусків і не треба вводити IP-адреси. Стан кожної машини показано поруч: `linked`, `waits for Allow on that machine` або `does not answer`. Кнопка **Unlink** завжди поруч для від'єднання.
 * **Квоти під наглядом.** Наглядач щохвилини, без моделі, міряє квоту Antigravity і ліміти плану кожного акаунта
   Claude. Antigravity: на 30 % попереджає, на 15 % зупиняє помічників, раніше — за виміряним темпом. Claude: на 25 % каже лідам зберегтися
-  (раніше, якщо за виміряним темпом зупинка настане за двадцять хвилин), на 12 % зупиняє їх. Зупиняється лише
+  (раніше, якщо за виміряним темпом зупинка настане за двадцять хвилин), на 12 % зупиняє їх. Це пороги п'ятигодинного ліміту сесії; тижневий ліміт попереджає на 8 % і зупиняє на 3 %
+  (або коли за темпом скінчиться за пів години), а тижневий ліміт однієї моделі (Weekly · Fable) не зупиняє нікого —
+  власнику лише кажуть. Пули Antigravity — так само, і низький пул не зупиняє помічників, поки в іншому є запас. Зупиняється лише
   той бік, у якого скінчилась квота, інший працює далі. Коли ліміт відновився або прийшов інший акаунт
   Antigravity, він сам запускає їх далі; *продовжити* в його кімнаті робить це одразу. Кожне
   попередження — власне вікно мосту посеред екрана поверх усього (`bin/quota-alert.exe`, для Linux/X11

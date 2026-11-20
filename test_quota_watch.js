@@ -175,6 +175,19 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       assert.strictEqual(watch.claudeLevel({ left: 40, rate: 1.5 }), 1, '40 - 30 = 10: under the stop within 20 minutes');
       assert.strictEqual(watch.claudeLevel({ left: 12, rate: 0 }), 2);
     });
+    await t('a weekly limit is not a session, and one model\'s limit stops nobody', () => {
+      const { limitKind } = require('./quota-watch');
+      assert.strictEqual(limitKind('5-hour limit'), 'session');
+      assert.strictEqual(limitKind('Weekly · all models'), 'weekly');
+      assert.strictEqual(limitKind('Weekly · Fable'), 'model');
+      assert.strictEqual(limitKind('You hit your weekly limit'), 'weekly');
+      assert.strictEqual(limitKind('Fable weekly limit reached'), 'model');
+      const wk = left => watch.claudeLevel({ label: 'Weekly · all models', left, rate: 0 });
+      assert.deepStrictEqual([wk(21), wk(8), wk(3)], [0, 1, 2], '21 % of a week is plenty (owner, 20.11)');
+      assert.strictEqual(watch.claudeLevel({ label: 'Weekly · all models', left: 15, rate: 0.6 }), 2, '15 - 0.6*30 < 0: empty within half an hour');
+      const fable = left => watch.claudeLevel({ label: 'Weekly · Fable', left, rate: 0 });
+      assert.deepStrictEqual([fable(48), fable(5), fable(0)], [0, 1, 1], 'told, never stopped');
+    });
     await t('20 % of Claude: the leads of that account who are at work are told to save', async () => {
       pool = Object.assign({}, pool, { remaining: 0.9 });
       said.length = 0; shown.length = 0;
@@ -229,6 +242,35 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       await watch.tick('supervisor');
       assert.strictEqual(said.length, 0);
     });
+    await t('weekly 21 % and Fable 48 % (the owner\'s screen, 20.11): nobody is told anything', async () => {
+      said.length = 0; shown.length = 0; cfg.quotaLevel = {};
+      const ws = [{ label: 'Weekly · all models', left: 21, rate: 0, resetsAt: '' }, { label: 'Weekly · Fable', left: 48, rate: 0, resetsAt: '' }];
+      claudeNow = [{ account: 'acc-1', stale: false, ageMin: 2, windows: ws, worst: ws[0] }];
+      await watch.tick('supervisor');
+      assert.strictEqual(said.length + shown.length, 0);
+    });
+    await t('Fable running out: the owner is told once, no lead is stopped', async () => {
+      const ws = [{ label: 'Weekly · Fable', left: 2, rate: 0, resetsAt: soon }, { label: '5-hour limit', left: 70, rate: 0, resetsAt: soon }];
+      claudeNow = [{ account: 'acc-1', stale: false, ageMin: 2, windows: ws, worst: ws[0] }];
+      await watch.tick('supervisor'); await watch.tick('supervisor');
+      assert.strictEqual(to('human/web').length, 1);
+      assert.match(to('human/web')[0].text, /Nobody was stopped/);
+      assert.strictEqual(to('c:/work/app').length, 0);
+      assert.strictEqual(cfg.paused.claude, undefined);
+    });
+    await t('an Antigravity pool running out while another has room stops no helper', async () => {
+      said.length = 0; shown.length = 0; cfg.quotaLevel = {}; cfg.geminiPace = null;
+      const low = { remaining: 0.05, reset: 'R1', labels: ['Claude Opus'], stale: false };
+      const roomy = { remaining: 0.8, reset: 'R1b', labels: ['Gemini Flash'], stale: false };
+      const g2 = { read: async () => ({ account: 'a@b', pools: [low, roomy] }), remember: () => ({}), alternatives: () => [], poolName: p => p.labels.join(', ') };
+      const w3 = createQuotaWatch({ bridgeDb, cardsLib, router, gemini: g2, claude: { read: () => [] },
+        say: m => { said.push(m); return said.length; }, alert: { t: alertLib.t, when: () => 'soon', show: (h, l) => { shown.push({ h, l }); return ''; } },
+        config: () => cfg, save: p => { cfg = Object.assign({}, cfg, p); return cfg; }, isHuman: s => /^human/.test(s) });
+      const r = await w3.tick('supervisor');
+      assert.ok(!r.gemini.stopped);
+      assert.strictEqual(to('gem-1').length, 0);
+      assert.match(to('human/web')[0].text, /Gemini Flash \(80 %\)/);
+    });
 
     // ── a session cut off ──
     const proj = path.join(home, 'work', 'MyApp');
@@ -280,7 +322,7 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       fs.utimesSync(slice, old - 600, old - 600);
       assert.ok(rescue.rescueProject(proj, { transcript: tr }).written);
     });
-    console.log(n + '/24 passed');
+    console.log(n + '/28 passed');
   } catch (e) {
     console.error(e);
     process.exitCode = 1;

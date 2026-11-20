@@ -25,6 +25,24 @@ const GEMINI_AHEAD_STOP_MIN = 8;    // …the quota itself (5 %) within this: st
 const CLAUDE_WARN_LEFT = 25;
 const CLAUDE_STOP_LEFT = 12;
 const CLAUDE_AHEAD_MIN = 20;   // at the pace measured, would the stop come within this? Then warn now.
+// Those lines are for a short limit (the 5-hour session). A weekly limit is not a session: 21 % of a
+// week on a Max plan is days of work, and warning every lead at 25 % of it stopped the work for
+// nothing (owner, 20.11: 21 % of the weekly limit is plenty; the weekly limit is neither the session
+// nor one model's limit like Fable — keep them apart). So a weekly limit warns and stops only near its bottom,
+// or when the measured pace would empty it soon; and a limit of one model (Weekly · Fable) never
+// stops anyone — the other models still work — the owner is only told.
+const WEEK_WARN_LEFT = 8, WEEK_STOP_LEFT = 3;
+const WEEK_AHEAD_WARN_MIN = 120, WEEK_AHEAD_STOP_MIN = 30;   // at the pace: empty within this
+const MODEL_TELL_LEFT = 5;
+const WEEK_MS = 24 * 3600e3;   // an Antigravity pool resetting further off than this is a weekly one
+
+// What a Claude limit is, by its label: 'session' (5-hour), 'weekly' (all models) or 'model'.
+function limitKind(label) {
+  const l = String(label || '').toLowerCase();
+  if (!/week|7.day|seven/.test(l)) return 'session';
+  if (/all models/.test(l)) return 'weekly';
+  return /fable|opus|sonnet|haiku|·/.test(l) ? 'model' : 'weekly';
+}
 const HELPER_ACTIVE_HOURS = 12;   // a helper silent longer than this is not at work: nothing to stop
 const LEAD_ACTIVE_HOURS = 3;
 
@@ -62,9 +80,28 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
     }
     return rate;
   }
+  // A weekly limit, Claude's or an Antigravity pool's: near its bottom, or emptied soon at the pace.
+  function weekLevel(left, rate) {
+    const r = rate || 0;
+    if (left <= WEEK_STOP_LEFT || (r && left - r * WEEK_AHEAD_STOP_MIN <= 0)) return 2;
+    return left <= WEEK_WARN_LEFT || (r && left - r * WEEK_AHEAD_WARN_MIN <= WEEK_STOP_LEFT) ? 1 : 0;
+  }
   function claudeLevel(w) {
+    const kind = limitKind(w.label);
+    if (kind === 'model') return w.left <= MODEL_TELL_LEFT ? 1 : 0;   // told, never stopped
+    if (kind === 'weekly') return weekLevel(w.left, w.rate);
     if (w.left <= CLAUDE_STOP_LEFT) return 2;
     return w.left <= CLAUDE_WARN_LEFT || w.left - (w.rate || 0) * CLAUDE_AHEAD_MIN <= CLAUDE_STOP_LEFT ? 1 : 0;
+  }
+  // The limit that matters now: the highest level, the least left among equals.
+  function claudeTop(a) {
+    const list = (a.windows && a.windows.length ? a.windows : [a.worst]).filter(Boolean);
+    let top = null, lvl = 0;
+    for (const w of list) {
+      const l = claudeLevel(w);
+      if (!top || l > lvl || (l === lvl && w.left < top.left)) { top = w; lvl = l; }
+    }
+    return top;
   }
 
   // One action per level per reset period per account.
@@ -125,11 +162,22 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
     let q;
     try { q = await gemini.read(); } catch (e) { return { error: e.message }; }
     save({ quotaKnown: gemini.remember(config().quotaKnown, q) });
-    const pool = q.pools.find(p => !p.stale);
-    if (!pool) return { account: q.account, left: null };
-    const left = pctLeft(pool.remaining);
-    const rate = geminiPace(q.account, pool.reset, left);
-    const lvl = level(left, rate);
+    const live = q.pools.filter(p => !p.stale);
+    if (!live.length) return { account: q.account, left: null };
+    // Each pool on its own: a pool is a group of models, and a weekly pool is not a session one.
+    // The pace is measured on the lowest pool. A pool running out while another has room stops
+    // nobody: the owner is told to move the helpers to the other models.
+    const rated = live.map((p, i) => {
+      const l = pctLeft(p.remaining);
+      const r = i === 0 ? geminiPace(q.account, p.reset, l) : 0;
+      const weekly = !!(p.reset && Date.parse(p.reset) - Date.now() > WEEK_MS);
+      return { p, left: l, rate: r, weekly, lvl: weekly ? weekLevel(l, r) : level(l, r) };
+    });
+    const top = rated.reduce((x, y) => (y.lvl > x.lvl || (y.lvl === x.lvl && y.left < x.left) ? y : x));
+    const spare = rated.find(x => x.lvl === 0 && x !== top);
+    const pool = top.p, left = top.left, rate = top.rate;
+    const lvl = top.lvl === 2 && spare ? 1 : top.lvl;
+    const spareNote = spare && top.lvl ? ` Models with room left: ${gemini.poolName(spare.p)} (${spare.left} %) — move the helpers there.` : '';
     const res = { account: q.account, left, level: lvl, pools: q.pools, rate: Math.round(rate * 100) / 100 };
     // Back: the quota refilled or another account is in — the helpers go on by themselves.
     const pg = (config().paused || {}).gemini;
@@ -143,11 +191,13 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
       .map(a => `${mask(a.account)} — ${a.note}`).join('; ');
     const lines = [alert.t('left', { who: 'Gemini (Antigravity)', account: acc, left, what }), alert.t('resets', { when: alert.when(pool.reset) }), ''];
     if (lvl === 1) {
-      lines.push(alert.t('next', { stop: STOP_LEFT }));
+      const stopAt = top.weekly ? WEEK_STOP_LEFT : STOP_LEFT;
+      lines.push(alert.t('next', { stop: stopAt }));
       say({ to: 'all', toSession: 'human/web', room, status: 'question',
-        text: `Supervisor: Antigravity quota is at ${left} % for account ${acc} (${what}; resets ${pool.reset || 'time unknown'}). ` +
-          `At ${STOP_LEFT} % (sooner at this pace${rate ? ', ' + (Math.round(rate * 10) / 10) + ' % a minute' : ''}) I stop the helpers ` +
-          'and ask you to switch the account.' + (others ? ` Other accounts: ${others}.` : '') });
+        text: `Supervisor: Antigravity quota is at ${left} % for account ${acc} (${what}${top.weekly ? ', weekly' : ''}; resets ${pool.reset || 'time unknown'}). ` +
+          (spare ? 'Nobody is stopped while other models have room.' + spareNote
+                 : `At ${stopAt} % (sooner at this pace${rate ? ', ' + (Math.round(rate * 10) / 10) + ' % a minute' : ''}) I stop the helpers ` +
+                   'and ask you to switch the account.') + (others ? ` Other accounts: ${others}.` : '') });
     } else {
       const helpers = workingHelpers();
       for (const h of helpers) {
@@ -191,7 +241,7 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
   function watchClaude(room) {
     const out = [];
     for (const a of claude.read()) {
-      const w = a.exhausted ? { label: a.exhausted.why || 'usage limit', left: 0, rate: 0, resetsAt: a.exhausted.resetsAt || '' } : a.worst;
+      const w = a.exhausted ? { label: a.exhausted.why || 'usage limit', left: 0, rate: 0, resetsAt: a.exhausted.resetsAt || '' } : claudeTop(a);
       const pc = (config().paused || {}).claude;
       // Back: the stopped account's limit refilled (its reset time passed, or a measurement after
       // the stop shows enough) — the leads are told to go on without waiting for the owner's word.
@@ -205,7 +255,19 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
       const res = { account: a.account, left: w.left, level: lvl, what: w.label, rate: w.rate || 0 };
       out.push(res);
       const period = w.resetsAt || (a.exhausted ? a.exhausted.at.slice(0, 13) : '');
-      if (!lvl || !due('claude', a.account, lvl, period)) continue;
+      const kind = limitKind(w.label);   // a limit message names its limit too: "hit your weekly limit"
+      // Each kind of limit is told once per level on its own: a Fable notice must not hide a session warning.
+      const dueKey = kind === 'session' ? 'claude' : 'claude-' + kind;
+      if (!lvl || !due(dueKey, a.account, lvl, period)) continue;
+      if (kind === 'model') {
+        // One model's weekly limit: the other models still work. Nobody is stopped; the owner is told.
+        say({ to: 'all', toSession: 'human/web', room, status: 'info',
+          text: `Supervisor: ${w.label} is at ${w.left} % for Claude account ${short(a.account)} (resets ${w.resetsAt || 'time unknown'}). ` +
+            'Only that model is running out; the other models and the sessions go on. Nobody was stopped.' });
+        mark(dueKey, a.account, lvl, period);
+        continue;
+      }
+      const stopAt = kind === 'weekly' ? WEEK_STOP_LEFT : CLAUDE_STOP_LEFT;
 
       const leads = workingLeads(a.account);
       const names = leads.map(l => l.name).slice(0, 12).join(', ');
@@ -218,14 +280,14 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
             text: `Supervisor, for the owner: the Claude quota of this account is at ${w.left} % (${w.label}; resets ${w.resetsAt || 'time unknown'}). ` +
               'Stop heavy operations now — builds, long research, wide refactors, anything that reads much. Commit what is verified, ' +
               'rewrite .agents/HANDOFF.md with the exact next step and bring the documentation up to date. Start no new piece of work. ' +
-              `At ${CLAUDE_STOP_LEFT} % you will be told to stop. Do not answer this.` });
+              `At ${stopAt} % you will be told to stop. Do not answer this.` });
         }
         if (leads.length) lines.push(alert.t('leadsWarned', { n: leads.length, names }));
-        lines.push(alert.t('next', { stop: STOP_LEFT }));
+        lines.push(alert.t('next', { stop: stopAt }));
         say({ to: 'all', toSession: 'human/web', room, status: 'question',
           text: `Supervisor: Claude quota is at ${w.left} % for account ${acc} (${w.label}; resets ${w.resetsAt || 'time unknown'}). ` +
             (leads.length ? `I told ${leads.length} lead(s) to drop heavy work and save: ${names}. ` : '') +
-            `At ${CLAUDE_STOP_LEFT} % I tell them to stop and ask you to switch the account.` });
+            `At ${stopAt} % I tell them to stop and ask you to switch the account.` });
       } else {
         for (const l of leads) {
           say({ to: 'Claude', toSession: l.line, room, status: 'blocked',
@@ -254,7 +316,7 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
       }
       const no = alert.show(alert.t(w.left ? 'head' : 'headOut'), lines);
       if (no) res.alertError = no;
-      mark('claude', a.account, lvl, period);
+      mark(dueKey, a.account, lvl, period);
     }
     return out;
   }
@@ -339,4 +401,4 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
   return { tick, resume, workingHelpers, workingLeads, level, claudeLevel };
 }
 
-module.exports = { createQuotaWatch, WARN_LEFT, STOP_LEFT, CLAUDE_WARN_LEFT, CLAUDE_STOP_LEFT, RESUME_WORD };
+module.exports = { createQuotaWatch, limitKind, WARN_LEFT, STOP_LEFT, CLAUDE_WARN_LEFT, CLAUDE_STOP_LEFT, RESUME_WORD };
