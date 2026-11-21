@@ -34,6 +34,10 @@ const CLAUDE_AHEAD_MIN = 20;   // at the pace measured, would the stop come with
 const WEEK_WARN_LEFT = 8, WEEK_STOP_LEFT = 3;
 const WEEK_AHEAD_WARN_MIN = 120, WEEK_AHEAD_STOP_MIN = 30;   // at the pace: empty within this
 const MODEL_TELL_LEFT = 5;
+// A lead is told how much Antigravity quota its helper has: once when the warning comes, and at
+// P0_PAUSE_LEFT (or when the helpers are stopped, if sooner) to pause at once the P0 it gave them.
+// When the quota is back it is told to go on with that P0 (owner, 22.11.2026).
+const P0_PAUSE_LEFT = 5;
 const WEEK_MS = 24 * 3600e3;   // an Antigravity pool resetting further off than this is a weekly one
 
 // What a Claude limit is, by its label: 'session' (5-hour), 'weekly' (all models) or 'model'.
@@ -184,6 +188,7 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
     if (pg && !lvl && Date.parse(pg.at) < Date.now() - 60000) {
       res.recovered = resume('gemini', room, null, q.account !== pg.account ? 'the Antigravity account was switched' : 'the Antigravity quota is back');
     }
+    res.leads = tellLeads(q, top, lvl, spare, room);
     if (!lvl || !due('gemini', q.account, lvl, pool.reset)) return res;
 
     const what = gemini.poolName(pool), acc = mask(q.account);
@@ -206,16 +211,6 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
             'post here three lines — the task, what is done, the exact next step — and then wait. Start nothing new and answer no ' +
             'task until the board tells you the account was switched.' });
       }
-      const byLead = new Map();
-      for (const h of helpers) byLead.set(h.lead, (byLead.get(h.lead) || []).concat(h.name));
-      for (const [lead, names] of byLead) {
-        // fyi: read with the lead's next look at the board, not a wake-up — the lead does not stop.
-        say({ to: 'Claude', toSession: lead, room, status: 'info', priority: 'fyi',
-          text: `Supervisor: Antigravity quota is at ${left} %. Your helper${names.length > 1 ? 's' : ''} ${names.map(n => '"' + n + '"').join(', ')} ` +
-            'pause after the step in hand. Their tasks wait for them: do NOT take them over or do them yourself (the owner keeps ' +
-            'the volume of work on Antigravity to spare Claude\'s quota). Go on with your own work. They are set going again when ' +
-            'the quota is back or the account is switched, and you are told then. Do not answer this.' });
-      }
       const paused = Object.assign({}, config().paused || {});
       paused.gemini = { at: new Date().toISOString(), account: q.account, left, helpers, resetsAt: pool.reset || '' };
       save({ paused });
@@ -235,6 +230,63 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
     mark('gemini', q.account, lvl, pool.reset);
     return res;
   }
+
+  // The leads of the helpers at work, told what is left of their helpers' quota. Level 1: the figure,
+  // once. Level 2 (P0_PAUSE_LEFT, or the helpers stopped): pause the P0 now, woken for it. Recorded in
+  // config().p0Paused; the quota back (every pool clear) tells them to go on with it.
+  function tellLeads(q, top, lvl, spare, room) {
+    const p0 = config().p0Paused;
+    if (!top.lvl) {
+      if (!p0 || Date.parse(p0.at) > Date.now() - 60000) return null;
+      // resume() has told the leads itself when it set the helpers going.
+      if (!(config().paused || {}).gemini) {
+        for (const l of p0.leads || []) {
+          say({ to: 'Claude', toSession: l.lead, room, status: 'question',
+            text: `Supervisor: the Antigravity quota is back (${top.left} %) — continue the P0 you paused: tell your ` +
+              `${plural(l.names)} in ${l.rooms.join(', ')} to go on with it now. Do not answer this.` });
+        }
+      }
+      save({ p0Paused: null });
+      return 'resumed';
+    }
+    const n = lvl === 2 || top.left <= P0_PAUSE_LEFT ? 2 : 1;
+    if (!due('gemini-lead', q.account, n, top.p.reset)) return null;
+    const byLead = new Map();
+    for (const h of workingHelpers()) {
+      const l = byLead.get(h.lead) || { lead: h.lead, names: [], rooms: [] };
+      l.names.push(h.name);
+      if (!l.rooms.includes(h.room)) l.rooms.push(h.room);
+      byLead.set(h.lead, l);
+    }
+    const what = gemini.poolName(top.p) + (top.weekly ? ', weekly' : '');
+    const when = top.p.reset || 'time unknown';
+    const pace = top.rate ? `, going down ${Math.round(top.rate * 10) / 10} % a minute` : '';
+    const elsewhere = spare ? `${gemini.poolName(spare.p)} still has ${spare.left} %: a helper may be moved there. ` : '';
+    for (const l of byLead.values()) {
+      const them = l.names.length > 1 ? 'them' : 'it';
+      if (n === 1) {
+        // fyi: read with the lead's next look at the board — nothing to do yet.
+        say({ to: 'Claude', toSession: l.lead, room, status: 'info', priority: 'fyi',
+          text: `Supervisor: your ${plural(l.names)} — Antigravity quota ${top.left} % left (${what}; resets ${when}${pace}). ` + elsewhere +
+            `At ${P0_PAUSE_LEFT} % pause at once any P0 you gave ${them}; I tell you then, and again when the quota is back. Do not answer this.` });
+      } else {
+        say({ to: 'Claude', toSession: l.lead, room, status: 'question',
+          text: `Supervisor: your ${plural(l.names)} — Antigravity quota ${top.left} % left (${what}; resets ${when}). PAUSE the P0 you gave ` +
+            `${them} now: tell ${them} in ${l.rooms.join(', ')} to finish the step in hand, save it and hold. ` +
+            (lvl === 2 ? 'I am stopping the helpers myself as well. ' : '') + elsewhere +
+            'Their tasks wait for them: do NOT take them over or do them yourself (the owner keeps the volume of work on Antigravity ' +
+            'to spare Claude\'s quota). Go on with your own work. When I see the quota back I tell you to continue the P0. Do not answer this.' });
+      }
+    }
+    if (n === 2 && byLead.size) {
+      const leads = [...byLead.values()];
+      for (const w of (config().p0Paused || {}).leads || []) if (!byLead.has(w.lead)) leads.push(w);
+      save({ p0Paused: { at: new Date().toISOString(), account: q.account, leads } });
+    }
+    mark('gemini-lead', q.account, n, top.p.reset);
+    return n;
+  }
+  const plural = names => `helper${names.length > 1 ? 's' : ''} ` + names.map(x => '"' + x + '"').join(', ');
 
   // ── Claude ───────────────────────────────────────────────────────────────────────────────
 
@@ -343,8 +395,18 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
           text: `Supervisor: ${because || 'the Antigravity account was switched'} — your helper${hs.length > 1 ? 's are' : ' is'} back: ` +
             hs.map(h => `"${h.name}" (room ${h.room})`).join(', ') + '. Each goes on with the task it stopped at. Read its last report in its ' +
             'room now and hand out the work at once: the next task to any that has finished, the rest of the plan to any that waits on ' +
-            'you. Anything of theirs you took over while they were paused goes back to them. Do not answer this message.' });
+            'you. Anything of theirs you took over while they were paused goes back to them.' +
+            (((config().p0Paused || {}).leads || []).some(l => l.lead === lead) ? ' Continue the P0 you paused: tell them in their rooms to go on with it now.' : '') +
+            ' Do not answer this message.' });
       }
+      // Leads that paused a P0 on the quota, whose helpers the supervisor did not stop itself.
+      for (const l of (config().p0Paused || {}).leads || []) {
+        if (byLead.has(l.lead)) continue;
+        say({ to: 'Claude', toSession: l.lead, room, status: 'question',
+          text: `Supervisor: ${because || 'the Antigravity account was switched'} — continue the P0 you paused: tell your ` +
+            `${plural(l.names)} in ${l.rooms.join(', ')} to go on with it now. Do not answer this.` });
+      }
+      save({ p0Paused: null });
       done.push(`${(paused.gemini.helpers || []).length} helper(s)`);
       delete paused.gemini;
     }

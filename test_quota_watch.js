@@ -121,8 +121,12 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       assert.strictEqual(shown.length, 1);
       assert.strictEqual(to('human/web').length, 1);
       assert.strictEqual(to('gem-1').length, 0);
+      assert.strictEqual(to('c:/work/app').length, 1, 'the lead is told its helper\'s quota');
+      assert.match(to('c:/work/app')[0].text, /"N:gem-1" — Antigravity quota 25 % left .*At 5 % pause at once any P0/);
+      assert.strictEqual(to('c:/work/app')[0].priority, 'fyi');
       await watch.tick('supervisor');
       assert.strictEqual(shown.length, 1, 'not warned twice for the same level');
+      assert.strictEqual(to('c:/work/app').length, 1, 'nor the lead');
     });
     await t('12 % of Gemini: working helpers are stopped, their lead is told, the owner is asked to switch', async () => {
       pool = Object.assign({}, pool, { remaining: 0.12 });
@@ -132,12 +136,15 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       assert.strictEqual(to('gem-1')[0].room, 'r1');
       assert.strictEqual(to('gem-2').length, 0, 'a helper silent for hours is not woken to be stopped');
       assert.ok(watch.workingHelpers().some(h => h.helper === 'gem-1'));
-      assert.strictEqual(to('c:/work/app').length, 1);
+      assert.strictEqual(to('c:/work/app').length, 2);
       assert.strictEqual(cfg.paused.gemini.helpers.length, 1);
       assert.strictEqual(shown.length, 2);
       assert.match(to('human/web').pop().text, /The leads go on working/);
-      assert.match(to('c:/work/app')[0].text, /do NOT take them over/, 'the lead neither stops nor takes over the helper\'s work');
-      assert.strictEqual(to('c:/work/app')[0].priority, 'fyi', 'and is not woken for it');
+      const stop = to('c:/work/app')[1];
+      assert.match(stop.text, /12 % left .*PAUSE the P0/, 'the lead is told to pause the P0 at once');
+      assert.match(stop.text, /do NOT take them over/, 'the lead neither stops nor takes over the helper\'s work');
+      assert.notStrictEqual(stop.priority, 'fyi', 'and is woken for it');
+      assert.strictEqual(cfg.p0Paused.leads[0].lead, 'c:/work/app');
     });
     await t('the owner\'s word in the supervisor room sets them going again', async () => {
       rows.push({ id: 7, message: 'thanks', from_session: 'human/web', room: 'supervisor' });
@@ -146,7 +153,10 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       const r = await watch.tick('supervisor', { wordsOnly: true });
       assert.strictEqual(r.resumed.by, 8);
       assert.match(to('gem-1').pop().text, /go on/);
-      assert.match(to('c:/work/app').pop().text, /your helper is back: "N:gem-1"/, 'the lead is told its helper is back');
+      const back = to('c:/work/app').pop().text;
+      assert.match(back, /your helper is back: "N:gem-1"/, 'the lead is told its helper is back');
+      assert.match(back, /Continue the P0 you paused/, 'and to go on with its P0');
+      assert.ok(!cfg.p0Paused);
       assert.strictEqual(cfg.paused.gemini, undefined);
       assert.ok(RESUME_WORD.test('Resume') && !RESUME_WORD.test('do not resume yet'));
     });
@@ -270,6 +280,19 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       assert.ok(!r.gemini.stopped);
       assert.strictEqual(to('gem-1').length, 0);
       assert.match(to('human/web')[0].text, /Gemini Flash \(80 %\)/);
+      const lead = to('c:/work/app');
+      assert.strictEqual(lead.length, 1, 'at 5 % the lead is told once, even with a pool to spare');
+      assert.match(lead[0].text, /5 % left .*PAUSE the P0.*Gemini Flash still has 80 %/);
+      assert.ok(!/stopping the helpers myself/.test(lead[0].text));
+      assert.ok(cfg.p0Paused && !(cfg.paused || {}).gemini);
+      cfg.p0Paused.at = new Date(Date.now() - 120000).toISOString();
+      low.remaining = 0.9;
+      const r2 = await w3.tick('supervisor');
+      assert.strictEqual(r2.gemini.leads, 'resumed');
+      assert.match(to('c:/work/app').pop().text, /quota is back \(\d+ %\) — continue the P0 you paused.*"N:gem-1" in r1/);
+      assert.ok(!cfg.p0Paused);
+      await w3.tick('supervisor');
+      assert.strictEqual(to('c:/work/app').length, 2, 'told to go on once');
     });
 
     // ── a session cut off ──
