@@ -19,10 +19,39 @@ const APPDATA = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
 const LOCALAPPDATA = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
 const EXE = path.join(LOCALAPPDATA, 'Programs', 'antigravity', 'resources', 'bin', 'language_server.exe');
 
+const DAEMON_DIR = path.join(HOME, '.gemini', 'antigravity', 'daemon');
+
+// Antigravity 2.34 (21.11.2026) no longer puts the token on the language server's command
+// line: it reads it from stdin, and the bridge could not start a helper. For local clients
+// it writes daemon/hub_<port>.json — { pid, httpsPort, httpPort, lsVersion, csrfToken } —
+// one per start, old ones left behind. The newest whose language server is still alive.
+function fromDaemonFile() {
+  let files = [];
+  try { files = fs.readdirSync(DAEMON_DIR).filter(f => /^hub_\d+\.json$/.test(f)); } catch (_) { return null; }
+  const list = files.map(f => {
+    const p = path.join(DAEMON_DIR, f);
+    try { return { p, t: fs.statSync(p).mtimeMs }; } catch (_) { return null; }
+  }).filter(Boolean).sort((a, b) => b.t - a.t);
+  for (const { p } of list) {
+    let j;
+    try { j = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { continue; }
+    if (!j || !j.csrfToken || !Number(j.httpPort)) continue;
+    try { process.kill(Number(j.pid), 0); } catch (e) { if (e.code !== 'EPERM') continue; }   // that start is gone
+    return { port: Number(j.httpPort), csrf: String(j.csrfToken) };
+  }
+  return null;
+}
+
 // Where the running Antigravity listens. Throws with the reason when it cannot
 // be reached — the caller decides whether that is worth a line in a log.
 function locate() {
   if (!fs.existsSync(EXE)) throw new Error('Antigravity is not installed (' + EXE + ')');
+  const d = fromDaemonFile();
+  if (d) {
+    return { exe: EXE, env: Object.assign({}, process.env, {
+      ANTIGRAVITY_LS_ADDRESS: `localhost:${d.port}`, ANTIGRAVITY_CSRF_TOKEN: d.csrf }) };
+  }
+  // Before 2.34: the token on the command line, the port in the log.
   const cmd = "powershell -NoProfile -Command \"Get-CimInstance Win32_Process -Filter 'name = ''language_server.exe''' | Select-Object -ExpandProperty CommandLine\"";
   const cmdline = execSync(cmd, { encoding: 'utf8', windowsHide: true });
   const csrf = cmdline.match(/--csrf_token\s+([0-9a-fA-F-]+)/);
