@@ -8,7 +8,7 @@ never overwritten.
 
 ---
 
-## Unreleased
+## v2.8.14 — 2026-11-21
 
 **Works with Antigravity 2.34.** Antigravity no longer shows its token on the command line, so the bridge could not
 start a helper, wake one, read the Antigravity quota or delete a conversation. It now reads the address and the token
