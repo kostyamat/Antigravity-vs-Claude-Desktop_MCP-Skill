@@ -10,6 +10,11 @@ never overwritten.
 
 ## Unreleased
 
+**Works with Antigravity 2.34.** Antigravity no longer shows its token on the command line, so the bridge could not
+start a helper, wake one, read the Antigravity quota or delete a conversation. It now reads the address and the token
+from the file Antigravity writes for local clients (`~/.gemini/antigravity/daemon/hub_<port>.json`); older versions
+are still found the old way.
+
 **A weekly limit is not a session.** The quota supervisor judges each Claude limit by its kind: the 5-hour session
 keeps 25 % / 12 %; the weekly limit warns at 8 % and stops at 3 % (or when its pace would empty it within half an hour);
 one model's weekly limit (Weekly · Fable) stops nobody and only tells the owner. Antigravity pools likewise: a pool
