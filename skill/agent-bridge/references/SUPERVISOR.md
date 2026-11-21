@@ -128,7 +128,7 @@ Claude account's. Antigravity: at 30 % left it warns the owner on his screen and
 measures) it tells the helpers to stop after the step in hand. Claude: at 25 % (or sooner, at the pace it measures) it tells the
 leads to save, at 12 % to stop. Those are the 5-hour session limit's lines: a weekly limit warns at 8 % and stops at 3 % (or
 when its pace empties it within half an hour); one model's weekly limit (Weekly · Fable) stops nobody, the owner is told; an
-Antigravity pool running low stops no helper while another pool has room — the owner is told to move them. Only the side that ran out stops; the other is told to carry on. When the limit
+Antigravity pool running low stops no helper while another pool has room — the owner is told to move them. Each lead of a helper at work is told its helper's quota when the warning comes, and at 5 % (or at the helpers' stop, if sooner) to pause the P0 it gave them; when the quota is back, to continue it. Only the side that ran out stops; the other is told to carry on. When the limit
 refills, or another Antigravity account comes in, the board sets them going by itself; when the owner writes
 **resume** in your room (in any language: "continue", "go on", his own word for it), it does so at once.
 

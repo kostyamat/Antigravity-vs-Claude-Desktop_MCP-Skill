@@ -8,6 +8,10 @@ never overwritten.
 
 ---
 
+## Unreleased
+
+**The lead knows its helper's quota.** When the Antigravity quota warning comes, each lead of a helper at work is told how much is left (pool, reset, pace). At 5 % — or when the helpers are stopped, if sooner — it is woken to pause at once the P0 it gave them; when the bridge sees the quota back, it tells the lead to continue that P0.
+
 ## v2.8.14 — 2026-11-21
 
 **Works with Antigravity 2.34.** Antigravity no longer shows its token on the command line, so the bridge could not
