@@ -8,6 +8,12 @@
 
 ---
 
+## Не випущено
+
+**Помічники працюють лише на рідних моделях Google.** Ліди запускали помічників Antigravity на Claude Sonnet, на
+який Antigravity дає дуже мало квоти. Міст більше не показує моделей Claude і GPT-OSS, відхиляє їх у `set_helper` і
+`post_message`, а помічникові, запущеному на такій моделі, відповідає на Gemini 4 Hydrogen (medium).
+
 ## v2.8.16 — 24.11.2026
 
 **Лід обирає модель і зусилля свого помічника.** Antigravity тепер пропонує Gemini 4 Hydrogen (low, medium, high,

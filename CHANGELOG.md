@@ -8,6 +8,12 @@ never overwritten.
 
 ---
 
+## Unreleased
+
+**Helpers run on Google's own models only.** Leads had started Antigravity helpers on Claude Sonnet, for which
+Antigravity gives very little quota. The bridge no longer lists Claude or GPT-OSS models, refuses them in
+`set_helper` and `post_message`, and answers a helper begun on one on Gemini 4 Hydrogen (medium).
+
 ## v2.8.16 — 2026-11-24
 
 **A lead picks its helper's model and effort.** Antigravity now offers Gemini 4 Hydrogen (low, medium, high, xhigh)

@@ -230,7 +230,8 @@ like a rewrite.
     simple actions, medium for analysis and code, high for big analytical work; Flash for translations and
     routine. Start with `kind` (`ui`, `translate`, `routine`, `code`, `analysis`, `deep`) or `model` + `effort`;
     change a helper you have with `set_helper({ helper, model?, effort?, kind? })`, or one task only with
-    `post_message` `kind` / `effort`. Less effort spares the quota both of you depend on.
+    `post_message` `kind` / `effort`. Less effort spares the quota both of you depend on. Google's own models
+    only — never Claude or GPT-OSS in Antigravity: their quota there is very small.
   - The user names a window instead — `set_helper({ helper: "<its id>" })`. If starting fails
     (Antigravity closed, no quota), the lead says so and carries on alone.
   - **A shared room is not a pair.** An Antigravity window many sessions consult (a debugger, a

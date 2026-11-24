@@ -194,6 +194,8 @@ to its helper (an Antigravity window): research, adb, logs, clicking through a U
 - **Pick the helper's model by the work, and its effort to spare the quota** (owner, 24.11). Antigravity's
   efforts are models of their own — Gemini 4 Hydrogen (low, medium, high, xhigh), the stronger; Gemini 3.8
   Flash (low, medium, high), the cheaper. `set_helper({ models: true })` lists what is there now, with quota.
+  **Only Google's own models**: never Claude or GPT-OSS in Antigravity — Google gives very little quota for them
+  (owner, 24.11). The bridge refuses them, and a helper begun on one is answered on Hydrogen medium.
   Least effort for simple actions (tapping a screen, a known command); medium for analysis and for code; high
   for big analytical work; Flash for translations (medium, or the least for a short one) and routine.
   `start` takes `model` / `effort` or `kind` (`ui`, `translate`, `routine`, `code`, `analysis`, `deep`;

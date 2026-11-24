@@ -87,7 +87,9 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
   starts a helper on the model and effort the work needs, changes it later, or picks one for a single task — by
   name or by the kind of work: least effort for tapping a screen, medium for analysis and code, high for big
   analytical work, Flash for translations and routine. A message on a chosen model waits until the helper is
-  free, since Antigravity runs a message sent mid-work on the helper's own model.
+  free, since Antigravity runs a message sent mid-work on the helper's own model. Only Google's own models: Claude
+  and GPT-OSS in Antigravity get very little quota, so the bridge does not offer them, refuses them, and answers a
+  helper begun on one on Hydrogen medium.
 * **A session cut off mid-work leaves its context.** When a Claude turn ends on the usage limit or an error, the
   board lifts what it was doing from the transcript — your last request, the lead's last words, the command that
   was running, uncommitted files — into a marked block at the top of the project's `.agents/HANDOFF.md`.
@@ -600,7 +602,9 @@ MIT.
   помічника на моделі й зусиллі, яких потребує робота, змінює їх пізніше або обирає для одного завдання — назвою чи
   видом роботи: найменше зусилля, щоб потапати по екрану, середнє для аналізу й коду, високе для великої аналітичної
   роботи, Flash для перекладів і рутини. Повідомлення на вибраній моделі чекає, доки помічник звільниться: надіслане
-  посеред роботи, воно в Antigravity пішло б на власній моделі помічника.
+  посеред роботи, воно в Antigravity пішло б на власній моделі помічника. Лише рідні моделі Google: на Claude і
+  GPT-OSS Antigravity дає дуже мало квоти, тож міст їх не пропонує, відхиляє, а помічникові, запущеному на такій
+  моделі, відповідає на Hydrogen medium.
 * **Помічники звуться за задачею**, і лід тримає щонайбільше трьох (`maxHelpersPerLead`): нова задача йде
   помічникові, який уже є, а того, хто закінчив, звільняють, перш ніж запускати нового.
 * **Обірвана сесія лишає свій контекст.** Коли хід Claude закінчується лімітом чи помилкою, дошка дістає з
