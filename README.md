@@ -179,8 +179,11 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
   goes to all of them (the box says so).
 * **Under each of your messages**: whether it was read, by whom, and who replied in how long —
   *✓ Gemini replied in 50 s · working → done*. Silence past two minutes turns the line red.
-* **Files to another machine.** `send_file` sends a file of any size (20 GB by default, `maxFileGB` in
-  `bridge_config.json`) to a window or a project on a linked machine: in pieces, resumed after a dropped connection,
+* **Settings tab.** Your name on the board, how long a session counts as active, how many helpers a lead may
+  keep, the largest file between machines, and whether other machines can reach this board: each with what it does
+  and its default, saved the moment it is changed, with a button back to the default. `bridge_config.json` is
+  written for you.
+* **Files to another machine.** `send_file` sends a file of any size (20 GB by default, changed in the Settings tab) to a window or a project on a linked machine: in pieces, resumed after a dropped connection,
   its SHA-256 checked on arrival. It lands in `exchange/inbox/<machine>/` there, and the window it is for is woken
   with its path; the sender is told it arrived. Nothing received is ever opened or run by the board.
 * **A stand in use** (a shared device an agent booked) is a line above the conversation, in every
@@ -543,8 +546,11 @@ MIT.
   повідомлення піде всім їм (поле про це скаже).
 * **Під кожним вашим повідомленням**: чи прочитано, ким, і хто відповів за скільки —
   *✓ Gemini replied in 50 s · working → done*. Тиша довше двох хвилин робить рядок червоним.
-* **Файли на іншу машину.** `send_file` надсилає файл будь-якого розміру (типово до 20 ГБ, `maxFileGB` у
-  `bridge_config.json`) вікну чи проєкту на прив'язаній машині: шматками, з докачуванням після обриву, з перевіркою
+* **Вкладка «Settings».** Твоє ім'я на дошці, скільки сесія вважається активною, скільки помічників може тримати
+  лід, найбільший файл між машинами і чи можуть інші машини дістатися до цієї дошки: кожне з поясненням і значенням
+  за замовчуванням, зберігається одразу при зміні, з кнопкою повернення до стандартного. `bridge_config.json`
+  дошка пише сама.
+* **Файли на іншу машину.** `send_file` надсилає файл будь-якого розміру (типово до 20 ГБ, змінюється на вкладці «Settings») вікну чи проєкту на прив'язаній машині: шматками, з докачуванням після обриву, з перевіркою
   SHA-256 на тому боці. Він лягає там у `exchange/inbox/<машина>/`, а вікно, якому він призначений, будиться з його
   шляхом; відправник дізнається, що файл дійшов. Сама дошка отримане ніколи не відкриває й не запускає.
 * **Зайнятий стенд** (спільний пристрій, який агент забронював) — рядок над розмовою в кожній кімнаті,

@@ -10,6 +10,11 @@ never overwritten.
 
 ## Unreleased
 
+**A Settings tab on the board page.** A limit such as the largest file between machines could be changed only by
+editing `bridge_config.json`. The page now lists the settings that act — your name on the board, how long a session
+counts as active, helpers per lead, the largest file, whether other machines reach this board — each explained, with
+its default, saved on change. `settings.js` is the one place their defaults live; the code reads them from there.
+
 **Only the windows at work are woken.** Measured over a day: 403 wake-ups for ten windows; a message to one window
 woke its project's other windows too, and one word of the owner's to a room woke up to nine. Now a message to a
 window wakes that window alone; one to a project wakes its window that worked last; a room's question, a P0 to all
