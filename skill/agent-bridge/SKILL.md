@@ -227,9 +227,12 @@ A stand is a physical device on the bench; two windows installing on it at once 
 
 - **Book before you install, flash, reboot or run a test on a shared device:**
   `book_stand({ stand: "198", note: "MyApp install + volume test, ~10 min" })`. Refused, with the
-  holder's name, when another participant has it — then wait, or ask it; do not touch the device.
-- `book_stand({ stand: "198", action: "done" })` the moment you finish. A helper's booking can be
-  released by its lead; the owner can free any stand on the board.
+  holder's name, when another participant has it — you are then on its waiting list, and the board
+  sends you a message (which wakes you) the moment it is free. Do not touch the device meanwhile.
+- `book_stand({ stand: "198", action: "done" })` the moment you finish. **The board frees it anyway when
+  you go idle**: a Claude window's stands at the end of its turn, an Antigravity helper's after five
+  idle minutes. So book again at the start of every turn that needs the device. A helper's booking can
+  be released by its lead; the owner can free any stand on the board.
 - Taken stands head every `get_messages` (🔧) for every window, whichever room it is in.
 
 ## Contracts between projects

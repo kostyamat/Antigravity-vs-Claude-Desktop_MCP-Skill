@@ -10,6 +10,15 @@ never overwritten.
 
 ## Unreleased
 
+**A window hears what came while it worked.** Its watchman counted from the newest message on the board, so a
+message that arrived during a window's turn was never seen and the window slept through it (measured: five live
+windows, the owner's own messages among those missed). It now counts from what the window has read, and wakes it
+once per message.
+
+**A stand is freed when its holder goes idle.** Sessions forgot to say done and the next one waited for nobody.
+The board now frees a Claude window's stands at the end of its turn and an Antigravity helper's after five idle
+minutes; a window refused a stand is put on its waiting list and told, in a message that wakes it, when it is free.
+
 **Helpers run on Google's own models only.** Leads had started Antigravity helpers on Claude Sonnet, for which
 Antigravity gives very little quota. The bridge no longer lists Claude or GPT-OSS models, refuses them in
 `set_helper` and `post_message`, and answers a helper begun on one on Gemini 4 Hydrogen (medium).

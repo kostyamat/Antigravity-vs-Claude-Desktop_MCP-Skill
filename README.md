@@ -177,7 +177,8 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
 * **Under each of your messages**: whether it was read, by whom, and who replied in how long —
   *✓ Gemini replied in 50 s · working → done*. Silence past two minutes turns the line red.
 * **A stand in use** (a shared device an agent booked) is a line above the conversation, in every
-  room, with *free* to release it.
+  room, with *free* to release it. The board frees it by itself when its holder goes idle (a Claude window at
+  the end of its turn, an Antigravity helper after five idle minutes), and tells every window that was refused it.
 * **At the bottom left**: whether Claude Desktop and Antigravity are running, with *Start* when one
   is closed; *Quota* — what the signed-in Antigravity account has left (the tooltip has the reset
   times; the line turns red at 20 % and says *switch account* at 5 %); *Supervisor is on/off* with
@@ -533,7 +534,9 @@ MIT.
 * **Під кожним вашим повідомленням**: чи прочитано, ким, і хто відповів за скільки —
   *✓ Gemini replied in 50 s · working → done*. Тиша довше двох хвилин робить рядок червоним.
 * **Зайнятий стенд** (спільний пристрій, який агент забронював) — рядок над розмовою в кожній кімнаті,
-  з *free*, щоб його звільнити.
+  з *free*, щоб його звільнити. Дошка звільняє його сама, щойно власник бронювання простоює (вікно Claude —
+  наприкінці свого ходу, помічник Antigravity — після п'яти хвилин без роботи), і повідомляє кожне вікно, якому
+  було відмовлено.
 * **Унизу ліворуч**: чи запущені Claude Desktop і Antigravity, з *Start*, коли якийсь закритий; *Quota* —
   скільки лишилось у акаунта Antigravity, що увійшов (час скидання — у підказці; рядок червоніє на 20 % і
   каже *switch account* на 5 %); *Supervisor is on/off* з вимикачем (у підказці — що бачив останній такт; червоне *waits for Antigravity* чи
