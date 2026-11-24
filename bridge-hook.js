@@ -39,6 +39,49 @@ const RUN_DIR = path.join(HOME, 'run');
 const WATCH_MAX_MS = 24 * 3600e3;
 const POLL_MS = 3000;
 
+// A window whose last turn ended longer ago than this is dormant: only what is addressed to it by
+// its own id wakes it (owner, 24.11.2026: he does not want 25 sessions eating the quota at once while he
+// works with the two or three he woke by hand). Measured that day: of 403 wake-ups in 24 hours, a
+// message to one window woke its project's other windows too (270 wake-ups for 178 messages), and
+// one word of the owner's to a room woke up to nine windows. activeWindowMinutes in bridge_config.json.
+function activeMs() {
+  if (Number(process.env.BRIDGE_ACTIVE_MS) > 0) return Number(process.env.BRIDGE_ACTIVE_MS);
+  try { return (Number(JSON.parse(fs.readFileSync(path.join(HOME, 'bridge_config.json'), 'utf8')).activeWindowMinutes) || 60) * 60e3; }
+  catch (_) { return 60 * 60e3; }
+}
+
+// Which of the messages that are urgent for this window are to wake it (see activeMs):
+//   addressed to this very window — always;
+//   addressed to its project — only the project's window whose turn ended last (one window answers);
+//   said to a room, a P0 to all, the owner to a room — only while the window is active.
+function toWake(list, box, win, idleMs) {
+  const own = new Set([...box.myWindow].map(x => String(x).trim().toLowerCase()));
+  const exact = m => m.toSession && own.has(String(m.toSession).trim().toLowerCase());
+  const active = idleMs < activeMs();
+  let newest = null;
+  const newestOfLine = () => {
+    if (newest !== null) return newest;
+    newest = win;
+    let best = -1;
+    for (const id of [...box.myLine].filter(x => /^local_/.test(x))) {
+      try {
+        const f = path.join(RUN_DIR, `rewake_${id.replace(/[^A-Za-z0-9_-]/g, '_')}.json`);
+        if (!alive(JSON.parse(fs.readFileSync(f, 'utf8')).pid)) continue;
+        const t = fs.statSync(f).mtimeMs;
+        if (t > best) { best = t; newest = id; }
+      } catch (_) {}
+    }
+    return newest;
+  };
+  return list.filter(m => {
+    if (exact(m)) return true;
+    // Another window of the project, named by its id: that one is woken, not this.
+    if (/^local_|^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(m.toSession || ''))) return false;
+    if (m.toSession && m.toSession !== 'all') return newestOfLine() === win;
+    return active;
+  });
+}
+
 // The payload the client writes to stdin. Bounded: a pipe that is never closed
 // must not leave a hook — and the session behind it — waiting for ever.
 function readStdin() {
@@ -118,16 +161,21 @@ function paused() {
 
 function waiting(win) {
   const { mailbox, oneLine } = board();
-  const list = mailbox.urgentFor(AGENT, win, win);
+  // Only what would wake it (toWake): mail for another window of the same project held a window at
+  // the end of some twenty turns in one evening, each only to say "not mine" (24.11.2026).
+  const list = toWake(mailbox.urgentFor(AGENT, win, win), mailbox.open(AGENT, win, win), win, 0);
   if (!list.length) return '';
   return `${list.length} unread on the board for this window:\n` + list.slice(-5).map(m => '  ' + oneLine(m)).join('\n') +
-    `\nRead them now: get_messages({reader: "${AGENT}", sessionId: "${win}"}) — and answer in the room each one is in.`;
+    `\nRead them now: get_messages({reader: "${AGENT}", sessionId: "${win}"}) — and answer in the room each one is in.` +
+    ' Not yours: end the turn without a word. Never retell board messages in this chat: the owner reads the board ' +
+        'himself, and only the lead reports to him.';
 }
 
 function prompt(input) {
   if (paused()) return;
   const win = windowOf(input);
   if (!win) return;
+  try { require('./listening').markBusy(win, RUN_DIR); } catch (_) {}
   const parts = [];
   const text = waiting(win);
   if (text) parts.push('agent-bridge: ' + text + ' Do what the owner just asked as well.');
@@ -265,6 +313,7 @@ function watch(input) {
   const lock = path.join(RUN_DIR, `rewake_${safe}.json`);
   const token = `${process.pid}-${Date.now()}`;
   try { fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, token })); } catch (_) {}
+  try { require('./listening').clearBusy(win, RUN_DIR); } catch (_) {}
   const mine = () => { try { return JSON.parse(fs.readFileSync(lock, 'utf8')).token === token; } catch (_) { return false; } };
 
   const session = Number(process.env.CLAUDE_PID || 0);
@@ -304,13 +353,16 @@ function watch(input) {
       return;
     }
     let list = [];
-    try { list = mailbox.urgentFor(AGENT, win, win, seen); } catch (_) {}
+    try { list = toWake(mailbox.urgentFor(AGENT, win, win, seen), mailbox.open(AGENT, win, win), win, Date.now() - started); } catch (_) {}
     if (list.length) {
       try { fs.unlinkSync(lock); } catch (_) {}
       try { fs.writeFileSync(wokenFile, JSON.stringify({ id: Math.max(...list.map(m => Number(m.id) || 0)) })); } catch (_) {}
+      try { require('./listening').markBusy(win, RUN_DIR); } catch (_) {}
       process.stderr.write(`agent-bridge: ${list.length} new on the board for this window:\n` +
         list.slice(-5).map(m => '  ' + oneLine(m)).join('\n') +
-        `\nRead and answer now: get_messages({reader: "${AGENT}", sessionId: "${win}"}).\n`);
+        `\nRead and answer now: get_messages({reader: "${AGENT}", sessionId: "${win}"}). Answer on the board, in its room.` +
+        ' Not yours: end the turn without a word. Never retell board messages in this chat: the owner reads the board ' +
+        'himself, and only the lead reports to him.' + '\n');
       process.exit(2);
     }
   };

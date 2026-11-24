@@ -21,16 +21,34 @@ function alive(pid) {
   try { process.kill(n, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
 
+// A window in the middle of a turn has no watchman — it is started when the turn ends — and reads
+// what came meanwhile at that end (bridge-hook.js stop). It was reported "not listening, ring it",
+// and its lead rang it by hand after nearly every post (24.11.2026, ROM Builder). So a turn leaves a
+// mark, run/busy_<window>.json, set when it begins (a prompt, or a wake-up) and taken away when the
+// watchman starts; a mark older than BUSY_MAX_MS is a client that died mid-turn and counts for nothing.
+const BUSY_MAX_MS = 3 * 3600e3;
+const safeOf = w => String(w).replace(/[^A-Za-z0-9_-]/g, '_');
+function markBusy(win, runDir) {
+  try { fs.mkdirSync(runDir || RUN_DIR, { recursive: true }); fs.writeFileSync(path.join(runDir || RUN_DIR, `busy_${safeOf(win)}.json`), JSON.stringify({ at: Date.now() })); } catch (_) {}
+}
+function clearBusy(win, runDir) {
+  try { fs.unlinkSync(path.join(runDir || RUN_DIR, `busy_${safeOf(win)}.json`)); } catch (_) {}
+}
+function inTurn(win, runDir) {
+  try { return Date.now() - Number(JSON.parse(fs.readFileSync(path.join(runDir || RUN_DIR, `busy_${safeOf(win)}.json`), 'utf8')).at) < BUSY_MAX_MS; }
+  catch (_) { return false; }
+}
+
 // true / false for a Claude window id (local_…); null for anything the board cannot tell about.
 function listening(win, runDir) {
   const w = String(win || '').trim();
   if (!/^local_/.test(w)) return null;
   const dir = runDir || RUN_DIR;
-  const safe = w.replace(/[^A-Za-z0-9_-]/g, '_');
+  const safe = safeOf(w);
   for (const name of [`rewake_${safe}.json`, `monitor_${safe}.json`]) {
     try { if (alive(JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')).pid)) return true; } catch (_) {}
   }
-  return false;
+  return inTurn(w, dir);
 }
 
-module.exports = { listening, alive };
+module.exports = { listening, alive, markBusy, clearBusy, inTurn };
