@@ -19,15 +19,27 @@ const EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
 // Claude Sonnet in Antigravity: Google's own models are to be used).
 const isGoogle = m => /^gemini\b/i.test(m.label) || /^gemini-/i.test(m.id);
 
-// Kind of work → family and effort. Family: the one that is enough for it.
+// Kind of work → family and effort: the ladder, cheapest rung first. The owner, 24.11.2026: Flash
+// often gets code wrong, so code goes to Hydrogen (low, medium for hard code); Hydrogen at its
+// highest is as strong as Fable and eats the quota fast, so it is for very deep research only; Argon
+// is not a helper model at all but a consultant (the argon-review skill). Neither everything on
+// Flash nor everything on the strongest.
 const KINDS = {
   ui:        { family: 'flash',    effort: 'minimal', what: 'simple actions: tapping a screen, running a known command, copying files' },
   translate: { family: 'flash',    effort: 'medium',  what: 'translation (a short one: effort "minimal")' },
-  routine:   { family: 'flash',    effort: 'medium',  what: 'routine edits, logs, searches by a known recipe' },
-  code:      { family: 'hydrogen', effort: 'medium',  what: 'writing and fixing code' },
+  routine:   { family: 'flash',    effort: 'medium',  what: 'logs, searches, renames by a known recipe — no code that ships' },
+  code:      { family: 'hydrogen', effort: 'low',     what: 'code by a clear spec: a known change, a pattern already in the project' },
+  complex:   { family: 'hydrogen', effort: 'medium',  what: 'hard code: a new mechanism, threads, native or smali patches, a bug Flash got wrong' },
   analysis:  { family: 'hydrogen', effort: 'medium',  what: 'analysis: reading code or firmware, finding a cause' },
-  deep:      { family: 'hydrogen', effort: 'high',    what: 'big analytical work: a subsystem, a protocol, a long investigation' }
+  deep:      { family: 'hydrogen', effort: 'high',    what: 'big analytical work: a subsystem, a protocol, a long investigation' },
+  research:  { family: 'hydrogen', effort: 'xhigh',   what: 'very deep research, as strong as Fable and as costly: only when "deep" fell short' }
 };
+
+// How a lead climbs it; said with the list every time a lead asks for the models.
+const LADDER = 'Start on the lowest kind that fits; go one rung up only after a wrong or shallow result, and back ' +
+  'down once the hard part is done. Flash never writes code that ships. "research" (Hydrogen xhigh) burns the ' +
+  'quota fastest: say in the task why "deep" is not enough. Argon is no helper model: consult it through the ' +
+  'argon-review skill for a second opinion, a review before a release, or the hardest reasoning — never for doing the work.';
 
 // "Gemini 4 Hydrogen (Medium)" → { family: 'gemini 4 hydrogen', effort: 'medium' }; no effort in
 // the label → effort ''.
@@ -95,7 +107,7 @@ function families(list) {
 
 function describe(list) {
   return 'Models in Antigravity now: ' + families(list) + '. Kinds of work: ' +
-    Object.entries(KINDS).map(([k, v]) => `${k} = ${v.family} ${v.effort} (${v.what})`).join('; ') + '.';
+    Object.entries(KINDS).map(([k, v]) => `${k} = ${v.family} ${v.effort} (${v.what})`).join('; ') + '. ' + LADDER;
 }
 
 let cache = null;
@@ -140,4 +152,7 @@ async function allLabels() {
   return out;
 }
 
-module.exports = { EFFORTS, KINDS, isGoogle, parseLabel, fromConfigs, resolve, families, describe, catalogue, check };
+// "ui = flash minimal, …": the kinds in one line, for the tool schema.
+function kindsLine() { return Object.entries(KINDS).map(([k, v]) => `${k} = ${v.family} ${v.effort}`).join(', '); }
+
+module.exports = { EFFORTS, KINDS, LADDER, kindsLine, isGoogle, parseLabel, fromConfigs, resolve, families, describe, catalogue, check };

@@ -522,7 +522,7 @@ const TOOLS = [
         priority: { type: 'string', enum: PRIORITIES, description: 'P0 = immediate attention/stop; normal; fyi = for information only.' },
         status: { type: 'string', enum: STATUSES, description: 'info | question | answer | working | done | blocked | ack' },
         progress: { type: 'string', description: 'Current progress description, e.g. "step 3 of 5" or "awaiting build".' },
-        kind: { type: 'string', enum: Object.keys(require('./helper-models').KINDS), description: 'To an Antigravity helper: the kind of work this message asks for; the helper answers it on the model and effort that suit it — ui = Flash, least effort (tapping a screen, a known command); translate / routine = Flash medium; code / analysis = Hydrogen medium; deep = Hydrogen high (big analytical work). Spares the quota. For this message only.' },
+        kind: { type: 'string', enum: Object.keys(require('./helper-models').KINDS), description: 'To an Antigravity helper: the kind of work this message asks for, answered on the model that suits it — ' + require('./helper-models').kindsLine() + '. For this message only. The ladder: skill agent-workflow.' },
         effort: { type: 'string', enum: require('./helper-models').EFFORTS, description: 'To an Antigravity helper: the effort for this message only (minimal = the least the model has). Alone it keeps the helper\'s model.' },
         model: { type: 'string', description: 'To an Antigravity helper: the model for this message only — "hydrogen", "flash" or an exact id (set_helper({models: true}) lists them).' }
       },
@@ -837,7 +837,7 @@ const TOOLS = [
         task: { type: 'string', description: 'With start, required: two to five words naming what this helper is for. The conversation and the room are named after it.' },
         model: { type: 'string', description: 'The helper\'s model: "hydrogen" (Gemini 4 Hydrogen, the stronger), "flash" (Gemini 3.8 Flash, cheaper) or an exact id. With start: the one it begins on (default Hydrogen, medium effort). With helper, by its lead: the one it answers every message on from now on.' },
         effort: { type: 'string', enum: require('./helper-models').EFFORTS, description: 'With model or alone: the effort — minimal (the least the model has) for simple actions, medium for analysis and code, high / xhigh for big analytical work. Less effort spares the quota.' },
-        kind: { type: 'string', enum: Object.keys(require('./helper-models').KINDS), description: 'Instead of model and effort: the kind of work — ui, translate, routine (Flash), code, analysis (Hydrogen medium), deep (Hydrogen high).' },
+        kind: { type: 'string', enum: Object.keys(require('./helper-models').KINDS), description: 'Instead of model and effort: the kind of work — ' + require('./helper-models').kindsLine() + '. The ladder: skill agent-workflow.' },
         models: { type: 'boolean', description: 'true = list the models a helper can run on now, their efforts and quota, and the model each of your helpers is on.' },
         another: { type: 'boolean', description: 'With start: start one more helper although one is on record.' },
         lead: { type: 'string', description: 'The lead\'s window id or project name. Given by the helper.' },

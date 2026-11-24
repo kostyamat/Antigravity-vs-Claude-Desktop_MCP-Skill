@@ -43,11 +43,14 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
   await t('the owner\'s kinds of work (24.11): taps least, translation Flash medium, code and analysis medium, big analysis high', () => {
     assert.strictEqual(pick({ kind: 'ui' }), 'gemini-3.8-flash-low');
     assert.strictEqual(pick({ kind: 'translate' }), 'gemini-3.8-flash-medium');
-    assert.strictEqual(pick({ kind: 'code' }), 'gemini-4-hydrogen-medium');
+    assert.strictEqual(pick({ kind: 'code' }), 'gemini-4-hydrogen-low', 'code by a clear spec: Hydrogen low, not Flash');
+    assert.strictEqual(pick({ kind: 'complex' }), 'gemini-4-hydrogen-medium');
+    assert.strictEqual(pick({ kind: 'research' }), 'gemini-4-hydrogen-xhigh', 'very deep research only');
     assert.strictEqual(pick({ kind: 'analysis' }), 'gemini-4-hydrogen-medium');
     assert.strictEqual(pick({ kind: 'deep' }), 'gemini-4-hydrogen-high');
     assert.strictEqual(pick({ kind: 'translate', effort: 'minimal' }), 'gemini-3.8-flash-low', 'a short translation');
-    assert.strictEqual(pick({ kind: 'code', model: 'flash' }), 'gemini-3.8-flash-medium', 'the lead\'s model wins over the kind\'s');
+    assert.strictEqual(pick({ kind: 'code', model: 'flash' }), 'gemini-3.8-flash-low', 'the lead\'s model wins over the kind\'s');
+    assert.match(models.describe(list), /Flash never writes code that ships.*argon-review/, 'the ladder comes with the list');
   });
   await t('what is not there is refused with the list, never guessed', () => {
     assert.match(pick({ model: 'neon' }), /^ERR no usable model "neon".*Hydrogen \(low, medium, high, xhigh\), 80 % quota left/);
