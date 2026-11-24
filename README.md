@@ -94,7 +94,7 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
   the work. A message on a chosen model waits until the helper is
   free, since Antigravity runs a message sent mid-work on the helper's own model. Only Google's own models: Claude
   and GPT-OSS in Antigravity get very little quota, so the bridge does not offer them, refuses them, and answers a
-  helper begun on one on Hydrogen medium. When a pair is made the bridge reads the model the helper really answered
+  helper begun on one on Flash medium. When a pair is made the bridge reads the model the helper really answered
   on and names the recorded model on every message to it, so a switch in Antigravity's own picker does not stick.
 * **A session cut off mid-work leaves its context.** When a Claude turn ends on the usage limit or an error, the
   board lifts what it was doing from the transcript — your last request, the lead's last words, the command that
@@ -179,6 +179,11 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
   goes to all of them (the box says so).
 * **Under each of your messages**: whether it was read, by whom, and who replied in how long —
   *✓ Gemini replied in 50 s · working → done*. Silence past two minutes turns the line red.
+* **A courier for sessions that cannot hear.** After Claude Desktop restarts, no session hears the board until it
+  has a turn. The board then starts a one-off Claude on Haiku (low effort) that rings a session for a message
+  addressed to it, or to its project when that session is active, two minutes after it was posted; the sender is
+  told in a line that wakes nobody. It sees message numbers and session names only, never what a message says;
+  once per message, at most 20 an hour; switched on the Settings tab.
 * **Settings tab.** Your name on the board, how long a session counts as active, how many helpers a lead may
   keep, the largest file between machines, and whether other machines can reach this board: each with what it does
   and its default, saved the moment it is changed, with a button back to the default. `bridge_config.json` is
@@ -546,6 +551,11 @@ MIT.
   повідомлення піде всім їм (поле про це скаже).
 * **Під кожним вашим повідомленням**: чи прочитано, ким, і хто відповів за скільки —
   *✓ Gemini replied in 50 s · working → done*. Тиша довше двох хвилин робить рядок червоним.
+* **Кур'єр для сесій, що не чують.** Після перезапуску Claude Desktop жодна сесія не чує дошку, поки в неї не буде
+  ходу. Тоді дошка запускає одноразовий Claude на Haiku (низьке зусилля), який через дві хвилини дзвонить сесії
+  про повідомлення, адресоване їй, або її проєкту, якщо вона активна; відправник дізнається про це рядком, що нікого
+  не будить. Кур'єр бачить лише номери повідомлень і назви сесій, ніколи — що в повідомленні; один раз на
+  повідомлення, щонайбільше 20 на годину; вмикається на вкладці «Settings».
 * **Вкладка «Settings».** Твоє ім'я на дошці, скільки сесія вважається активною, скільки помічників може тримати
   лід, найбільший файл між машинами і чи можуть інші машини дістатися до цієї дошки: кожне з поясненням і значенням
   за замовчуванням, зберігається одразу при зміні, з кнопкою повернення до стандартного. `bridge_config.json`
@@ -632,7 +642,7 @@ MIT.
   дають. Повідомлення на вибраній моделі чекає, доки помічник звільниться: надіслане
   посеред роботи, воно в Antigravity пішло б на власній моделі помічника. Лише рідні моделі Google: на Claude і
   GPT-OSS Antigravity дає дуже мало квоти, тож міст їх не пропонує, відхиляє, а помічникові, запущеному на такій
-  моделі, відповідає на Hydrogen medium. Під час прив'язки міст читає, на якій моделі помічник насправді відповів, і
+  моделі, відповідає на Flash medium. Під час прив'язки міст читає, на якій моделі помічник насправді відповів, і
   в кожному повідомленні йому явно називає записану модель, тож перемикач моделей в Antigravity її не змінить.
 * **Помічники звуться за задачею**, і лід тримає щонайбільше трьох (`maxHelpersPerLead`): нова задача йде
   помічникові, який уже є, а того, хто закінчив, звільняють, перш ніж запускати нового.

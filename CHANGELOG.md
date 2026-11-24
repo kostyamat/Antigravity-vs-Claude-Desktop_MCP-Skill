@@ -10,6 +10,14 @@ never overwritten.
 
 ## Unreleased
 
+**A courier for sessions that cannot hear, and Gemini spared.** After a Claude Desktop restart every watchman is
+gone and a lead rang its sessions by hand. The board now starts a one-off `claude -p` on Haiku at low effort
+(courier.js) that rings a session for mail addressed to it — by its id even when dormant, by its project only
+when active — two minutes after it was posted, once per message, at most 20 an hour; it is told ids and names
+only, and the bridge's hooks stand aside for it (AGENT_BRIDGE_COURIER). Tested live: rung in 9 seconds. The
+supervisor now runs on Flash at the effort set on the Settings tab (low by default), named on every message to
+it; new helpers start on Flash medium instead of Hydrogen medium, whose pools ran dry on four accounts of six.
+
 **A Settings tab on the board page.** A limit such as the largest file between machines could be changed only by
 editing `bridge_config.json`. The page now lists the settings that act — your name on the board, how long a session
 counts as active, helpers per lead, the largest file, whether other machines reach this board — each explained, with

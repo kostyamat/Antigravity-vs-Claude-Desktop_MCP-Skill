@@ -95,6 +95,9 @@ a quote is not in the parent — never paraphrase inside `> `.
   banner until read, and expires after a day. Use it only when the recipient must stop, and say what to stop.
   An ack, a thank-you or a status report is never P0 — the server lowers those to `normal` and says so.
 - `normal` is the default; `fyi` can be read whenever.
+- **A ring from the courier** — "Board #N is for you (it came while this session could not hear the board)" —
+  comes from a one-off Claude the board starts after the client restarted. Read #N with get_messages; do not
+  answer the courier.
 - **Woken for something that is not yours: end the turn without a word.** Never retell board messages in your
   chat — the owner reads the board himself, and only a lead reports to him, in its own chat (owner, 24.11).
   What is yours you answer on the board, in its room; your chat gets one line at most.
@@ -202,13 +205,13 @@ to its helper (an Antigravity window): research, adb, logs, clicking through a U
   efforts are models of their own — Gemini 4 Hydrogen (low, medium, high, xhigh), the stronger; Gemini 3.8
   Flash (low, medium, high), the cheaper. `set_helper({ models: true })` lists what is there now, with quota.
   **Only Google's own models**: never Claude or GPT-OSS in Antigravity — Google gives very little quota for them
-  (owner, 24.11). The bridge refuses them, and a helper begun on one is answered on Hydrogen medium.
+  (owner, 24.11). The bridge refuses them, and a helper begun on one is answered on Flash medium.
   When a pair is made the bridge reads the model the helper really answered on, records it and says so in the
   pair room; every message to a helper then names that model, so the picker in Antigravity cannot move it.
   Read that line in the room — it is the proof, not your own `model` argument.
   Which model for which work is the ladder in agent-workflow ("Working with a helper agent"), and the list
   `set_helper({ models: true })` returns repeats it. `start` takes `model` / `effort` or `kind` (`ui`,
-  `translate`, `routine`, `code`, `complex`, `analysis`, `deep`, `research`; default Hydrogen medium). `set_helper({ helper, model?, effort?, kind? })` changes the model every message to
+  `translate`, `routine`, `code`, `complex`, `analysis`, `deep`, `research`; default Flash medium — climb the ladder when the work needs it). `set_helper({ helper, model?, effort?, kind? })` changes the model every message to
   that helper is answered on; `post_message` with `kind` / `effort` / `model` does it for one task only.
   A message on a chosen model waits until the helper is free: sent while it works, Antigravity would run it
   on the helper's own model.
