@@ -152,6 +152,20 @@ function sendAs(conversationId, text, modelName, opts) {
   return next;
 }
 
+// The model the conversation's latest step ran on (its internal name, MODEL_PLACEHOLDER_Mxxx), or ''.
+// What a conversation was asked to run on and what it runs on can differ: the owner or a lead may
+// switch the model in the application's own picker, and a window paired later keeps whatever it had.
+async function lastModel(conversationId, where) {
+  const at = where || locate();
+  const t = await rpc(at, 'GetCascadeTrajectory', { cascadeId: conversationId });
+  const steps = ((t.trajectory || {}).steps) || [];
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const g = (steps[i].metadata || {}).generatorModel;
+    if (g) return g;
+  }
+  return '';
+}
+
 // Start a conversation and return its id.
 function create({ model, title, prompt }) {
   return new Promise((resolve, reject) => {
@@ -204,4 +218,4 @@ function remove(conversationId) {
   });
 }
 
-module.exports = { locate, send, sendAs, runState, create, remove };
+module.exports = { locate, send, sendAs, runState, create, remove, lastModel };

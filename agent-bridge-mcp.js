@@ -1032,7 +1032,7 @@ function handleRequest(req) {
   rememberAgent(normAgent(args.reader || args.sender), args.sessionId, args.canonicalId);
 
   try {
-    if (toolName === 'set_helper') return pairTools.doSetHelper(id, args);
+    if (toolName === 'set_helper') return pairTools.doSetHelper(id, args).catch(e => fail(id, 'set_helper: ' + e.message));
     if (toolName === 'book_stand') return pairTools.doBookStand(id, args);
     if (toolName === 'reserve_files') return doReserveFiles(id, args);
     if (toolName === 'bridge_setup') return doSetup(id, args);

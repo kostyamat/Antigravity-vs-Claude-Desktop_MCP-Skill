@@ -80,12 +80,15 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
     }
     // The new conversation appears among the cards a moment after it is made.
     for (let i = 0; i < 20 && !router.windowOf(helper); i++) await new Promise(r => setTimeout(r, 500));
-    const res = doSetHelper(id, Object.assign({}, a, { start: false, helper, lead: '', task, model: '', effort: '', kind: '' }));
-    if (chosen) {
-      const pair = router.leadOf(router.windowOf(helper) || helper);
-      bridgeDb.setHelperModel(pair ? pair.helper : helper, chosen.id, chosen.id);
+    // Its first answer shows the model it really runs on; the pair is recorded with that.
+    let seen = null;
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try { seen = await helperModels.check(helper); } catch (_) { seen = null; }
+      if (seen && seen.own) break;
     }
-    return res;
+    if (chosen && (!seen || !seen.own)) seen = { id: chosen.id, own: chosen.id, note: `It was started on ${chosen.label}.` };
+    return doSetHelper(id, Object.assign({}, a, { start: false, helper, lead: '', task, model: '', effort: '', kind: '', checked: seen }));
   }
 
   function maxHelpers() {
@@ -147,7 +150,7 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
     }).catch(e => fail(id, 'set_helper: ' + e.message));
   }
 
-  function doSetHelper(id, a) {
+  async function doSetHelper(id, a) {
     const me = router.windowOf(a.canonicalId) || router.windowOf(a.sessionId);
     if (!me) return fail(id, 'set_helper: the board does not know which window you are — pass sessionId.');
     if (a.models === true) return listModels(id, me);
@@ -219,6 +222,18 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
         cardsLib.currentAccount() || '');
     }
     rules.pair(helper, lead, room.id);
+    // A helper's model is recorded with the pair and named on every message to it (wake-antigravity).
+    // A window paired as it is gets checked here: it may have been left on Claude in the picker.
+    let modelNote = '';
+    if (router.agentOf(helper) === 'Gemini') {
+      const pair = router.leadOf(helper) || { helper };
+      const seen = a.checked || await helperModels.check(pair.helper).catch(() => null);
+      if (seen && seen.id) {
+        bridgeDb.setHelperModel(pair.helper, seen.id, seen.own || seen.id);
+        modelNote = ' ' + seen.note + ' The model is named on every message to it, so the picker in Antigravity does not change it; ' +
+          'the lead changes it with set_helper({helper, model?, effort?, kind?}).';
+      }
+    }
 
     const leadAddr = router.addressOf(lead) || lead;
     const toOther = asHelper ? lead : helper;
@@ -227,10 +242,10 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
       room: room.id, to: router.agentOf(toOther), toSession: toOther, status: 'info', topic: 'helper',
       message: asHelper
         ? `Helper on record: "${router.nameOf(helper)}" [${helper}] now works for you, "${router.nameOf(lead)}". ` +
-          `Tasks to it and its reports stay in this room, "${room.name}" [${room.id}].`
+          `Tasks to it and its reports stay in this room, "${room.name}" [${room.id}].` + modelNote
         : `You are now the helper of "${router.nameOf(lead)}" [${leadAddr}]. Sign every call with your own id, ${helper}. ` +
           `Report here — room "${room.name}" [${room.id}]; a post that names nobody goes to your lead. Take tasks from it ` +
-          'and from the owner only. Before you install or test on a shared device: book_stand.'
+          'and from the owner only. Before you install or test on a shared device: book_stand.' + modelNote
     });
   }
 

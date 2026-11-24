@@ -109,4 +109,35 @@ async function catalogue() {
   return list;
 }
 
-module.exports = { EFFORTS, KINDS, isGoogle, parseLabel, fromConfigs, resolve, families, describe, catalogue };
+// What a helper conversation really runs on, and what the board is to answer it on from now.
+// Read from its latest step. A model of Google's own that is offered → kept as it is; anything else
+// (Claude, GPT-OSS, a model no longer offered, or none yet) → Hydrogen medium, and `note` says so.
+// → { seen: label or '', id: what to record as standing, own: what it was on, note }.
+async function check(conversationId, where) {
+  const list = await catalogue();
+  let name = '';
+  try { name = await require('./antigravity-api').lastModel(conversationId, where); } catch (_) {}
+  const all = (await allLabels().catch(() => ({}))) || {};
+  const hit = list.find(m => m.name === name);
+  if (hit) return { seen: hit.label, id: hit.id, own: hit.id, note: `It runs on ${hit.label}.` };
+  const fallback = resolve(list, { model: 'hydrogen', effort: 'medium' });
+  if (fallback.error) return { seen: all[name] || name, id: '', own: '', note: '' };
+  const was = all[name] || name;
+  return { seen: was, id: fallback.model.id, own: was ? String(all[name] ? all[name] : name) : '',
+    note: was
+      ? `It was running on ${was}, which is not a Google model offered to helpers: the board answers it on ${fallback.model.label} from now on.`
+      : `It has not answered yet: the board answers it on ${fallback.model.label}.` };
+}
+
+// Every model the application lists, Google's or not: internal name → label (for the note above).
+async function allLabels() {
+  const j = await require('./antigravity-quota').call('GetUserStatus',
+    { metadata: { ideName: 'antigravity', extensionName: 'antigravity', locale: 'en' } });
+  const out = {};
+  for (const c of (((j.userStatus || {}).cascadeModelConfigData) || {}).clientModelConfigs || []) {
+    if (c && c.modelOrAlias && c.modelOrAlias.model) out[c.modelOrAlias.model] = c.label;
+  }
+  return out;
+}
+
+module.exports = { EFFORTS, KINDS, isGoogle, parseLabel, fromConfigs, resolve, families, describe, catalogue, check };

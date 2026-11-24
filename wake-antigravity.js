@@ -11,17 +11,19 @@ let waitMs;
 function setWaitLimit(ms) { waitMs = ms; }
 
 // What a message to this conversation is to be answered on: the sender's pick for this one message
-// (rec.modelWant: { model?, effort?, kind? }), else the lead's standing choice for its helper when it
-// differs from the model the conversation was started on. null = its own model.
+// (rec.modelWant: { model?, effort?, kind? }), else, for a helper with a recorded model, that model
+// named outright on every message. A helper is never left on "whatever it is on now": the picker in
+// the application, or a window paired as it was, put helpers on Claude Sonnet, for which Antigravity
+// gives very little quota (owner, 24.11.2026). A recorded model not of Google's own → Hydrogen medium.
+// null = a conversation that is nobody's helper, or one whose model was never recorded.
 function modelFor(convId, rec) {
   const w = rec.modelWant;
   if (w && (w.model || w.effort || w.kind)) return w;
   try {
     const h = require('./bridge-db').readHelpers().find(x => x.helper === convId);
-    if (h && h.model && h.model !== h.own_model) return { model: h.model };
-    // Started on a model not of Google's own (Claude, GPT-OSS) and never changed: answered on
-    // Hydrogen medium all the same — Antigravity gives very little quota for those (owner, 24.11).
-    if (h && h.own_model && !h.model.startsWith('gemini-') && !h.own_model.startsWith('gemini-')) return { model: 'hydrogen', effort: 'medium' };
+    const standing = h && (h.model || h.own_model);
+    if (standing && standing.startsWith('gemini-')) return { model: standing };
+    if (standing) return { model: 'hydrogen', effort: 'medium' };
   } catch (_) {}
   return null;
 }
