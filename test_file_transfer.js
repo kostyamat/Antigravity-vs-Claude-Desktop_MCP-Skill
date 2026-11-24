@@ -88,7 +88,8 @@ const ok = name => { n++; console.log('ok ' + name); };
     t = await pumpUntil(q3.id, ['done', 'failed']);
     assert.match(t.error, /no window and no project/);
     assert.match(A.ft.queue(A.db, { to: 'x@gamma', file: src2, parseAddress, cfg: {} }).error || '', /no linked machine|is linked here/);
-    assert.match(A.ft.queue(A.db, { to: 'x@beta', file: src2, parseAddress, cfg: { maxFileGB: 0.0000001 } }).error || '', /is the most/);
+    const big = path.join(A.dir, 'big.bin'); fs.closeSync(fs.openSync(big, 'w')); fs.truncateSync(big, 120 * 1048576);   // empty, not written
+    assert.match(A.ft.queue(A.db, { to: 'x@beta', file: big, parseAddress, cfg: { maxFileGB: 0.1 } }).error || '', /is the most/);
     assert.match(A.ft.list(A.db, SENDER), /#\d+ → qf_dvr@beta: image\.bin .* done/);
     ok('an unknown addressee, an unlinked machine and a file too large are refused; list shows the transfers');
   } finally {

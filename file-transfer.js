@@ -23,7 +23,6 @@ const path = require('path');
 const CHUNK = 8 * 1024 * 1024;
 const RETRY_HOURS = 24;
 const NOTICE_AFTER_MS = 5 * 60000;
-const MAX_GB_DEFAULT = 20;
 const EXCHANGE_DIR = path.join(__dirname, 'exchange');
 
 function ensureTable(bridgeDb) {
@@ -53,7 +52,7 @@ function ensureTable(bridgeDb) {
 const now = () => new Date().toISOString();
 const human = n => n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 const cleanName = s => String(s || 'file').split(/[\\/]/).pop().replace(/[^\w.\-]+/g, '_').replace(/^\.+/, '').slice(0, 120) || 'file';
-const maxBytes = cfg => (Number((cfg || {}).maxFileGB) || MAX_GB_DEFAULT) * 1073741824;
+const maxBytes = cfg => require('./settings').get('maxFileGB', cfg || {}) * 1073741824;
 
 // ── the sender's window: queue a file ────────────────────────────────────────────────────
 

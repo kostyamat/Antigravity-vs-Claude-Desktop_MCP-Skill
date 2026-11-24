@@ -304,3 +304,12 @@ details.wgroup > summary .count { color: var(--ink-3); letter-spacing: 0; }
 .member .member-x { border: 0; background: none; color: inherit; opacity: .45; cursor: pointer;
   padding: 0 0 0 4px; font-size: 1em; line-height: 1; }
 .member .member-x:hover { opacity: 1; color: #d33; }
+
+/* Settings tab (settings.js): one block per setting. */
+.setting { padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.setting label { display: block; margin-bottom: 6px; }
+.setting-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.setting-row .field { width: 9em; margin: 0; }
+.setting-row input[type="text"].field { width: 100%; }
+.setting .muted { font-size: 12px; line-height: 1.4; }
+.setting-note { padding: 8px 4px; font-size: 13px; }

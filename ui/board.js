@@ -574,10 +574,41 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#reader')
 // ── sidebar panels ──────────────────────────────────────────────────────────
 
 function showPanel(name) {
-  for (const p of ['rooms', 'windows', 'docs']) $('#panel-' + p).hidden = p !== name;
+  for (const p of ['rooms', 'windows', 'docs', 'settings']) $('#panel-' + p).hidden = p !== name;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.panel === name));
   if (name === 'windows') loadCards().then(renderWindows);
   if (name === 'docs') renderDocs();
+  if (name === 'settings') renderSettings();
+}
+
+// ── settings (settings.js on the board's side) ─────────────────────────────────
+// One row per setting: what it is, its value, its default; saved the moment it is changed.
+async function renderSettings(note) {
+  const box = $('#settingsList');
+  let list = [];
+  try { list = await (await fetch('/api/settings')).json(); } catch (e) { box.innerHTML = '<div class="muted">Settings could not be read: ' + esc(e.message) + '</div>'; return; }
+  box.innerHTML = (note ? '<div class="setting-note">' + esc(note) + '</div>' : '') + list.map(s => {
+    const id = 'set-' + s.key;
+    const input = s.type === 'bool'
+      ? `<input type="checkbox" id="${id}" data-key="${esc(s.key)}" ${s.value ? 'checked' : ''}>`
+      : `<input class="field" id="${id}" data-key="${esc(s.key)}" type="${s.type === 'number' ? 'number' : 'text'}" value="${esc(String(s.value))}"` +
+        (s.type === 'number' ? ` min="${s.min}" max="${s.max}" step="${s.step || 1}"` : ` maxlength="${s.max}"`) + '>';
+    const def = s.type === 'bool' ? (s.def ? 'on' : 'off') : String(s.def) + (s.unit ? ' ' + s.unit : '');
+    return `<div class="setting"><label for="${id}"><b>${esc(s.label)}</b></label>` +
+      `<div class="setting-row">${input}${s.unit && s.type !== 'bool' ? ' <span class="muted">' + esc(s.unit) + '</span>' : ''}` +
+      (s.set ? ` <button type="button" class="link-btn" data-reset="${esc(s.key)}" title="Back to ${esc(def)}">default</button>` : '') + '</div>' +
+      `<div class="muted">${esc(s.help)} Default: ${esc(def)}.</div></div>`;
+  }).join('');
+  const save = async (key, value) => {
+    let r;
+    try { r = await (await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, value }) })).json(); }
+    catch (e) { r = { error: e.message }; }
+    renderSettings(r.error ? '✖ ' + r.error : '✔ Saved' + (r.restart ? ' — takes effect when the board restarts.' : '.'));
+  };
+  box.querySelectorAll('[data-key]').forEach(el => {
+    el.onchange = () => save(el.dataset.key, el.type === 'checkbox' ? el.checked : el.value);
+  });
+  box.querySelectorAll('[data-reset]').forEach(el => { el.onclick = () => save(el.dataset.reset, null); });
 }
 document.querySelectorAll('#tabs button').forEach(b => {
   b.onclick = () => { if (b.dataset.panel === 'docs') DOC_ROOM = null; showPanel(b.dataset.panel); };

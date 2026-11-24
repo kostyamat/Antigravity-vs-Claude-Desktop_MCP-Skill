@@ -609,6 +609,19 @@ const server = http.createServer((req, res) => {
   }
   // What became of each message the owner wrote in the last day: read, answered, how fast.
   // The signed-in Antigravity account's quota, asked at most once a minute.
+  // The Settings tab (settings.js): every setting with its value; one changed at a time.
+  if (req.url === '/api/settings' && req.method === 'GET') return send(res, 200, 'application/json; charset=utf-8', JSON.stringify(require('./settings').list()));
+  if (req.url === '/api/settings' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', c => { raw += c; if (raw.length > 10000) req.destroy(); });
+    req.on('end', () => {
+      let out;
+      try { const d = JSON.parse(raw || '{}'); out = require('./settings').set(String(d.key || ''), d.value); }
+      catch (e) { out = { error: e.message }; }
+      send(res, out.error ? 400 : 200, 'application/json; charset=utf-8', JSON.stringify(out));
+    });
+    return;
+  }
   if (req.method === 'GET' && req.url === '/api/quota') {
     const answer = v => send(res, 200, 'application/json; charset=utf-8', JSON.stringify(v));
     if (Date.now() - quotaSeen.at < 60000 && quotaSeen.value) return answer(quotaSeen.value);

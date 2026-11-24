@@ -154,7 +154,7 @@ function admits(req, cfg) {
 // above is what keeps that safe; "listenOnNetwork": false in bridge_config.json
 // closes it for a machine that will never be linked.
 function listenHost(cfg) {
-  return (cfg || readConfig()).listenOnNetwork === false ? '127.0.0.1' : '0.0.0.0';
+  return require('./settings').get('listenOnNetwork', cfg || readConfig()) === false ? '127.0.0.1' : '0.0.0.0';
 }
 function myPort(cfg) {
   return Number(process.env.AGENT_BRIDGE_PORT) || Number((cfg || readConfig()).uiPort) || 8787;

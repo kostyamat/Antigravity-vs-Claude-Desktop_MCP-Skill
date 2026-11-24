@@ -46,7 +46,7 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
       return fail(id, `set_helper: you already have a helper for "${task}" — "${same.title}" [${same.h.helper}]. Give it the work, ` +
         'or name the new task differently.');
     }
-    const max = Math.max(1, Number(maxHelpers()) || 3);
+    const max = require('./settings').get('maxHelpersPerLead');
     if (mine.length >= max) {
       return fail(id, `set_helper: you have ${mine.length} helpers, and ${max} is the most a lead keeps at once: ` +
         titles.map(x => `"${x.title || router.nameOf(x.h.helper)}" [${x.h.helper}]`).join('; ') + '. Give the task to one of them, or ' +
@@ -89,11 +89,6 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
     }
     if (chosen && (!seen || !seen.own)) seen = { id: chosen.id, own: chosen.id, note: `It was started on ${chosen.label}.` };
     return doSetHelper(id, Object.assign({}, a, { start: false, helper, lead: '', task, model: '', effort: '', kind: '', checked: seen }));
-  }
-
-  function maxHelpers() {
-    try { return JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'bridge_config.json'), 'utf8')).maxHelpersPerLead; }
-    catch (_) { return 0; }
   }
 
   // Leave for another lead to consult a helper or give it a task. Given by the helper's

@@ -46,8 +46,7 @@ const POLL_MS = 3000;
 // one word of the owner's to a room woke up to nine windows. activeWindowMinutes in bridge_config.json.
 function activeMs() {
   if (Number(process.env.BRIDGE_ACTIVE_MS) > 0) return Number(process.env.BRIDGE_ACTIVE_MS);
-  try { return (Number(JSON.parse(fs.readFileSync(path.join(HOME, 'bridge_config.json'), 'utf8')).activeWindowMinutes) || 60) * 60e3; }
-  catch (_) { return 60 * 60e3; }
+  try { return require('./settings').get('activeWindowMinutes') * 60e3; } catch (_) { return 60 * 60e3; }
 }
 
 // Which of the messages that are urgent for this window are to wake it (see activeMs):
