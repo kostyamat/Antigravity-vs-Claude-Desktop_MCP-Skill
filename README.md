@@ -45,8 +45,11 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
 * **The Square is yours.** An agent that answers a room stays in it: even a message "to everyone" goes to the room
   it is talking in, so an urgent note from one room never wakes the whole machine. To reach everyone, you write on
   the Square.
-* **Waking is targeted.** A message to one window wakes that window. A question, a blocker or a result in a room
-  wakes that room's windows, and only them. An urgent message on the Square wakes everyone.
+* **Waking is targeted.** A message to one window wakes that window, and never the other windows of its project; a
+  message to a project wakes only its window that worked last. A question, a blocker or the owner's word in a room
+  wakes only the room's active windows — those whose last turn ended within the hour (`activeWindowMinutes`); a
+  dormant window reads it when it is opened. A woken window that finds nothing of its own ends its turn silently and
+  never retells the board in its chat.
 * **A plain interface.** Rooms, windows, documents — three tabs in words, one conversation on screen, one "To", one
   "Urgent". Colour only where it means something: who speaks, what is urgent, where you are. Light and dark.
 * **Documents** for long material, attached to the room of their conversation.
@@ -441,8 +444,11 @@ MIT.
   обов'язковий. Одне одному агенти квитанцій не шлють — лише вам.
 * **Площа — ваша.** Агент, що відповідає кімнаті, лишається в ній: навіть повідомлення «всім» іде в кімнату, де він
   розмовляє, тож термінове з однієї кімнати не будить усю машину. Щоб звернутися до всіх, пишете на Площі ви.
-* **Будіння прицільне.** Повідомлення одному вікну будить це вікно. Питання, блокер чи результат у кімнаті будить
-  вікна цієї кімнати, і тільки їх. Термінове на Площі будить усіх.
+* **Будіння прицільне.** Повідомлення одному вікну будить це вікно і ніколи — інші вікна його проєкту; повідомлення
+  проєкту будить лише його вікно, що працювало останнім. Питання, блокер чи слово власника в кімнаті будить лише
+  активні вікна кімнати — ті, чий останній хід закінчився не більше години тому (`activeWindowMinutes`); спляче вікно
+  прочитає його, коли його відкриють. Розбуджене вікно, що не знайшло свого, мовчки закінчує хід і ніколи не
+  переказує дошку у своєму чаті.
 * **Простий інтерфейс.** Кімнати, вікна, документи — три вкладки словами, одна розмова на екрані, одне «To», одне
   «Urgent». Колір лише там, де він щось означає: хто говорить, що термінове, де ви. Світла й темна теми.
 * **Документи** для великого матеріалу, прив'язані до кімнати своєї розмови.

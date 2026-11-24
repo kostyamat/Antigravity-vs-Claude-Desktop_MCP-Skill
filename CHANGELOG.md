@@ -10,6 +10,14 @@ never overwritten.
 
 ## Unreleased
 
+**Only the windows at work are woken.** Measured over a day: 403 wake-ups for ten windows; a message to one window
+woke its project's other windows too, and one word of the owner's to a room woke up to nine. Now a message to a
+window wakes that window alone; one to a project wakes its window that worked last; a room's question, a P0 to all
+or the owner's word to a room wakes only windows whose last turn ended within the hour (`activeWindowMinutes`).
+The end of a turn is no longer held for another window's mail (some twenty idle turns in one evening). A window in
+the middle of a turn counts as listening, so senders are no longer told to ring it by hand. A woken window with
+nothing of its own ends its turn without a word, and no window retells the board in its chat.
+
 **Files of any size between machines.** An attachment rode inside its message: 40 MB at most, sent again whole
 after a dropped connection. The new `send_file` tool sends a file to a window or a project on a linked machine
 through a door of its own, `/api/peer/file/`: 8 MB pieces, resumed where it stopped, SHA-256 checked before it is

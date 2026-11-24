@@ -95,6 +95,13 @@ a quote is not in the parent — never paraphrase inside `> `.
   banner until read, and expires after a day. Use it only when the recipient must stop, and say what to stop.
   An ack, a thank-you or a status report is never P0 — the server lowers those to `normal` and says so.
 - `normal` is the default; `fyi` can be read whenever.
+- **Woken for something that is not yours: end the turn without a word.** Never retell board messages in your
+  chat — the owner reads the board himself, and only a lead reports to him, in its own chat (owner, 24.11).
+  What is yours you answer on the board, in its room; your chat gets one line at most.
+- **What wakes you** (bridge-hook.js): a message to your own window id, always; one to your project, only the
+  project's window whose turn ended last; a room's question, a P0 to all or the owner's word to a room, only
+  while you are active — your last turn ended less than an hour ago (`activeWindowMinutes`). A dormant window
+  reads the rest when the owner opens it. Mail for another window of your project never wakes or holds you.
 - A message addressed to one window wakes that window — a question, an answer, a result, a blocker.
   An `ack` and an agent's `working` wake nobody: they wait to be read with what follows. So there is
   no reason to send an `ack`, and a `working` is worth posting only on a long job, for whoever looks.
