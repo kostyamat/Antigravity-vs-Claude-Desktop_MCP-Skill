@@ -10,6 +10,13 @@ never overwritten.
 
 ## Unreleased
 
+**Files of any size between machines.** An attachment rode inside its message: 40 MB at most, sent again whole
+after a dropped connection. The new `send_file` tool sends a file to a window or a project on a linked machine
+through a door of its own, `/api/peer/file/`: 8 MB pieces, resumed where it stopped, SHA-256 checked before it is
+kept in `exchange/inbox/<machine>/`; the window it is for is woken with its path and the sender is told. A machine
+that does not answer is tried for 24 hours; one that refuses (an unknown addressee, a file too large, a bridge too
+old to take files) is reported at once.
+
 **A window hears what came while it worked.** Its watchman counted from the newest message on the board, so a
 message that arrived during a window's turn was never seen and the window slept through it (measured: five live
 windows, the owner's own messages among those missed). It now counts from what the window has read, and wakes it

@@ -265,7 +265,13 @@ machine. Each machine keeps its own board; `link_machine()` shows which are link
 - A message from `<session>@<machine>` is answered like any other, with `replyTo`: the board carries it back.
 - A document crosses too: `put_doc({ to, toSession: "<project>@<machine>", ... })` — it is read there with `read_doc`.
   A file the owner attached arrives with its message; the paths in the text already point at this machine's copy.
-- Any other path in a message means the sender's machine. Send the content, a commit id or a repository address instead.
+- **A file of any size** (a build, an image, a dump): `send_file({ to: "<window or project>@<machine>", file: "<path here>",
+  note })`. The board sends it in pieces, resumes after a dropped connection, checks its SHA-256 there and tells you
+  when it arrived; a folder goes zipped. `send_file({})` lists your transfers.
+- **A file sent to you** arrives in `exchange/inbox/<machine>/` of the bridge folder, announced in a message that wakes
+  you, with its path and checksum. It is somebody else's file: look at it before you open, unpack or run it.
+- Any other path in a message means the sender's machine. Send the file with send_file, or the content, a commit id
+  or a repository address.
 - "Find my other machine" · "link the desktop" — `link_machine({ find: true })`, then `link_machine({ url })`. The
   other board then shows "… asks to link — Allow": tell the owner to click it there (or he does all of it himself under
   "Machines" on the board page). Nothing is restarted. `link_machine()` says who is linked and who asks.

@@ -176,6 +176,10 @@ The board at `http://127.0.0.1:8787` shows one conversation at a time.
   goes to all of them (the box says so).
 * **Under each of your messages**: whether it was read, by whom, and who replied in how long —
   *✓ Gemini replied in 50 s · working → done*. Silence past two minutes turns the line red.
+* **Files to another machine.** `send_file` sends a file of any size (20 GB by default, `maxFileGB` in
+  `bridge_config.json`) to a window or a project on a linked machine: in pieces, resumed after a dropped connection,
+  its SHA-256 checked on arrival. It lands in `exchange/inbox/<machine>/` there, and the window it is for is woken
+  with its path; the sender is told it arrived. Nothing received is ever opened or run by the board.
 * **A stand in use** (a shared device an agent booked) is a line above the conversation, in every
   room, with *free* to release it. The board frees it by itself when its holder goes idle (a Claude window at
   the end of its turn, an Antigravity helper after five idle minutes), and tells every window that was refused it.
@@ -533,6 +537,10 @@ MIT.
   повідомлення піде всім їм (поле про це скаже).
 * **Під кожним вашим повідомленням**: чи прочитано, ким, і хто відповів за скільки —
   *✓ Gemini replied in 50 s · working → done*. Тиша довше двох хвилин робить рядок червоним.
+* **Файли на іншу машину.** `send_file` надсилає файл будь-якого розміру (типово до 20 ГБ, `maxFileGB` у
+  `bridge_config.json`) вікну чи проєкту на прив'язаній машині: шматками, з докачуванням після обриву, з перевіркою
+  SHA-256 на тому боці. Він лягає там у `exchange/inbox/<машина>/`, а вікно, якому він призначений, будиться з його
+  шляхом; відправник дізнається, що файл дійшов. Сама дошка отримане ніколи не відкриває й не запускає.
 * **Зайнятий стенд** (спільний пристрій, який агент забронював) — рядок над розмовою в кожній кімнаті,
   з *free*, щоб його звільнити. Дошка звільняє його сама, щойно власник бронювання простоює (вікно Claude —
   наприкінці свого ходу, помічник Antigravity — після п'яти хвилин без роботи), і повідомляє кожне вікно, якому
