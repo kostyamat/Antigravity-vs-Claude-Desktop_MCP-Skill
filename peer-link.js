@@ -634,6 +634,11 @@ async function handle(req, res, deps) {
       return send(200, knocked(from, await readBody(req, 4000), req.headers['x-board-machine']));
     }
     if (!peer) return send(403, { error: 'this machine is not linked to yours — link the two boards first (Machines on the board page)' });
+    // A file sent to a window here (file-transfer.js): its own door, streamed, never read as JSON.
+    if (what.startsWith('file/')) {
+      if (!deps.files) return send(404, { error: 'no such door' });
+      return void deps.files(req, res, peer.name);
+    }
     if (what === 'cards' && req.method === 'GET') {
       const hours = Number(url.searchParams.get('hours')) || 48;
       // An Antigravity conversation is never archived, so a month of them is a heap of
@@ -913,7 +918,7 @@ async function localApi(req, res) {
 
 module.exports = {
   isPrivate, isTailnet, parseTailnet, tailnetPeers, listenHost, myPort, knocked, linkTo, allow, refuse, setTrust, find, overview, localApi, myAddresses,
-  machineName, peers, enabled, peerByName, parseAddress, isLoopback, admits, peerAt,
+  machineName, readConfig, peers, enabled, peerByName, parseAddress, isLoopback, admits, peerAt,
   request, ask, pump, handle, deliver, roomFor, ensureTable, ref, link, unlink, knownProject,
   refreshCards, neighbourCards, syncRooms, changeMember, machinesOf, membersFor, sharedRoom
 };

@@ -52,3 +52,6 @@ sharing/
 # ─── Per-machine client settings ───────────────────────────────────
 .claude/settings.local.json
 helper_skills_seen.json
+
+# Files received from linked machines (file-transfer.js): somebody else's bytes, never tracked.
+exchange/

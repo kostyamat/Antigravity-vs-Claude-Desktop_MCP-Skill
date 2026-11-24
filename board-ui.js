@@ -1183,6 +1183,23 @@ setInterval(() => { try { require('./project-line').dropArchived(bridgeDb, cards
 const peerDeps = { bridgeDb, cardsLib, router, projectSlice: require('./project-slice'), skillReader: require('./skill-reader'),
                    roomMember: (action, id, card, agent, by) => ownerRoomMember(action, id, card, agent, by) };
 setInterval(() => { peerLink.pump(peerDeps); }, 5000).unref();
+// Files to and from the windows of a linked machine (file-transfer.js): what arrives is announced to
+// its window in a message that wakes it, and so is what was delivered, to the window that sent it.
+const fileTransfer = require('./file-transfer');
+const fileSay = m => {
+  try {
+    const rec = Object.assign({ ts: new Date().toISOString(), replyTo: null, progress: '', file: null, readBy: [] }, m);
+    rec.id = bridgeDb.addMessage(rec).id;
+    if (rec.room) bridgeDb.touchRoom(rec.room);
+    wakeAntigravity(rec);
+  } catch (_) {}
+};
+peerDeps.files = (req, res, machine) => fileTransfer.handle(req, res, { bridgeDb, router, say: fileSay, cfg: peerLink.readConfig() }, machine)
+  .catch(e => { try { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message })); } catch (_) {} });
+setInterval(() => {
+  if (!peerLink.enabled()) return;
+  fileTransfer.pump({ bridgeDb, peerByName: n => peerLink.peerByName(n), machineName: () => peerLink.machineName(), say: fileSay });
+}, 5000).unref();
 // Antigravity conversations deleted (by a lead, or by the owner in the application): off the board
 // within a minute — pair ended, rooms left, a room left to one participant archived (antigravity-gone.js).
 let goneTold = '';

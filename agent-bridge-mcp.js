@@ -480,9 +480,9 @@ function fail(id, message) {
   sendResponse({ jsonrpc: '2.0', id, error: { code: -32000, message } });
 }
 
-const IDENTITY_TOOLS = new Set(['post_message', 'get_messages', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand', 'reserve_files', 'report_usage',
+const IDENTITY_TOOLS = new Set(['post_message', 'get_messages', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand', 'send_file', 'reserve_files', 'report_usage',
   'mark_read', 'list_docs', 'read_doc', 'ack_doc']);
-const WRITING_TOOLS = new Set(['post_message', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand', 'reserve_files']);
+const WRITING_TOOLS = new Set(['post_message', 'put_doc', 'invite_to_room', 'set_helper', 'book_stand', 'send_file', 'reserve_files']);
 
 const TOOLS = [
   {
@@ -898,6 +898,26 @@ const TOOLS = [
     }
   },
   {
+    name: 'send_file',
+    description:
+      'Send a file to a window or a project on another linked machine (a friend\'s, or your own second one): ' +
+      'to "<window or project>@<machine>", file = its path here. Any size up to maxFileGB (20 GB by default); it ' +
+      'goes in pieces, resumes after a dropped connection, and its SHA-256 is checked there. The board sends it and ' +
+      'tells you when it arrived; the window it is for is woken with its path (exchange/inbox/<machine>/ there). ' +
+      'A folder: zip it first. Without file: the transfers of this window and where they stand.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sender: { type: 'string', description: '"Claude" or "Gemini".' },
+        sessionId: { type: 'string', description: 'Your own window id.' },
+        to: { type: 'string', description: '"<window or project>@<machine>", e.g. "qf_dvr@artempc". list_cards shows a machine\'s windows.' },
+        file: { type: 'string', description: 'Absolute path of the file on this machine.' },
+        note: { type: 'string', description: 'What it is and what to do with it — told to the receiver with the file.' }
+      },
+      required: ['sender', 'sessionId']
+    }
+  },
+  {
     name: 'list_rooms',
     description:
       'The rooms of the signed-in Claude account, most recently used first, with their members and message counts. ' +
@@ -1034,6 +1054,7 @@ function handleRequest(req) {
   try {
     if (toolName === 'set_helper') return pairTools.doSetHelper(id, args).catch(e => fail(id, 'set_helper: ' + e.message));
     if (toolName === 'book_stand') return pairTools.doBookStand(id, args);
+    if (toolName === 'send_file') return doSendFile(id, args);
     if (toolName === 'reserve_files') return doReserveFiles(id, args);
     if (toolName === 'bridge_setup') return doSetup(id, args);
     if (toolName === 'report_usage') return doReportUsage(id, args);
@@ -1160,6 +1181,16 @@ function doListCards(id, a) {
 // A conversation that needs someone it does not have. The invited window joins
 // the room and is woken by a message addressed to it, in the room, so it reads
 // the history and the room's documents instead of being briefed from scratch.
+// A file to a window on another machine: recorded here, sent by the board (file-transfer.js).
+function doSendFile(id, a) {
+  const files = require('./file-transfer');
+  const me = router.windowOf(a.canonicalId) || router.windowOf(a.sessionId) || String(a.sessionId || '');
+  if (!String(a.file || '').trim()) return ok(id, files.list(bridgeDb, me));
+  const r = files.queue(bridgeDb, { to: a.to, file: a.file, note: a.note, fromSession: me, fromAgent: normAgent(a.sender),
+    parseAddress: s => peerLink.parseAddress(s), cfg: peerLink.readConfig() });
+  return r.error ? fail(id, 'send_file: ' + r.error) : ok(id, r.text);
+}
+
 function doReserveFiles(id, a) {
   const res = require('./file-reservations').createReservations(() => bridgeDb.getDb());
   const me = router.windowOf(a.canonicalId) || router.windowOf(a.sessionId) || String(a.sessionId || '').trim();
