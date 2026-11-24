@@ -8,7 +8,7 @@
 
 ---
 
-## Не випущено
+## v2.8.16 — 24.11.2026
 
 **Лід обирає модель і зусилля свого помічника.** Antigravity тепер пропонує Gemini 4 Hydrogen (low, medium, high,
 xhigh) поряд із Gemini 3.8 Flash (low, medium, high); кожне зусилля — окрема модель. `set_helper({models: true})`

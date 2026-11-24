@@ -8,7 +8,7 @@ never overwritten.
 
 ---
 
-## Unreleased
+## v2.8.16 — 2026-11-24
 
 **A lead picks its helper's model and effort.** Antigravity now offers Gemini 4 Hydrogen (low, medium, high, xhigh)
 beside Gemini 3.8 Flash (low, medium, high); each effort is a model of its own. `set_helper({models: true})` lists
