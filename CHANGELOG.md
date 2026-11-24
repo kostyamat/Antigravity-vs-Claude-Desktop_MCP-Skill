@@ -8,7 +8,7 @@ never overwritten.
 
 ---
 
-## Unreleased
+## v2.8.17 — 2026-11-25
 
 **A courier for sessions that cannot hear, and Gemini spared.** After a Claude Desktop restart every watchman is
 gone and a lead rang its sessions by hand. The board now starts a one-off `claude -p` on Haiku at low effort
