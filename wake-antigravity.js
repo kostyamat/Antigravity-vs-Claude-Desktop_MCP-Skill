@@ -14,16 +14,21 @@ function setWaitLimit(ms) { waitMs = ms; }
 // (rec.modelWant: { model?, effort?, kind? }), else, for a helper with a recorded model, that model
 // named outright on every message. A helper is never left on "whatever it is on now": the picker in
 // the application, or a window paired as it was, put helpers on Claude Sonnet, for which Antigravity
-// gives very little quota (owner, 24.11.2026). A recorded model not of Google's own → Hydrogen medium.
+// gives very little quota (owner, 24.11.2026). A recorded model not of Google's own → Flash medium.
 // null = a conversation that is nobody's helper, or one whose model was never recorded.
 function modelFor(convId, rec) {
   const w = rec.modelWant;
   if (w && (w.model || w.effort || w.kind)) return w;
+  // The board supervisor: Flash, at the effort set on the Settings tab (owner, 24.11.2026).
+  try {
+    const sup = (JSON.parse(fs.readFileSync(path.join(SCRIPTS_DIR, 'bridge_config.json'), 'utf8')).supervisor || {}).conversation;
+    if (sup && sup === convId) return { model: 'flash', effort: require('./settings').get('supervisorEffort') };
+  } catch (_) {}
   try {
     const h = require('./bridge-db').readHelpers().find(x => x.helper === convId);
     const standing = h && (h.model || h.own_model);
     if (standing && standing.startsWith('gemini-')) return { model: standing };
-    if (standing) return { model: 'hydrogen', effort: 'medium' };
+    if (standing) return { model: 'flash', effort: 'medium' };
   } catch (_) {}
   return null;
 }
@@ -37,7 +42,7 @@ function deliver(convId, prompt, where, rec) {
     let w = want;
     if (!w.model && !w.kind) {
       const h = require('./bridge-db').readHelpers().find(x => x.helper === convId) || {};
-      w = Object.assign({ model: h.model || h.own_model || 'hydrogen' }, w);
+      w = Object.assign({ model: h.model || h.own_model || 'flash' }, w);
     }
     const r = models.resolve(list, w);
     if (r.error) throw new Error(r.error);
@@ -194,4 +199,11 @@ function wakeAntigravity(rec) {
   }
 }
 
-module.exports = { wakeAntigravity, setWaitLimit, modelFor };
+// A message the board itself sends to a conversation, on the model modelFor names for it.
+function deliverTo(convId, text) {
+  let where;
+  try { where = antigravity.locate(); } catch (e) { return; }
+  deliver(convId, text, where, { id: 0 });
+}
+
+module.exports = { wakeAntigravity, setWaitLimit, modelFor, deliverTo };

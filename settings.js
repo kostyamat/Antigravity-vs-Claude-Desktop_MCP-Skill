@@ -21,6 +21,10 @@ const SCHEMA = [
     label: 'Helpers one lead may keep', help: 'Antigravity conversations a lead may start at once. Each open conversation takes memory on this machine.' },
   { key: 'maxFileGB', type: 'number', def: 20, min: 0.1, max: 500, step: 0.1, unit: 'GB',
     label: 'Largest file between machines', help: 'For send_file, both ways: a larger file is refused here before it is sent, and there before it is kept.' },
+  { key: 'courier', type: 'bool', def: true,
+    label: 'Courier rings sessions that cannot hear', help: 'After Claude Desktop restarts, no session hears the board until it has a turn. The courier (a one-off Claude on Haiku, low effort) rings a session for a message addressed to it, or to its project if it is active. It sees ids and names only.' },
+  { key: 'supervisorEffort', type: 'choice', def: 'low', options: ['minimal', 'low', 'medium', 'high'],
+    label: 'Supervisor effort (Gemini Flash)', help: 'The board supervisor in Antigravity runs on Flash at this effort: describing pictures, rescue notes, catch-ups, answering you in its room.' },
   { key: 'listenOnNetwork', type: 'bool', def: true,
     label: 'Other machines can reach this board', help: 'Off: the board answers this machine only, and linked machines lose it. Takes effect when the board restarts.', restart: true }
 ];
@@ -47,6 +51,10 @@ function coerce(s, v) {
     if (!Number.isFinite(n)) return { error: `${s.label}: a number` };
     if (n < s.min || n > s.max) return { error: `${s.label}: from ${s.min} to ${s.max}` };
     return { value: n };
+  }
+  if (s.type === 'choice') {
+    const t = String(v).trim().toLowerCase();
+    return s.options.includes(t) ? { value: t } : { error: `${s.label}: one of ${s.options.join(', ')}` };
   }
   if (s.type === 'bool') {
     if (v === true || v === 'true') return { value: true };

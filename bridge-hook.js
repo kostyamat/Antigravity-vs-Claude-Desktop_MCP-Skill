@@ -368,6 +368,10 @@ function watch(input) {
   setInterval(tick, POLL_MS);
 }
 
+// The courier (courier.js) is a one-off Claude the board starts to ring a window: it is no window
+// of the board, so none of this applies to it.
+if (process.env.AGENT_BRIDGE_COURIER) process.exit(0);
+
 readStdin().then(input => {
   try {
     const mode = process.argv[2];

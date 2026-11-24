@@ -591,6 +591,8 @@ async function renderSettings(note) {
     const id = 'set-' + s.key;
     const input = s.type === 'bool'
       ? `<input type="checkbox" id="${id}" data-key="${esc(s.key)}" ${s.value ? 'checked' : ''}>`
+      : s.type === 'choice'
+      ? `<select class="field" id="${id}" data-key="${esc(s.key)}">` + s.options.map(o => `<option${o === s.value ? ' selected' : ''}>${esc(o)}</option>`).join('') + '</select>'
       : `<input class="field" id="${id}" data-key="${esc(s.key)}" type="${s.type === 'number' ? 'number' : 'text'}" value="${esc(String(s.value))}"` +
         (s.type === 'number' ? ` min="${s.min}" max="${s.max}" step="${s.step || 1}"` : ` maxlength="${s.max}"`) + '>';
     const def = s.type === 'bool' ? (s.def ? 'on' : 'off') : String(s.def) + (s.unit ? ' ' + s.unit : '');

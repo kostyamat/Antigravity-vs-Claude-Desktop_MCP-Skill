@@ -59,15 +59,16 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
         'A helper started without context starts by guessing.');
     }
     const name = projectName(me) || router.nameOf(me);
-    // Its model: what the lead asked for, else Hydrogen on medium effort (analysis and code, the
-    // usual work of a helper); the old tier "pro" only when the list cannot be read.
+    // Its model: what the lead asked for, else Flash on medium effort — Hydrogen pools ran dry on four
+    // accounts of six in one night (owner, 24.11.2026); a lead climbs the ladder when the work needs it.
+    // The tier "flash" only when the list cannot be read.
     let chosen = null;
-    try { chosen = await pickModel(a.model || a.effort || a.kind ? a : { model: 'hydrogen', effort: 'medium' }); }
+    try { chosen = await pickModel(a.model || a.effort || a.kind ? a : { model: 'flash', effort: 'medium' }); }
     catch (e) { if (a.model || a.effort || a.kind) return fail(id, 'set_helper: ' + e.message); }
     let helper;
     try {
       helper = await antigravity.create({
-        model: chosen ? chosen.id : 'pro',
+        model: chosen ? chosen.id : 'flash',
         title: name + ': ' + task,
         prompt: `You are the helper of the project "${name}" for one task — "${task}" —, started through the agent-bridge board by its lead, a Claude session. ` +
           'Read your skills agent-bridge (PROTOCOL) and agent-workflow (section "Working with a helper agent") now, completely. ' +

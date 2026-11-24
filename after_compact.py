@@ -100,6 +100,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # The courier (courier.js): a one-off Claude the board starts to ring a window, no window itself.
+    if os.environ.get("AGENT_BRIDGE_COURIER"):
+        sys.exit(0)
     try:
         main()
     except Exception:

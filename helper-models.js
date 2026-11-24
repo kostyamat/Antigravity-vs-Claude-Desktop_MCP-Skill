@@ -132,7 +132,7 @@ async function check(conversationId, where) {
   const all = (await allLabels().catch(() => ({}))) || {};
   const hit = list.find(m => m.name === name);
   if (hit) return { seen: hit.label, id: hit.id, own: hit.id, note: `It runs on ${hit.label}.` };
-  const fallback = resolve(list, { model: 'hydrogen', effort: 'medium' });
+  const fallback = resolve(list, { model: 'flash', effort: 'medium' });
   if (fallback.error) return { seen: all[name] || name, id: '', own: '', note: '' };
   const was = all[name] || name;
   return { seen: was, id: fallback.model.id, own: was ? String(all[name] ? all[name] : name) : '',

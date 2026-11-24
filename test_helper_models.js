@@ -64,7 +64,7 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
     assert.match(models.describe(list), /Kinds of work: ui = flash minimal/);
   });
 
-  await t('a pair is checked: a helper found on Claude is recorded on Hydrogen medium, one on Flash kept', async () => {
+  await t('a pair is checked: a helper found on Claude is recorded on Flash medium, one on Flash kept', async () => {
     const quota = require('./antigravity-quota');
     const realCall = quota.call, realLast = api.lastModel;
     const all = configs.concat([cfg('Claude Sonnet 4.6 (Thinking)', 'claude-sonnet-4-6', 'M35')]);
@@ -73,15 +73,15 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
     api.lastModel = async () => on;
     try {
       let c = await models.check('conv-x');
-      assert.strictEqual(c.id, 'gemini-4-hydrogen-medium');
+      assert.strictEqual(c.id, 'gemini-3.8-flash-medium');
       assert.strictEqual(c.seen, 'Claude Sonnet 4.6 (Thinking)');
-      assert.match(c.note, /not a Google model .* Gemini 4 Hydrogen \(Medium\) from now on/);
+      assert.match(c.note, /not a Google model .* Gemini 3\.8 Flash \(Medium\) from now on/);
       on = 'M319';
       c = await models.check('conv-x');
       assert.deepStrictEqual([c.id, c.own], ['gemini-3.8-flash-medium', 'gemini-3.8-flash-medium']);
       on = '';
       c = await models.check('conv-x');
-      assert.strictEqual(c.id, 'gemini-4-hydrogen-medium', 'no answer yet: Hydrogen medium');
+      assert.strictEqual(c.id, 'gemini-3.8-flash-medium', 'no answer yet: Flash medium');
     } finally { quota.call = realCall; api.lastModel = realLast; }
   });
 
@@ -141,7 +141,7 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
         assert.strictEqual(wake.modelFor('not-a-helper', {}), null, 'nobody\'s helper: its own model');
         db.setHelper('conv-c', 'c:/work/app', 'r2');
         db.setHelperModel('conv-c', 'claude-sonnet-4-6', 'claude-sonnet-4-6');
-        assert.deepStrictEqual(wake.modelFor('conv-c', {}), { model: 'hydrogen', effort: 'medium' }, 'begun on Claude: answered on Hydrogen');
+        assert.deepStrictEqual(wake.modelFor('conv-c', {}), { model: 'flash', effort: 'medium' }, 'begun on Claude: answered on Flash medium');
         try { db.getDb().close(); } catch (_) {}
       } finally {
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}

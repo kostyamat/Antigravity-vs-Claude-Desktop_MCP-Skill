@@ -28,6 +28,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const antigravity = require('./antigravity-api');
+// Every message to the supervisor goes on Flash at its set effort (wake-antigravity.js modelFor).
+const tellModel = (conv, text) => require('./wake-antigravity').deliverTo(conv, text);
 const { createMailbox } = require('./mailbox');
 const { projectName } = require('./project-line');
 const { STALE_HOURS } = require('./stands');
@@ -328,8 +330,14 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
     const known = id => { try { return cardsLib.geminiCards().some(c => c.id === id); } catch (_) { return false; } };
     if (!cfg.conversation || !known(cfg.conversation)) {
       const print = rulesPrint();
+      let model = 'flash';
+      try {
+        const models = require('./helper-models');
+        const r = models.resolve(await models.catalogue(), { model: 'flash', effort: require('./settings').get('supervisorEffort') });
+        if (!r.error) model = r.model.id;
+      } catch (_) {}
       const id = await antigravity.create({
-        model: cfg.model || 'flash', title: 'Board supervisor',
+        model, title: 'Board supervisor',
         prompt: 'You are the supervisor of the agent-bridge board on this machine. Read the file ' + rulesFile +
           ' now, completely, and follow it exactly from here on. Do nothing else yet: the board will send you your ' +
           'conversation id, your room and your first tasks in the next message. Reply with the single word READY.'
@@ -389,7 +397,7 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
             // It was promised its id and its room "in the next message"; with no task to
             // carry them it would never learn either, and could not answer the owner.
             if (!tasks.length) {
-              antigravity.send(cfg.conversation, `Board supervisor: you are set up. Your sessionId: ${cfg.conversation}. ` +
+              tellModel(cfg.conversation, `Board supervisor: you are set up. Your sessionId: ${cfg.conversation}. ` +
                 `Your room: ${cfg.room}. There is no task yet. The owner writes to you in that room; answer him there, ` +
                 'as SUPERVISOR.md says. Reply with nothing now.');
             }
@@ -411,11 +419,11 @@ function createSupervisor({ bridgeDb, cardsLib, router, home, wake, launch }) {
       const reread = cfg.conversation && print && cfg.rulesSeen !== print && !next.lastError
         ? `Your rules changed. Read ${rulesFile} again now, completely; it replaces what you read before. ` : '';
       if (reread && !tasks.length) {
-        antigravity.send(cfg.conversation, reread + 'Then stop; reply with nothing.');
+        tellModel(cfg.conversation, reread + 'Then stop; reply with nothing.');
         save({ rulesSeen: print });
       }
       if (tasks.length && cfg.conversation && !next.lastError) {
-        antigravity.send(cfg.conversation, reread +
+        tellModel(cfg.conversation, reread +
           `Board supervisor tasks. Your sessionId: ${cfg.conversation}. Your room: ${cfg.room}. ` +
           'Do these in order, exactly as SUPERVISOR.md says, then stop.\n' +
           tasks.map((t, i) => `${i + 1}. ${t.text}`).join('\n'));

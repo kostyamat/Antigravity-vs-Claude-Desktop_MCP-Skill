@@ -1189,6 +1189,15 @@ setInterval(async () => {
   } catch (_) {}
 }, 60e3).unref();
 
+// The courier (courier.js): rings a Claude window that cannot hear the board, for mail that is its own.
+setInterval(() => {
+  try {
+    if (bridgeDb.boardPaused && bridgeDb.boardPaused()) return;
+    require('./courier').tick({ bridgeDb, router, mailbox: require('./mailbox').createMailbox(bridgeDb, router),
+      listening: require('./listening').listening, settings: require('./settings'), say: fileSay }).catch(() => {});
+  } catch (_) {}
+}, 30e3).unref();
+
 // A window the owner archives leaves the board within the hour, not at the next install.
 setInterval(() => { try { require('./project-line').dropArchived(bridgeDb, cardsLib); } catch (_) {} }, 3600e3).unref();
 
