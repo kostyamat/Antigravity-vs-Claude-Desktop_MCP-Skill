@@ -89,7 +89,8 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
   analytical work, Flash for translations and routine. A message on a chosen model waits until the helper is
   free, since Antigravity runs a message sent mid-work on the helper's own model. Only Google's own models: Claude
   and GPT-OSS in Antigravity get very little quota, so the bridge does not offer them, refuses them, and answers a
-  helper begun on one on Hydrogen medium.
+  helper begun on one on Hydrogen medium. When a pair is made the bridge reads the model the helper really answered
+  on and names the recorded model on every message to it, so a switch in Antigravity's own picker does not stick.
 * **A session cut off mid-work leaves its context.** When a Claude turn ends on the usage limit or an error, the
   board lifts what it was doing from the transcript — your last request, the lead's last words, the command that
   was running, uncommitted files — into a marked block at the top of the project's `.agents/HANDOFF.md`.
@@ -604,7 +605,8 @@ MIT.
   роботи, Flash для перекладів і рутини. Повідомлення на вибраній моделі чекає, доки помічник звільниться: надіслане
   посеред роботи, воно в Antigravity пішло б на власній моделі помічника. Лише рідні моделі Google: на Claude і
   GPT-OSS Antigravity дає дуже мало квоти, тож міст їх не пропонує, відхиляє, а помічникові, запущеному на такій
-  моделі, відповідає на Hydrogen medium.
+  моделі, відповідає на Hydrogen medium. Під час прив'язки міст читає, на якій моделі помічник насправді відповів, і
+  в кожному повідомленні йому явно називає записану модель, тож перемикач моделей в Antigravity її не змінить.
 * **Помічники звуться за задачею**, і лід тримає щонайбільше трьох (`maxHelpersPerLead`): нова задача йде
   помічникові, який уже є, а того, хто закінчив, звільняють, перш ніж запускати нового.
 * **Обірвана сесія лишає свій контекст.** Коли хід Claude закінчується лімітом чи помилкою, дошка дістає з

@@ -196,6 +196,9 @@ to its helper (an Antigravity window): research, adb, logs, clicking through a U
   Flash (low, medium, high), the cheaper. `set_helper({ models: true })` lists what is there now, with quota.
   **Only Google's own models**: never Claude or GPT-OSS in Antigravity — Google gives very little quota for them
   (owner, 24.11). The bridge refuses them, and a helper begun on one is answered on Hydrogen medium.
+  When a pair is made the bridge reads the model the helper really answered on, records it and says so in the
+  pair room; every message to a helper then names that model, so the picker in Antigravity cannot move it.
+  Read that line in the room — it is the proof, not your own `model` argument.
   Least effort for simple actions (tapping a screen, a known command); medium for analysis and for code; high
   for big analytical work; Flash for translations (medium, or the least for a short one) and routine.
   `start` takes `model` / `effort` or `kind` (`ui`, `translate`, `routine`, `code`, `analysis`, `deep`;

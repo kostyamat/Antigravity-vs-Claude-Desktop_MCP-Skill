@@ -14,6 +14,12 @@ never overwritten.
 Antigravity gives very little quota. The bridge no longer lists Claude or GPT-OSS models, refuses them in
 `set_helper` and `post_message`, and answers a helper begun on one on Gemini 4 Hydrogen (medium).
 
+**A helper's model is checked, not assumed.** A lead believed its helper ran on Flash while it answered on Claude
+Sonnet. Now, when a pair is made, the bridge reads the model the helper really answered on: a Google model is
+recorded as it is, anything else is switched to Hydrogen medium, and the pair room says which. Every message to a
+helper names its recorded model, so a model chosen in Antigravity's own picker, or a window paired as it was,
+no longer leaves a helper on Claude.
+
 ## v2.8.16 — 2026-11-24
 
 **A lead picks its helper's model and effort.** Antigravity now offers Gemini 4 Hydrogen (low, medium, high, xhigh)
