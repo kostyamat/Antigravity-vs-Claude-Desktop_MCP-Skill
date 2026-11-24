@@ -14,6 +14,11 @@
 
 const EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
 
+// Only Google's own models. Antigravity also offers Claude and GPT-OSS, but Google gives very little
+// quota for those, and they are what the helper is there to spare (owner, 24.11.2026: leads turned on
+// Claude Sonnet in Antigravity: Google's own models are to be used).
+const isGoogle = m => /^gemini\b/i.test(m.label) || /^gemini-/i.test(m.id);
+
 // Kind of work → family and effort. Family: the one that is enough for it.
 const KINDS = {
   ui:        { family: 'flash',    effort: 'minimal', what: 'simple actions: tapping a screen, running a known command, copying files' },
@@ -35,7 +40,7 @@ function parseLabel(label) {
 
 // The application's model list → [{ label, id, name, family, effort, remaining }], usable only.
 function fromConfigs(configs) {
-  return (configs || []).filter(c => c && !c.disabled && c.modelId && c.modelOrAlias && c.modelOrAlias.model)
+  return (configs || []).filter(c => c && !c.disabled && c.modelId && c.modelOrAlias && c.modelOrAlias.model && isGoogle({ label: c.label, id: c.modelId }))
     .map(c => Object.assign({ label: c.label, id: c.modelId, name: c.modelOrAlias.model,
       remaining: c.quotaInfo && typeof c.quotaInfo.remainingFraction === 'number' ? c.quotaInfo.remainingFraction : null },
       parseLabel(c.label)));
@@ -53,6 +58,10 @@ function resolve(list, want) {
   let effort = String(w.effort || (kind && kind.effort) || '').trim().toLowerCase();
   if (effort && !EFFORTS.includes(effort)) return { error: `unknown effort "${w.effort}" — one of ${EFFORTS.join(', ')}` };
   if (!asked) return { error: 'name the model ("hydrogen", "flash" or an exact id) or the kind of work' };
+  if (/claude|sonnet|opus|haiku|gpt|oss/.test(asked)) {
+    return { error: `"${asked}" is not a Google model: a helper runs only on Google's own (Hydrogen, Flash) — Antigravity ` +
+      'gives very little quota for the others' };
+  }
   const exact = list.find(m => m.id.toLowerCase() === asked);
   if (exact && !w.effort) return { model: exact };
   const fam = exact ? exact.family : asked;
@@ -100,4 +109,4 @@ async function catalogue() {
   return list;
 }
 
-module.exports = { EFFORTS, KINDS, parseLabel, fromConfigs, resolve, families, describe, catalogue };
+module.exports = { EFFORTS, KINDS, isGoogle, parseLabel, fromConfigs, resolve, families, describe, catalogue };

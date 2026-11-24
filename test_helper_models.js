@@ -28,7 +28,7 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
   const pick = w => { const r = models.resolve(list, w); return r.error ? 'ERR ' + r.error : r.model.id; };
 
   await t('the list: usable models only, family and effort from the label', () => {
-    assert.strictEqual(list.length, 8, 'a disabled model is left out');
+    assert.strictEqual(list.length, 7, 'a disabled model is left out, and so is one not of Google\'s own');
     assert.deepStrictEqual(models.parseLabel('Gemini 4 Hydrogen (XHigh)'), { family: 'gemini 4 hydrogen', effort: 'xhigh' });
     assert.deepStrictEqual(models.parseLabel('Claude Opus 4.6 (Thinking)'), { family: 'claude opus 4.6 (thinking)', effort: '' });
   });
@@ -39,7 +39,6 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
     assert.strictEqual(pick({ model: 'hydrogen' }), 'gemini-4-hydrogen-medium', 'no effort named: medium');
     assert.strictEqual(pick({ model: 'gemini-3.8-flash-low' }), 'gemini-3.8-flash-low', 'an exact id stays as it is');
     assert.strictEqual(pick({ model: 'gemini-3.8-flash-low', effort: 'high' }), 'gemini-3.8-flash-high', 'an id with an effort: its family');
-    assert.strictEqual(pick({ model: 'claude-opus-4-6-thinking' }), 'claude-opus-4-6-thinking');
   });
   await t('the owner\'s kinds of work (24.11): taps least, translation Flash medium, code and analysis medium, big analysis high', () => {
     assert.strictEqual(pick({ kind: 'ui' }), 'gemini-3.8-flash-low');
@@ -53,6 +52,10 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
   await t('what is not there is refused with the list, never guessed', () => {
     assert.match(pick({ model: 'neon' }), /^ERR no usable model "neon".*Hydrogen \(low, medium, high, xhigh\), 80 % quota left/);
     assert.match(pick({ model: 'gemini' }), /^ERR "gemini" names several models/);
+    assert.match(pick({ model: 'claude-opus-4-6-thinking' }), /^ERR .* is not a Google model/, 'Claude in Antigravity: refused (owner, 24.11)');
+    assert.match(pick({ model: 'sonnet', effort: 'low' }), /not a Google model/);
+    assert.match(pick({ model: 'gpt-oss-120b-medium' }), /not a Google model/);
+    assert.ok(!/Claude|GPT/.test(models.describe(list)), 'nor offered in the list a lead sees');
     assert.match(pick({ model: 'hydrogen', effort: 'turbo' }), /^ERR unknown effort/);
     assert.match(pick({ kind: 'poetry' }), /^ERR unknown kind/);
     assert.match(models.describe(list), /Kinds of work: ui = flash minimal/);
@@ -106,6 +109,9 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
         assert.strictEqual(db.readHelpers()[0].own_model, 'gemini-4-hydrogen-medium', 'the model it began on is kept');
         assert.deepStrictEqual(wake.modelFor('conv-h', { modelWant: { effort: 'high' } }), { effort: 'high' });
         assert.strictEqual(wake.modelFor('not-a-helper', {}), null);
+        db.setHelper('conv-c', 'c:/work/app', 'r2');
+        db.setHelperModel('conv-c', 'claude-sonnet-4-6', 'claude-sonnet-4-6');
+        assert.deepStrictEqual(wake.modelFor('conv-c', {}), { model: 'hydrogen', effort: 'medium' }, 'begun on Claude: answered on Hydrogen');
         try { db.getDb().close(); } catch (_) {}
       } finally {
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}

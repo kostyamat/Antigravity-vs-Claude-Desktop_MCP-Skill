@@ -19,6 +19,9 @@ function modelFor(convId, rec) {
   try {
     const h = require('./bridge-db').readHelpers().find(x => x.helper === convId);
     if (h && h.model && h.model !== h.own_model) return { model: h.model };
+    // Started on a model not of Google's own (Claude, GPT-OSS) and never changed: answered on
+    // Hydrogen medium all the same — Antigravity gives very little quota for those (owner, 24.11).
+    if (h && h.own_model && !h.model.startsWith('gemini-') && !h.own_model.startsWith('gemini-')) return { model: 'hydrogen', effort: 'medium' };
   } catch (_) {}
   return null;
 }
