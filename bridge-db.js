@@ -309,6 +309,12 @@ function initSchema(db) {
       since TEXT
     );
   `);
+  // The model a helper runs on (helper-models.js): `model` is the lead's standing choice, an
+  // Antigravity model id; `own_model` the one its conversation was started on. They differ only
+  // after the lead changed it, and only then is every message delivered on the chosen one.
+  for (const column of ['model', 'own_model']) {
+    try { db.exec(`ALTER TABLE helpers ADD COLUMN ${column} TEXT DEFAULT ''`); } catch (_) {}
+  }
 
   migrateLinesOnce(db);
 }
@@ -1615,6 +1621,15 @@ function setHelper(helper, lead, room) {
     .run(String(helper).trim(), String(lead).trim(), String(room || ''), new Date().toISOString());
 }
 
+// The lead's choice of model for its helper; own: the model its conversation began on (at start).
+function setHelperModel(helper, model, own) {
+  const h = String(helper).trim();
+  if (own !== undefined) {
+    return getDb().prepare('UPDATE helpers SET model = ?, own_model = ? WHERE helper = ?').run(String(model || ''), String(own || ''), h).changes > 0;
+  }
+  return getDb().prepare('UPDATE helpers SET model = ? WHERE helper = ?').run(String(model || ''), h).changes > 0;
+}
+
 function dropHelper(helper) {
   return getDb().prepare('DELETE FROM helpers WHERE helper = ?').run(String(helper).trim()).changes > 0;
 }
@@ -1640,7 +1655,7 @@ function readGrants() {
 }
 
 function readHelpers() {
-  try { return getDb().prepare('SELECT helper, lead, room, since FROM helpers ORDER BY since').all(); } catch (_) { return []; }
+  try { return getDb().prepare("SELECT helper, lead, room, since, COALESCE(model, '') model, COALESCE(own_model, '') own_model FROM helpers ORDER BY since").all(); } catch (_) { return []; }
 }
 
 // ── Stands ──────────────────────────────────────────────────────────────────────────────
@@ -1744,6 +1759,7 @@ module.exports = {
   addressOf,
   adoptCard,
   setHelper,
+  setHelperModel,
   dropHelper,
   readHelpers,
   grantHelper,

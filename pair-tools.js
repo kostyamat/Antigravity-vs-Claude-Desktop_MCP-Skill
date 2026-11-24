@@ -6,6 +6,16 @@
 const { isHuman } = require('./room-routing');
 const antigravity = require('./antigravity-api');
 const { projectName } = require('./project-line');
+const helperModels = require('./helper-models');
+
+// The model a lead asks for (helper-models.js). Nothing asked → null: the caller's default.
+async function pickModel(a) {
+  if (!a.model && !a.effort && !a.kind) return null;
+  const list = await helperModels.catalogue();
+  const r = helperModels.resolve(list, { model: a.model, effort: a.effort, kind: a.kind });
+  if (r.error) throw new Error(r.error + '. ' + helperModels.describe(list));
+  return r.model;
+}
 
 function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, doPost, normAgent }) {
 
@@ -49,10 +59,15 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
         'A helper started without context starts by guessing.');
     }
     const name = projectName(me) || router.nameOf(me);
+    // Its model: what the lead asked for, else Hydrogen on medium effort (analysis and code, the
+    // usual work of a helper); the old tier "pro" only when the list cannot be read.
+    let chosen = null;
+    try { chosen = await pickModel(a.model || a.effort || a.kind ? a : { model: 'hydrogen', effort: 'medium' }); }
+    catch (e) { if (a.model || a.effort || a.kind) return fail(id, 'set_helper: ' + e.message); }
     let helper;
     try {
       helper = await antigravity.create({
-        model: /^[A-Za-z0-9_.-]{2,60}$/.test(String(a.model || '')) ? a.model : 'pro',
+        model: chosen ? chosen.id : 'pro',
         title: name + ': ' + task,
         prompt: `You are the helper of the project "${name}" for one task — "${task}" —, started through the agent-bridge board by its lead, a Claude session. ` +
           'Read your skills agent-bridge (PROTOCOL) and agent-workflow (section "Working with a helper agent") now, completely. ' +
@@ -65,7 +80,12 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
     }
     // The new conversation appears among the cards a moment after it is made.
     for (let i = 0; i < 20 && !router.windowOf(helper); i++) await new Promise(r => setTimeout(r, 500));
-    return doSetHelper(id, Object.assign({}, a, { start: false, helper, lead: '', task }));
+    const res = doSetHelper(id, Object.assign({}, a, { start: false, helper, lead: '', task, model: '', effort: '', kind: '' }));
+    if (chosen) {
+      const pair = router.leadOf(router.windowOf(helper) || helper);
+      bridgeDb.setHelperModel(pair ? pair.helper : helper, chosen.id, chosen.id);
+    }
+    return res;
   }
 
   function maxHelpers() {
@@ -107,9 +127,30 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
       `Take it back: set_helper({helper: "${helper}", revoke: "${who}"}).`);
   }
 
+  // The models a helper can run on now, and the lead's helpers with the one each is on.
+  function listModels(id, me) {
+    return helperModels.catalogue().then(list => {
+      const mine = bridgeDb.readHelpers().filter(h => router.same(h.lead, me));
+      const label = mid => (list.find(m => m.id === mid) || {}).label || mid || 'the one it was started on';
+      return ok(id, helperModels.describe(list) + (mine.length ? '\nYour helpers: ' + mine.map(h =>
+        `"${router.nameOf(h.helper)}" [${h.helper}] on ${label(h.model)}`).join('; ') + '.' : '') +
+        '\nChange one: set_helper({helper, model?, effort?, kind?}); one message only: post_message with effort / model / kind.');
+    }).catch(e => fail(id, 'set_helper: the model list could not be read (' + e.message + '). Is Antigravity running?'));
+  }
+
+  // The lead changes the model its helper runs on: every message to it from now on.
+  function changeModel(id, a, me, pair) {
+    return pickModel(a).then(m => {
+      bridgeDb.setHelperModel(pair.helper, m.id);
+      return ok(id, `✅ "${router.nameOf(pair.helper)}" now answers every message on ${m.label} (${m.id}). ` +
+        'A message sent while it is at work waits until it is free, so that it runs on that model.');
+    }).catch(e => fail(id, 'set_helper: ' + e.message));
+  }
+
   function doSetHelper(id, a) {
     const me = router.windowOf(a.canonicalId) || router.windowOf(a.sessionId);
     if (!me) return fail(id, 'set_helper: the board does not know which window you are — pass sessionId.');
+    if (a.models === true) return listModels(id, me);
     if (a.start === true) return startHelper(id, a, me).catch(e => fail(id, 'set_helper: ' + e.message));
     if (String(a.allow || a.revoke || '').trim()) return doGrant(id, a, me);
     const asHelper = Boolean(String(a.lead || '').trim());
@@ -127,6 +168,9 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
     const lead = asHelper ? other : me;
 
     const current = router.leadOf(helper);
+    if (!asHelper && a.release !== true && (a.model || a.effort || a.kind) && current && router.same(current.lead, lead)) {
+      return changeModel(id, a, me, current);
+    }
     if (a.release === true) {
       if (!current) return ok(id, `"${router.nameOf(helper)}" was nobody's helper.`);
       if (!router.same(current.lead, lead) && !router.same(helper, me)) {

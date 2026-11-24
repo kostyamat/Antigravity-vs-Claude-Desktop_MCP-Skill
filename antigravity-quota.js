@@ -106,7 +106,7 @@ function warning(q, known, told) {
   return { text, level, told: Object.assign({}, told || {}, { [q.account]: { level, reset: worst.reset } }) };
 }
 
-module.exports = { read, remember, alternatives, warning, pct, poolName, WARN_AT, SWITCH_AT };
+module.exports = { read, call, remember, alternatives, warning, pct, poolName, WARN_AT, SWITCH_AT };
 
 // node antigravity-quota.js → the pools of the signed-in account
 if (require.main === module) {

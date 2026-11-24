@@ -85,6 +85,73 @@ function send(conversationId, text, where) {
   child.unref();
 }
 
+// One call to the application's local service (the one its own window uses).
+function rpc(at, method, body, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const [host, port] = String(at.env.ANTIGRAVITY_LS_ADDRESS).split(':');
+    const data = Buffer.from(JSON.stringify(body || {}));
+    const req = require('http').request({ host, port, method: 'POST', timeout: timeoutMs || 15000,
+      path: '/exa.language_server_pb.LanguageServerService/' + method,
+      headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1',
+                 'x-codeium-csrf-token': at.env.ANTIGRAVITY_CSRF_TOKEN, 'Content-Length': data.length } }, res => {
+      let s = '';
+      res.on('data', c => { s += c; });
+      res.on('end', () => {
+        if (res.statusCode !== 200) return reject(new Error('Antigravity answered ' + res.statusCode + ': ' + s.slice(0, 200)));
+        try { resolve(JSON.parse(s || '{}')); } catch (_) { reject(new Error('unreadable answer from Antigravity')); }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('Antigravity did not answer in time')));
+    req.on('error', reject);
+    req.end(data);
+  });
+}
+
+// Is the conversation at work now? 'running' | 'idle' | '' (not known). A light call: the
+// summaries of all conversations, a few kilobytes, never a trajectory.
+async function runState(conversationId, where) {
+  const at = where || locate();
+  const j = await rpc(at, 'GetAllCascadeTrajectories', {}, 8000);
+  const s = ((j.trajectorySummaries || {})[conversationId] || {}).status || '';
+  return /RUNNING/.test(s) ? 'running' : /IDLE/.test(s) ? 'idle' : '';
+}
+
+// Deliver a message to be answered on a model the sender picks — the internal name from the
+// application's list (helper-models.js), e.g. MODEL_PLACEHOLDER_M526 for Gemini 4 Hydrogen (Medium).
+// Measured 24.11 on Antigravity 2.34: a message with requestedModel runs on that model only when
+// the conversation is idle; sent while it works, it is queued and runs on the conversation's own
+// model. So this waits for idle (one waiter per conversation), up to waitMs, then sends; when it
+// cannot — still busy at the limit, or the call refused — it delivers the plain way, on the
+// conversation's own model, and leaves a line in the log. Fire and forget, like send().
+const queues = new Map();
+function sendAs(conversationId, text, modelName, opts) {
+  const o = opts || {};
+  const waitMs = o.waitMs === undefined ? 10 * 60e3 : o.waitMs;
+  const log = line => { try { fs.appendFileSync(path.join(__dirname, 'bridge_mcp.log'), `${new Date().toISOString()} sendAs ${conversationId}: ${line}\n`); } catch (_) {} };
+  const run = async () => {
+    let at;
+    try { at = o.where || locate(); } catch (e) { return log('not delivered - ' + e.message); }
+    const until = Date.now() + waitMs;
+    try {
+      for (;;) {
+        const st = await runState(conversationId, at).catch(() => '');
+        if (st !== 'running') break;
+        if (Date.now() >= until) { log(`still at work after ${Math.round(waitMs / 1000)} s: delivered on its own model`); return send(conversationId, text, at); }
+        await new Promise(r => setTimeout(r, o.pollMs || 5000));
+      }
+      await rpc(at, 'SendUserCascadeMessage', { cascadeId: conversationId, items: [{ text }],
+        cascadeConfig: { plannerConfig: { requestedModel: { model: modelName } } } });
+    } catch (e) {
+      log(`${modelName} refused (${e.message}): delivered on its own model`);
+      send(conversationId, text, at);
+    }
+  };
+  const next = (queues.get(conversationId) || Promise.resolve()).then(run, run);
+  queues.set(conversationId, next);
+  next.then(() => { if (queues.get(conversationId) === next) queues.delete(conversationId); });
+  return next;
+}
+
 // Start a conversation and return its id.
 function create({ model, title, prompt }) {
   return new Promise((resolve, reject) => {
@@ -137,4 +204,4 @@ function remove(conversationId) {
   });
 }
 
-module.exports = { locate, send, create, remove };
+module.exports = { locate, send, sendAs, runState, create, remove };

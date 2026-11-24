@@ -521,7 +521,10 @@ const TOOLS = [
         square: { type: 'boolean', description: 'true = write on the Square, in front of every window. Only when the owner asked you to speak to everyone. Without it a message that fits no room is refused, not put on the Square.' },
         priority: { type: 'string', enum: PRIORITIES, description: 'P0 = immediate attention/stop; normal; fyi = for information only.' },
         status: { type: 'string', enum: STATUSES, description: 'info | question | answer | working | done | blocked | ack' },
-        progress: { type: 'string', description: 'Current progress description, e.g. "step 3 of 5" or "awaiting build".' }
+        progress: { type: 'string', description: 'Current progress description, e.g. "step 3 of 5" or "awaiting build".' },
+        kind: { type: 'string', enum: Object.keys(require('./helper-models').KINDS), description: 'To an Antigravity helper: the kind of work this message asks for; the helper answers it on the model and effort that suit it — ui = Flash, least effort (tapping a screen, a known command); translate / routine = Flash medium; code / analysis = Hydrogen medium; deep = Hydrogen high (big analytical work). Spares the quota. For this message only.' },
+        effort: { type: 'string', enum: require('./helper-models').EFFORTS, description: 'To an Antigravity helper: the effort for this message only (minimal = the least the model has). Alone it keeps the helper\'s model.' },
+        model: { type: 'string', description: 'To an Antigravity helper: the model for this message only — "hydrogen", "flash" or an exact id (set_helper({models: true}) lists them).' }
       },
       required: ['sender']
     }
@@ -818,6 +821,9 @@ const TOOLS = [
       'A lead with no helper starts one itself: set_helper({start: true, task: "<two to five words: what it is for>", brief: "<the project, ' +
       'where it lives, what the helper will do, what it must not touch>"}) opens a new Antigravity conversation named after the task, gives it ' +
       'that context, pairs it and makes the room. A lead keeps few helpers (three unless configured): release one whose task is done before starting another. ' +
+      'Pick a helper by what the work needs, and its effort to spare the quota: set_helper({models: true}) lists what Antigravity offers now; ' +
+      'start with model/effort or kind; change a helper you have with set_helper({helper, model?, effort?, kind?}); one task only: post_message with ' +
+      'kind / effort / model. Least effort for simple actions, medium for analysis and code, high for big analytical work; Flash for translations and routine. ' +
       'Leave for ANOTHER lead to consult your helper or give it a task: set_helper({helper: "<your helper>", allow: "<that lead or project>", hours?}); ' +
       'take it back with revoke. When the helper\'s lead is away, the owner can give the leave: pass approval: <id of his message saying so>.',
     inputSchema: {
@@ -829,7 +835,10 @@ const TOOLS = [
         start: { type: 'boolean', description: 'Lead only: start a new helper (an Antigravity conversation) instead of naming an existing window.' },
         brief: { type: 'string', description: 'With start: the context the new helper begins with.' },
         task: { type: 'string', description: 'With start, required: two to five words naming what this helper is for. The conversation and the room are named after it.' },
-        model: { type: 'string', description: 'With start: the helper\'s model (default "pro").' },
+        model: { type: 'string', description: 'The helper\'s model: "hydrogen" (Gemini 4 Hydrogen, the stronger), "flash" (Gemini 3.8 Flash, cheaper) or an exact id. With start: the one it begins on (default Hydrogen, medium effort). With helper, by its lead: the one it answers every message on from now on.' },
+        effort: { type: 'string', enum: require('./helper-models').EFFORTS, description: 'With model or alone: the effort — minimal (the least the model has) for simple actions, medium for analysis and code, high / xhigh for big analytical work. Less effort spares the quota.' },
+        kind: { type: 'string', enum: Object.keys(require('./helper-models').KINDS), description: 'Instead of model and effort: the kind of work — ui, translate, routine (Flash), code, analysis (Hydrogen medium), deep (Hydrogen high).' },
+        models: { type: 'boolean', description: 'true = list the models a helper can run on now, their efforts and quota, and the model each of your helpers is on.' },
         another: { type: 'boolean', description: 'With start: start one more helper although one is on record.' },
         lead: { type: 'string', description: 'The lead\'s window id or project name. Given by the helper.' },
         room: { type: 'string', description: 'The room the two talk in, if it is not the one they already share.' },
@@ -1485,9 +1494,27 @@ function doPost(id, a) {
     file: null,
     readBy: []
   };
+  // The model and effort the sender picks for this message, for an Antigravity helper; checked
+  // against the application's own list when it is delivered (wake-antigravity.js).
+  const want = {};
+  const models = require('./helper-models');
+  if (a.kind) {
+    if (!models.KINDS[String(a.kind).toLowerCase()]) return fail(id, `post_message: kind is one of ${Object.keys(models.KINDS).join(', ')}. Message NOT recorded.`);
+    want.kind = String(a.kind).toLowerCase();
+  }
+  if (a.effort) {
+    if (!models.EFFORTS.includes(String(a.effort).toLowerCase())) return fail(id, `post_message: effort is one of ${models.EFFORTS.join(', ')}. Message NOT recorded.`);
+    want.effort = String(a.effort).toLowerCase();
+  }
+  if (a.model) {
+    if (!/^[A-Za-z0-9_. -]{2,60}$/.test(String(a.model))) return fail(id, 'post_message: model is "hydrogen", "flash" or an exact model id. Message NOT recorded.');
+    want.model = String(a.model).trim();
+  }
+
   const saved = bridgeDb.addMessage(rec);
   const nextId = saved.id;
   rec.id = nextId;
+  if (Object.keys(want).length) rec.modelWant = want;
   if (idemKey) bridgeDb.rememberIdempotent(idemSender, idemKey, nextId);
 
   if (text.length > INLINE_LIMIT) {

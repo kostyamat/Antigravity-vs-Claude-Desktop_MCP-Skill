@@ -5,6 +5,43 @@ const { RULE: OWNER_RULE } = require('./owner-waiting');
 
 const SCRIPTS_DIR = path.resolve(__dirname);
 let lastWokenId = 0;
+// How long a delivery on a chosen model may wait for a busy helper (antigravity-api sendAs).
+// A short-lived process (a hook) sets 0: it cannot wait, so a busy helper gets it the plain way.
+let waitMs;
+function setWaitLimit(ms) { waitMs = ms; }
+
+// What a message to this conversation is to be answered on: the sender's pick for this one message
+// (rec.modelWant: { model?, effort?, kind? }), else the lead's standing choice for its helper when it
+// differs from the model the conversation was started on. null = its own model.
+function modelFor(convId, rec) {
+  const w = rec.modelWant;
+  if (w && (w.model || w.effort || w.kind)) return w;
+  try {
+    const h = require('./bridge-db').readHelpers().find(x => x.helper === convId);
+    if (h && h.model && h.model !== h.own_model) return { model: h.model };
+  } catch (_) {}
+  return null;
+}
+
+function deliver(convId, prompt, where, rec) {
+  const want = modelFor(convId, rec);
+  if (!want) return antigravity.send(convId, prompt, where);
+  const models = require('./helper-models');
+  models.catalogue().then(list => {
+    // An effort alone keeps the helper's family: its standing model, else the one it began on.
+    let w = want;
+    if (!w.model && !w.kind) {
+      const h = require('./bridge-db').readHelpers().find(x => x.helper === convId) || {};
+      w = Object.assign({ model: h.model || h.own_model || 'hydrogen' }, w);
+    }
+    const r = models.resolve(list, w);
+    if (r.error) throw new Error(r.error);
+    return antigravity.sendAs(convId, prompt, r.model.name, { where, waitMs });
+  }).catch(e => {
+    try { fs.appendFileSync(path.join(SCRIPTS_DIR, 'bridge_mcp.log'), `${new Date().toISOString()} wakeAntigravity: #${rec.id} on ${JSON.stringify(want)} - ${e.message}; delivered on its own model\n`); } catch (_) {}
+    antigravity.send(convId, prompt, where);
+  });
+}
 
 function wakeAntigravity(rec) {
   // A test run posts to windows that do not exist; it must not reach into the real client.
@@ -144,7 +181,7 @@ function wakeAntigravity(rec) {
           OWNER_RULE + ` He watches the board, not this chat. ` +
           `Quote the point you answer with a "> " line and answer that point, not the whole message.`
         : `Do not reply to acknowledge - a receipt wakes the sender for nothing.`);
-    for (const convId of targetConvIds) antigravity.send(convId, prompt, where);
+    for (const convId of targetConvIds) deliver(convId, prompt, where, rec);
   } catch (e) {
     try {
       fs.appendFileSync(path.join(SCRIPTS_DIR, 'bridge_mcp.log'), `${new Date().toISOString()} wakeAntigravity error: ${e.message}\n`);
@@ -152,4 +189,4 @@ function wakeAntigravity(rec) {
   }
 }
 
-module.exports = { wakeAntigravity };
+module.exports = { wakeAntigravity, setWaitLimit, modelFor };

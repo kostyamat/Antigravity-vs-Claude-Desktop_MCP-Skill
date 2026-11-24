@@ -140,7 +140,8 @@ function prompt(input) {
       parts.push(behind.join('\n'));
       const bridgeDb = require('./bridge-db');
       const router = require('./room-routing').createRouter(bridgeDb, require('./cards'));
-      const { wakeAntigravity } = require('./wake-antigravity');
+      const { wakeAntigravity, setWaitLimit } = require('./wake-antigravity');
+      setWaitLimit(0);   // a hook ends in a moment: it cannot wait for a busy helper
       parts.push(...handover.askHelpers({ bridgeDb, router, win, post: m => {
         const rec = Object.assign({ ts: new Date().toISOString(), priority: 'normal', status: 'question', progress: '',
                                     replyTo: null, file: null, readBy: [] }, m);
