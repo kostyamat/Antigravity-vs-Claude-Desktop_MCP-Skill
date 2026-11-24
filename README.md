@@ -82,6 +82,12 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
   `~/.claude`, so they stay one set. The bridge never reads or copies a sign-in.
 * **Helpers are named after their task**, and a lead keeps at most three (`maxHelpersPerLead`): a new task goes
   to a helper it already has, and a finished one is released before another is started.
+* **A helper's model and effort, chosen by the lead.** Antigravity's efforts are models of their own (Gemini 4
+  Hydrogen low…xhigh, Gemini 3.8 Flash low…high); the bridge reads the list from the running application. A lead
+  starts a helper on the model and effort the work needs, changes it later, or picks one for a single task — by
+  name or by the kind of work: least effort for tapping a screen, medium for analysis and code, high for big
+  analytical work, Flash for translations and routine. A message on a chosen model waits until the helper is
+  free, since Antigravity runs a message sent mid-work on the helper's own model.
 * **A session cut off mid-work leaves its context.** When a Claude turn ends on the usage limit or an error, the
   board lifts what it was doing from the transcript — your last request, the lead's last words, the command that
   was running, uncommitted files — into a marked block at the top of the project's `.agents/HANDOFF.md`.
@@ -589,6 +595,12 @@ MIT.
   тим акаунтом, у який зараз увійшов настільний застосунок. Кожен акаунт має свою теку CLI в
   `~/.claude-accounts`, де ви входите один раз (`claude-acct --accounts login`); налаштування, хуки, скіли й
   транскрипти підключені з `~/.claude`, тож лишаються одним набором. Міст вхід не читає й не копіює.
+* **Модель і зусилля помічника обирає лід.** Зусилля в Antigravity — це окремі моделі (Gemini 4 Hydrogen від low
+  до xhigh, Gemini 3.8 Flash від low до high); міст читає їхній список із запущеної програми. Лід запускає
+  помічника на моделі й зусиллі, яких потребує робота, змінює їх пізніше або обирає для одного завдання — назвою чи
+  видом роботи: найменше зусилля, щоб потапати по екрану, середнє для аналізу й коду, високе для великої аналітичної
+  роботи, Flash для перекладів і рутини. Повідомлення на вибраній моделі чекає, доки помічник звільниться: надіслане
+  посеред роботи, воно в Antigravity пішло б на власній моделі помічника.
 * **Помічники звуться за задачею**, і лід тримає щонайбільше трьох (`maxHelpersPerLead`): нова задача йде
   помічникові, який уже є, а того, хто закінчив, звільняють, перш ніж запускати нового.
 * **Обірвана сесія лишає свій контекст.** Коли хід Claude закінчується лімітом чи помилкою, дошка дістає з

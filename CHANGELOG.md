@@ -8,6 +8,16 @@ never overwritten.
 
 ---
 
+## Unreleased
+
+**A lead picks its helper's model and effort.** Antigravity now offers Gemini 4 Hydrogen (low, medium, high, xhigh)
+beside Gemini 3.8 Flash (low, medium, high); each effort is a model of its own. `set_helper({models: true})` lists
+what the running application offers, with quota; a helper is started on a model and effort (`model`, `effort`, or
+the kind of work: `ui`, `translate`, `routine`, `code`, `analysis`, `deep` — default Hydrogen medium); its lead
+changes them later with `set_helper({helper, model?, effort?, kind?})`, or for one task with the same fields on
+`post_message`. Such a message waits until the helper is free: Antigravity runs a message sent mid-work on the
+helper's own model.
+
 ## v2.8.15 — 2026-11-22
 
 **The lead knows its helper's quota.** When the Antigravity quota warning comes, each lead of a helper at work is told how much is left (pool, reset, pace). At 5 % — or when the helpers are stopped, if sooner — it is woken to pause at once the P0 it gave them; when the bridge sees the quota back, it tells the lead to continue that P0.

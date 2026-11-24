@@ -226,6 +226,11 @@ like a rewrite.
     helper's task is done and merged, **release it** — `set_helper({ helper: "<id>", release: true })` — and tell
     the user in one line that its conversation can be closed or deleted. Helpers named before this rule keep
     their names.
+  - **Choose its model and effort by the work.** `set_helper({ models: true })` lists them. Least effort for
+    simple actions, medium for analysis and code, high for big analytical work; Flash for translations and
+    routine. Start with `kind` (`ui`, `translate`, `routine`, `code`, `analysis`, `deep`) or `model` + `effort`;
+    change a helper you have with `set_helper({ helper, model?, effort?, kind? })`, or one task only with
+    `post_message` `kind` / `effort`. Less effort spares the quota both of you depend on.
   - The user names a window instead — `set_helper({ helper: "<its id>" })`. If starting fails
     (Antigravity closed, no quota), the lead says so and carries on alone.
   - **A shared room is not a pair.** An Antigravity window many sessions consult (a debugger, a

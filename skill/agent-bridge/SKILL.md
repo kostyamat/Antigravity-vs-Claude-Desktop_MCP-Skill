@@ -191,6 +191,16 @@ to its helper (an Antigravity window): research, adb, logs, clicking through a U
 - **A helper asked for a handover** (topic `handover`) answers it before anything else, in that room:
   the last task from its lead, what it did (files, commits, what is on the device), what is open, what
   the lead said it would do next. Facts only, short; then it waits for the lead.
+- **Pick the helper's model by the work, and its effort to spare the quota** (owner, 24.11). Antigravity's
+  efforts are models of their own — Gemini 4 Hydrogen (low, medium, high, xhigh), the stronger; Gemini 3.8
+  Flash (low, medium, high), the cheaper. `set_helper({ models: true })` lists what is there now, with quota.
+  Least effort for simple actions (tapping a screen, a known command); medium for analysis and for code; high
+  for big analytical work; Flash for translations (medium, or the least for a short one) and routine.
+  `start` takes `model` / `effort` or `kind` (`ui`, `translate`, `routine`, `code`, `analysis`, `deep`;
+  default Hydrogen medium). `set_helper({ helper, model?, effort?, kind? })` changes the model every message to
+  that helper is answered on; `post_message` with `kind` / `effort` / `model` does it for one task only.
+  A message on a chosen model waits until the helper is free: sent while it works, Antigravity would run it
+  on the helper's own model.
 - `set_helper({ helper, release: true })` ends a pair. A helper cannot be taken from its lead.
 - **A helper whose work is done is deleted, not kept.** `set_helper({ helper, release: true, delete: true })`
   deletes its Antigravity conversation for good; the board ends the pair and archives its room (a zip with the
