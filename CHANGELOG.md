@@ -20,6 +20,13 @@ recorded as it is, anything else is switched to Hydrogen medium, and the pair ro
 helper names its recorded model, so a model chosen in Antigravity's own picker, or a window paired as it was,
 no longer leaves a helper on Claude.
 
+**The ladder: which model for which work.** Leads ran everything on Flash or everything on the strongest model.
+The kinds of work are now a ladder from the cheapest: `ui`, `translate`, `routine` on Flash (never code that
+ships), `code` on Hydrogen low, the new `complex` (hard code) and `analysis` on Hydrogen medium, `deep` on
+Hydrogen high, and the new `research` on Hydrogen xhigh, as strong as Fable and as costly, for very deep research
+only. Argon stays a consultant (argon-review), not a helper model. The list a lead asks for says how to climb it,
+and the agent-workflow skill carries the table.
+
 ## v2.8.16 — 2026-11-24
 
 **A lead picks its helper's model and effort.** Antigravity now offers Gemini 4 Hydrogen (low, medium, high, xhigh)

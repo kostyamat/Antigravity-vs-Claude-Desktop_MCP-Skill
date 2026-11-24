@@ -226,13 +226,32 @@ like a rewrite.
     helper's task is done and merged, **release it** — `set_helper({ helper: "<id>", release: true })` — and tell
     the user in one line that its conversation can be closed or deleted. Helpers named before this rule keep
     their names.
-  - **Choose its model and effort by the work.** `set_helper({ models: true })` lists them. Least effort for
-    simple actions, medium for analysis and code, high for big analytical work; Flash for translations and
-    routine. Start with `kind` (`ui`, `translate`, `routine`, `code`, `analysis`, `deep`) or `model` + `effort`;
-    change a helper you have with `set_helper({ helper, model?, effort?, kind? })`, or one task only with
-    `post_message` `kind` / `effort`. Less effort spares the quota both of you depend on. Google's own models
-    only — never Claude or GPT-OSS in Antigravity: their quota there is very small. The pair room says which
-    model the helper really runs on; trust that line, and change the model only through set_helper.
+  - **Choose its model by the work — the ladder** (owner, 24.11.2026). Cheapest rung that fits first:
+
+    | kind | model | for |
+    |---|---|---|
+    | `ui` | Flash minimal | tapping a screen, a known command, copying files |
+    | `translate` | Flash medium (minimal if short) | translation |
+    | `routine` | Flash medium | logs, searches, renames by a known recipe — no code that ships |
+    | `code` | Hydrogen low | code by a clear spec: a known change, a pattern already in the project |
+    | `complex` | Hydrogen medium | hard code: a new mechanism, threads, native/smali patches, a bug Flash got wrong |
+    | `analysis` | Hydrogen medium | reading code or firmware, finding a cause |
+    | `deep` | Hydrogen high | a subsystem, a protocol, a long investigation |
+    | `research` | Hydrogen xhigh | very deep research — as strong as Fable and as costly |
+    | — | Argon (`argon-review`) | a consultant, not a helper: second opinion, review before a release, the hardest reasoning |
+
+    - Flash often gets code wrong: it never writes code that ships. Code starts at Hydrogen low.
+    - One rung up only after a wrong or shallow result, and back down once the hard part is done.
+    - `research` burns the quota fastest: the task says why `deep` is not enough. The owner has several
+      accounts, so it is allowed — for the work that needs it, not as a default.
+    - Argon judges and advises; it never does the work, and not everything goes to it.
+    - Neither everything on Flash nor everything on the strongest model.
+
+    Start with `kind` or `model` + `effort`; change a helper you have with
+    `set_helper({ helper, model?, effort?, kind? })`, or one task only with `post_message` `kind` / `effort`.
+    Google's own models only — never Claude or GPT-OSS in Antigravity: their quota there is very small. The
+    pair room says which model the helper really runs on; trust that line, and change the model only through
+    set_helper.
   - The user names a window instead — `set_helper({ helper: "<its id>" })`. If starting fails
     (Antigravity closed, no quota), the lead says so and carries on alone.
   - **A shared room is not a pair.** An Antigravity window many sessions consult (a debugger, a

@@ -85,8 +85,10 @@ Ships as an **MCP server** (the tools) plus a **Skill** (the instructions the ag
 * **A helper's model and effort, chosen by the lead.** Antigravity's efforts are models of their own (Gemini 4
   Hydrogen low…xhigh, Gemini 3.8 Flash low…high); the bridge reads the list from the running application. A lead
   starts a helper on the model and effort the work needs, changes it later, or picks one for a single task — by
-  name or by the kind of work: least effort for tapping a screen, medium for analysis and code, high for big
-  analytical work, Flash for translations and routine. A message on a chosen model waits until the helper is
+  name or by the kind of work, on a ladder from the cheapest: Flash for tapping a screen, translations and routine
+  (never for code that ships), Hydrogen low for code by a clear spec, medium for hard code and analysis, high for
+  big analytical work, xhigh only for very deep research; Argon is consulted for a second opinion, never given
+  the work. A message on a chosen model waits until the helper is
   free, since Antigravity runs a message sent mid-work on the helper's own model. Only Google's own models: Claude
   and GPT-OSS in Antigravity get very little quota, so the bridge does not offer them, refuses them, and answers a
   helper begun on one on Hydrogen medium. When a pair is made the bridge reads the model the helper really answered
@@ -601,8 +603,10 @@ MIT.
 * **Модель і зусилля помічника обирає лід.** Зусилля в Antigravity — це окремі моделі (Gemini 4 Hydrogen від low
   до xhigh, Gemini 3.8 Flash від low до high); міст читає їхній список із запущеної програми. Лід запускає
   помічника на моделі й зусиллі, яких потребує робота, змінює їх пізніше або обирає для одного завдання — назвою чи
-  видом роботи: найменше зусилля, щоб потапати по екрану, середнє для аналізу й коду, високе для великої аналітичної
-  роботи, Flash для перекладів і рутини. Повідомлення на вибраній моделі чекає, доки помічник звільниться: надіслане
+  видом роботи, драбиною від найдешевшого: Flash, щоб потапати по екрану, для перекладів і рутини (але не для коду,
+  що йде в роботу), Hydrogen low для коду за чітким завданням, medium для складного коду й аналізу, high для великої
+  аналітичної роботи, xhigh лише для дуже глибокого дослідження; з Аргоном радяться для другої думки, роботу йому не
+  дають. Повідомлення на вибраній моделі чекає, доки помічник звільниться: надіслане
   посеред роботи, воно в Antigravity пішло б на власній моделі помічника. Лише рідні моделі Google: на Claude і
   GPT-OSS Antigravity дає дуже мало квоти, тож міст їх не пропонує, відхиляє, а помічникові, запущеному на такій
   моделі, відповідає на Hydrogen medium. Під час прив'язки міст читає, на якій моделі помічник насправді відповів, і

@@ -199,10 +199,9 @@ to its helper (an Antigravity window): research, adb, logs, clicking through a U
   When a pair is made the bridge reads the model the helper really answered on, records it and says so in the
   pair room; every message to a helper then names that model, so the picker in Antigravity cannot move it.
   Read that line in the room — it is the proof, not your own `model` argument.
-  Least effort for simple actions (tapping a screen, a known command); medium for analysis and for code; high
-  for big analytical work; Flash for translations (medium, or the least for a short one) and routine.
-  `start` takes `model` / `effort` or `kind` (`ui`, `translate`, `routine`, `code`, `analysis`, `deep`;
-  default Hydrogen medium). `set_helper({ helper, model?, effort?, kind? })` changes the model every message to
+  Which model for which work is the ladder in agent-workflow ("Working with a helper agent"), and the list
+  `set_helper({ models: true })` returns repeats it. `start` takes `model` / `effort` or `kind` (`ui`,
+  `translate`, `routine`, `code`, `complex`, `analysis`, `deep`, `research`; default Hydrogen medium). `set_helper({ helper, model?, effort?, kind? })` changes the model every message to
   that helper is answered on; `post_message` with `kind` / `effort` / `model` does it for one task only.
   A message on a chosen model waits until the helper is free: sent while it works, Antigravity would run it
   on the helper's own model.
