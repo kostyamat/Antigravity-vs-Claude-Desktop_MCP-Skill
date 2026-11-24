@@ -148,7 +148,7 @@ function createMailbox(bridgeDb, router) {
     return row && row.n !== null ? Number(row.n) || 0 : null;
   }
 
-  return { open, urgentFor, briefFor };
+  return { open, urgentFor, briefFor, ownCursor };
 }
 
 function oneLine(m) {

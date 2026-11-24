@@ -269,8 +269,29 @@ function watch(input) {
 
   const session = Number(process.env.CLAUDE_PID || 0);
   const started = Date.now();
-  let seen = 0;
-  try { seen = bridgeDb.getDb().prepare('SELECT COALESCE(MAX(id), 0) n FROM messages').get().n; } catch (_) {}
+  // Where to count from: what this window has read, not the newest message on the board. Counted
+  // from the newest, a message that came while the window was at work — after its last read, before
+  // its turn ended — was never seen, and the window slept through it (24.11.2026: five live windows,
+  // the owner's own messages among those missed). A message it was already woken for is not woken
+  // for again (woken_<window>.json), so a window that will not read is not woken in a loop.
+  const wokenFile = path.join(RUN_DIR, `woken_${safe}.json`);
+  let woken = 0;
+  try { woken = Number(JSON.parse(fs.readFileSync(wokenFile, 'utf8')).id) || 0; } catch (_) {}
+  let newest = 0;
+  try { newest = bridgeDb.getDb().prepare('SELECT COALESCE(MAX(id), 0) n FROM messages').get().n; } catch (_) {}
+  let read = null;
+  try { read = mailbox.ownCursor(AGENT, win); } catch (_) {}
+  let seen = read === null ? newest : Math.max(Number(read) || 0, woken);
+
+  // Its turn is over: the stands it holds are free for the others, and whoever waits for one is
+  // told (stands.js). It books again when it needs one again.
+  try {
+    const { wakeAntigravity, setWaitLimit } = require('./wake-antigravity');
+    setWaitLimit(0);
+    const { router } = board();
+    const stands = require('./stands').createStands(bridgeDb, router, rec => wakeAntigravity(rec));
+    for (const s of stands.heldBy(win)) stands.free(s, `"${router.nameOf(win)}" ended its turn; a stand is freed when its holder goes idle`);
+  } catch (_) {}
 
   const tick = () => {
     if (!mine() || monitored() || Date.now() - started > WATCH_MAX_MS || (session && !alive(session))) {
@@ -286,6 +307,7 @@ function watch(input) {
     try { list = mailbox.urgentFor(AGENT, win, win, seen); } catch (_) {}
     if (list.length) {
       try { fs.unlinkSync(lock); } catch (_) {}
+      try { fs.writeFileSync(wokenFile, JSON.stringify({ id: Math.max(...list.map(m => Number(m.id) || 0)) })); } catch (_) {}
       process.stderr.write(`agent-bridge: ${list.length} new on the board for this window:\n` +
         list.slice(-5).map(m => '  ' + oneLine(m)).join('\n') +
         `\nRead and answer now: get_messages({reader: "${AGENT}", sessionId: "${win}"}).\n`);

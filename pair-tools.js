@@ -271,7 +271,7 @@ function createPairTools({ bridgeDb, cardsLib, router, rules, stands, ok, fail, 
 
     // The room hears it as a line of its own: a status, waking nobody.
     const noteRoom = room ? room.id : (res.room || '');
-    if (noteRoom && (action === 'take' || res.free)) {
+    if (noteRoom && action === 'take') {
       try {
         bridgeDb.addMessage({
           ts: new Date().toISOString(), from: agent, fromSession: me, room: noteRoom, to: 'all', toSession: '',

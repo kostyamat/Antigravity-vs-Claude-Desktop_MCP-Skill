@@ -31,7 +31,7 @@ const { wakeAntigravity } = require('./wake-antigravity');
 const { inviteText } = require('./room-invite');
 const { isHuman } = require('./room-routing');
 const rules = require('./board-rules').createRules(bridgeDb, cardsLib, router);
-const stands = require('./stands').createStands(bridgeDb, router);
+const stands = require('./stands').createStands(bridgeDb, router, rec => wakeAntigravity(rec));
 const claudeQuota = require('./claude-quota');
 const brief = require('./window-brief').createBrief(bridgeDb, cardsLib, router, rules, stands);
 const claudeHome = require('./claude-home');

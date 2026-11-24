@@ -1154,6 +1154,28 @@ setInterval(() => {
   while (wakeWhenUp.length && wakeWhenUp[0].until < Date.now()) wakeWhenUp.shift();
 }, 5000).unref();
 
+// A stand held by an Antigravity conversation that has been idle for five minutes is freed, and
+// whoever waits for it is told (stands.js); a Claude window frees its own when its turn ends.
+const standIdle = new Map();
+setInterval(async () => {
+  try {
+    const st = require('./stands').createStands(bridgeDb, router, rec => wakeAntigravity(rec));
+    const api = require('./antigravity-api');
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    for (const row of bridgeDb.readStands()) {
+      if (!uuid.test(row.holder)) continue;
+      let state = '';
+      try { state = await api.runState(row.holder); } catch (_) {}
+      if (state !== 'idle') { standIdle.delete(row.stand); continue; }
+      if (!standIdle.has(row.stand)) standIdle.set(row.stand, Date.now());
+      if (Date.now() - standIdle.get(row.stand) >= 5 * 60e3) {
+        standIdle.delete(row.stand);
+        st.free(row.stand, `"${router.nameOf(row.holder)}" has been idle for five minutes`);
+      }
+    }
+  } catch (_) {}
+}, 60e3).unref();
+
 // A window the owner archives leaves the board within the hour, not at the next install.
 setInterval(() => { try { require('./project-line').dropArchived(bridgeDb, cardsLib); } catch (_) {} }, 3600e3).unref();
 

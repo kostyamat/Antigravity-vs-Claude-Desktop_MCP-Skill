@@ -308,6 +308,13 @@ function initSchema(db) {
       note TEXT DEFAULT '',
       since TEXT
     );
+    CREATE TABLE IF NOT EXISTS stand_waiters (
+      stand TEXT NOT NULL,
+      waiter TEXT NOT NULL,
+      agent TEXT DEFAULT '',
+      since TEXT,
+      PRIMARY KEY (stand, waiter)
+    );
   `);
   // The model a helper runs on (helper-models.js): `model` is the lead's standing choice, an
   // Antigravity model id; `own_model` the one its conversation was started on. They differ only
@@ -1675,6 +1682,22 @@ function releaseStand(stand) {
   return getDb().prepare('DELETE FROM stand_bookings WHERE stand = ?').run(String(stand)).changes > 0;
 }
 
+// A window refused a stand waits for it, and is told when it is free (stands.js).
+function addStandWaiter(stand, waiter, agent) {
+  getDb().prepare('INSERT OR IGNORE INTO stand_waiters (stand, waiter, agent, since) VALUES (?, ?, ?, ?)')
+    .run(String(stand), String(waiter), String(agent || ''), new Date().toISOString());
+}
+function removeStandWaiter(stand, waiter) {
+  getDb().prepare('DELETE FROM stand_waiters WHERE stand = ? AND waiter = ?').run(String(stand), String(waiter));
+}
+function takeStandWaiters(stand) {
+  const db = getDb();
+  let rows = [];
+  try { rows = db.prepare('SELECT waiter, agent, since FROM stand_waiters WHERE stand = ? ORDER BY since').all(String(stand)); } catch (_) {}
+  db.prepare('DELETE FROM stand_waiters WHERE stand = ?').run(String(stand));
+  return rows;
+}
+
 // ── Files waiting for a description ─────────────────────────────────────────────────────
 // A picture or a recording the owner attached: nothing in it can be parsed as
 // text, so the supervisor is asked to describe it into the .md beside it.
@@ -1768,6 +1791,9 @@ module.exports = {
   readStands,
   takeStand,
   releaseStand,
+  addStandWaiter,
+  removeStandWaiter,
+  takeStandWaiters,
   queueDescription,
   readDescriptions,
   setDescriptionState,
