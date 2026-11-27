@@ -31,7 +31,9 @@ const CLAUDE_AHEAD_MIN = 20;   // at the pace measured, would the stop come with
 // nor one model's limit like Fable — keep them apart). So a weekly limit warns and stops only near its bottom,
 // or when the measured pace would empty it soon; and a limit of one model (Weekly · Fable) never
 // stops anyone — the other models still work — the owner is only told.
-const WEEK_WARN_LEFT = 8, WEEK_STOP_LEFT = 3;
+// Owner 27.11.2026: quota is no concern of the sessions until 1 % is left — the weekly
+// limit warns at 2 % and stops at 1 %, never sooner (at 3 % it stopped working sessions).
+const WEEK_WARN_LEFT = 2, WEEK_STOP_LEFT = 1;
 const WEEK_AHEAD_WARN_MIN = 120, WEEK_AHEAD_STOP_MIN = 30;   // at the pace: empty within this
 const MODEL_TELL_LEFT = 5;
 // A lead is told how much Antigravity quota its helper has: once when the warning comes, and at
@@ -93,7 +95,8 @@ function createQuotaWatch({ bridgeDb, cardsLib, router, say, alert, gemini, clau
   function claudeLevel(w) {
     const kind = limitKind(w.label);
     if (kind === 'model') return w.left <= MODEL_TELL_LEFT ? 1 : 0;   // told, never stopped
-    if (kind === 'weekly') return weekLevel(w.left, w.rate);
+    // Claude's weekly limit: the pace may warn, but only 1 % stops (owner 27.11: nothing before 1 %).
+    if (kind === 'weekly') return w.left <= WEEK_STOP_LEFT ? 2 : Math.min(weekLevel(w.left, w.rate), 1);
     if (w.left <= CLAUDE_STOP_LEFT) return 2;
     return w.left <= CLAUDE_WARN_LEFT || w.left - (w.rate || 0) * CLAUDE_AHEAD_MIN <= CLAUDE_STOP_LEFT ? 1 : 0;
   }

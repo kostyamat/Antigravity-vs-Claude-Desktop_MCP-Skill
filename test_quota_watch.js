@@ -193,8 +193,8 @@ const t = (name, fn) => Promise.resolve(fn()).then(() => { n++; console.log('ok 
       assert.strictEqual(limitKind('You hit your weekly limit'), 'weekly');
       assert.strictEqual(limitKind('Fable weekly limit reached'), 'model');
       const wk = left => watch.claudeLevel({ label: 'Weekly · all models', left, rate: 0 });
-      assert.deepStrictEqual([wk(21), wk(8), wk(3)], [0, 1, 2], '21 % of a week is plenty (owner, 20.11)');
-      assert.strictEqual(watch.claudeLevel({ label: 'Weekly · all models', left: 15, rate: 0.6 }), 2, '15 - 0.6*30 < 0: empty within half an hour');
+      assert.deepStrictEqual([wk(21), wk(8), wk(3), wk(2), wk(1)], [0, 0, 0, 1, 2], '21 % of a week is plenty (owner, 20.11); nothing before 1 % but a warning at 2 % (owner, 27.11)');
+      assert.strictEqual(watch.claudeLevel({ label: 'Weekly · all models', left: 15, rate: 0.6 }), 1, '15 - 0.6*30 < 0: empty within half an hour — warned, but only 1 % stops (owner, 27.11)');
       const fable = left => watch.claudeLevel({ label: 'Weekly · Fable', left, rate: 0 });
       assert.deepStrictEqual([fable(48), fable(5), fable(0)], [0, 1, 1], 'told, never stopped');
     });
